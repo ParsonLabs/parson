@@ -1,0 +1,15 @@
+pub mod album;
+pub mod artist;
+pub mod authentication;
+pub mod filesystem;
+pub mod image;
+pub mod index;
+pub mod music;
+pub mod playlist;
+pub mod search;
+pub mod server;
+pub mod social;
+pub mod song;
+pub mod user;
+pub mod database;
+pub mod genres;

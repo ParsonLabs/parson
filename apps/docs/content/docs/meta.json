@@ -1,0 +1,9 @@
+{
+  "title": "ParsonLabs Music",
+  "root": true,
+  "pages": [
+    "index",
+    "getting-started",
+    "contributing"
+  ]
+}

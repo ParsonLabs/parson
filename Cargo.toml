@@ -1,0 +1,15 @@
+[workspace]
+members = [
+  "apps/web/src-tauri",
+  "crates/backend",
+  # "crates/release"
+]
+
+resolver = "2"
+
+# [profile.release]
+# opt-level = "z"
+# lto = true
+# codegen-units = 1
+# panic = 'abort'
+# strip = true

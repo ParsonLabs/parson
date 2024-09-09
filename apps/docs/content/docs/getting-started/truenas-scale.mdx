@@ -1,0 +1,248 @@
+---
+title: TrueNas Scale
+description: Steps to install ParsonLabs Music with TrueNas Scale
+---
+
+<Callout title="Note">In order to run ParsonLabs Music, we are going to run it in two docker containers. As such, we will need to use [`custom-app` from the premium train](https://truecharts.org/charts/premium/custom-app/)</Callout>
+
+## Setting up TrueCharts
+TrueCharts is a community driven extended repository containing many popular and up to date applications that TrueNas lacks, while also providing an easy setup experience. 
+
+<img src="https://images.opencollective.com/truecharts/480e32c/background.png" />
+
+<Callout title="Official Guide">[TrueCharts has provided an official guide to installing the chart and can be found here](https://truecharts.org/scale/)</Callout>
+
+
+While we add support for ParsonLabs Music directly into 
+<Steps>
+  <Step>
+    ### Head to Apps
+    <img src="https://truecharts.org/_astro/Apps.hGWoBKOi_Z1UWvdD.webp" />
+  </Step>
+
+  <Step>
+    ### Click Discover Apps  on the top right
+    <img src="https://truecharts.org/_astro/Apps2.5lcnOx3S_Z1Rv2DS.webp" />
+  </Step>
+
+  <Step>
+    ### Click Manage Catalog on the top right of the discover page
+    <img src="https://truecharts.org/_astro/Apps3.Ceq-Wm65_ZEJkPG.webp" />
+  </Step>
+
+  <Step>
+    ### Click Add Catalog
+    <img src="https://truecharts.org/_astro/Apps4.Bsp3rtUy_RSXhx.webp" />
+  </Step>
+
+  <Step>
+    ### After reading the iXsystems notice, click Continue and enter the required information
+    <img src="https://truecharts.org/_astro/Apps5.BwsQ4ws-_2vzx8I.webp" />
+  </Step>
+
+  <Step>
+    ### Click save and allow SCALE to refresh its catalog with TrueCharts (this may take a few minutes)
+  </Step>
+</Steps>
+
+## Setting up ParsonLabs Music on TrueNas Scale
+To setup up, we need 
+
+### Using custom-app
+The [`custom-app`](https://truecharts.org/charts/premium/custom-app/) application from the TrueCharts premium train allows any deployment to a TrueCharts-like environment. Since music has [Docker containers on the Github registry](https://github.com/WillKirkmanM/music/packages), we are able to deploy music on TrueNas.
+
+<Steps>
+  <Step>
+    #### Create a custom-app instance
+    Head to the `Discover Apps` section in the `Apps` section and search for `custom-app` and then click install.
+  </Step>
+
+  <Step>
+    #### Set Container Repository and Container Tag
+    Set the `Container Repository` to `ghcr.io/willkirkmanm/music` and the `Container Tag` to `latest`
+  </Step>
+
+  <Step>
+    #### Disable WebUI Portal
+    It is recommended but not necessary to uncheck the `Enable WebUI Portal` button in the `Portal Configuration` section of `General`
+  </Step>
+
+  <Step>
+    #### Set Environment Variables
+    In the `Extra Environment Variables` section, it is required to have these environment variables set:
+    <Table>
+      <TableHeader>
+        <TableRow>
+          <TableHead>
+            Environment Variable
+          </TableHead>
+
+          <TableHead>
+            Value
+          </TableHead>
+
+          <TableHead>
+            Description
+          </TableHead>
+        </TableRow>
+      </TableHeader>
+
+      <TableBody>
+        <TableRow>
+          <TableCell>
+            `BACKEND_PORT`
+          </TableCell>
+          <TableCell>
+            3001
+          </TableCell>
+          <TableCell>
+            This is the port that music-backend will run on.
+          </TableCell>
+        </TableRow>
+
+        <TableRow>
+          <TableCell>
+            `NEXT_AUTH_SECRET`
+          </TableCell>
+          <TableCell>
+            xVcsAVKpo9yOTxbq/JCmHHGYP4MgtIrt9l74s3937xg=
+          </TableCell>
+          <TableCell>
+            `openssl rand -base64 32` or you can visit [Generate Plus](https://generate.plus/en/base64) and set the length to 32
+          </TableCell>
+        </TableRow>
+
+        <TableRow>
+          <TableCell>
+            `NEXTAUTH_URL`
+          </TableCell>
+          <TableCell>
+            YOUR DOMAIN
+          </TableCell>
+          <TableCell>
+            This will control how the authentication redirects the user. This will need to either the domain name of the music app with `ingress` as a reverse proxy or the local ip address.
+          </TableCell>
+        </TableRow>
+
+        <TableRow>
+          <TableCell>
+            `DEPLOYMENT_TYPE`
+          </TableCell>
+          <TableCell>
+            docker
+          </TableCell>
+          <TableCell>
+            This controls how the configuration for music is obtained. For `containerless` environments, the `music.json` configuration is searched in the `/app/Config` instead of the root filesystem.
+          </TableCell>
+        </TableRow>
+
+      </TableBody>
+    </Table>
+  </Step>
+
+  <Step>
+    ### Set Ports to Listen On
+    <Table>
+      <TableHeader>
+        <TableRow>
+          <TableHead>
+            Port Configuration Name
+          </TableHead>
+          <TableHead>
+            Value
+          </TableHead>
+        </TableRow>
+      </TableHeader>
+
+      <TableBody>
+        <TableRow>
+          <TableCell>
+            **Port Type**
+          </TableCell>
+          <TableCell>
+            http 
+          </TableCell>
+        </TableRow>
+
+        <TableRow>
+          <TableCell>
+            **Target Port**
+          </TableCell>
+          <TableCell>
+            3000
+          </TableCell>
+        </TableRow>
+
+        <TableRow>
+          <TableCell>
+            **Port**
+          </TableCell>
+          <TableCell>
+            This is the port you will be accessing music on.
+          </TableCell>
+        </TableRow>
+      </TableBody>
+    </Table>
+  </Step>
+
+  <Step>
+    ### Accessing Filesystem (Persistance)
+    For music to function properly, these three volumes need to be mapped to the host system:
+    <Table>
+      <TableHeader>
+        <TableRow>
+          <TableHead>
+            Storage Name
+          </TableHead>
+          <TableHead>
+            Mount Path
+          </TableHead>
+          <TableHead>
+            Description
+          </TableHead>
+        </TableRow>
+      </TableHeader>
+
+      <TableBody>
+        <TableRow>
+          <TableCell>
+            Music path
+          </TableCell>
+          <TableCell>
+            /Music
+          </TableCell>
+          <TableCell>
+            This is the directory where your music is stored.
+          </TableCell>
+        </TableRow>
+
+        <TableRow>
+          <TableCell>
+            Missing Cover Art
+          </TableCell>
+          <TableCell>
+            /missing_cover_art
+          </TableCell>
+          <TableCell>
+            This is the directory where the missing cover art for albums will be downloaded to.
+          </TableCell>
+        </TableRow>
+        <TableRow>
+          <TableCell>
+            Config
+          </TableCell>
+          <TableCell>
+            /Config
+          </TableCell>
+          <TableCell>
+            This is the directory where `music.json` will be stored and accessed.
+          </TableCell>
+        </TableRow>
+      </TableBody>
+    </Table>
+  </Step>
+
+  <Step>
+    ### Deploy
+  </Step>
+</Steps>

@@ -1,0 +1,58 @@
+---
+title: Locally
+description: Deploy it Locally
+---
+
+
+To build music, it is recommended to add the `music.json` configuration file to the web folder during build to generate the static pages:
+
+<Files>
+  <Folder name="apps" defaultOpen>
+    <Folder name="web" defaultOpen>
+      <Folder name="Config" defaultOpen>
+        <File name="music.json" />
+      </Folder>
+    </Folder>
+  </Folder>
+
+  <Folder name="packages" />
+  <File name="package.json" />
+</Files>
+
+<Steps>
+  <Step>
+    ### Install dependencies
+    ```bash
+    bun install
+    ```
+    <Callout title="Note">
+      This will install all dependencies for all the apps and packages which includes `web`, `docs` and `landing`
+    </Callout>
+  </Step>
+  
+  <Step>
+    ### Build music only
+    Since music is contained in a `monorepo`, it is possible to target the music app specifically to build:
+
+
+    ```bash
+    bunx cross-env NODE_ENV=production DEPLOYMENT_TYPE=containerless bun run build --filter music --force
+    ``` 
+    <Callout title="Why cross-env?">
+      Music is a self-hostable application, and as such, contains a large range of ways we can deploy it. When deploying locally or in a containerless environment, we have to tell music that we do not intent to look for files in places that would suit containerised environments like docker. 
+    </Callout>
+
+    <Callout title="Why --force?">
+      As we are using specific environments with `cross-env`, [Turborepo](https://turbo.build/repo) does not pick up on a change in environment variables and uses the cached build already generated. The `--force` flag ensures that all builds are clean. 
+    </Callout>
+  </Step>
+
+  <Step>
+    ### Run music
+    ```bash
+    bunx cross-env NODE_ENV=production DEVELOPMENT_TYPE=containerless bun run start --filter music
+    ```
+
+    This will start the production server on port 3000, to change the port, add the `--port` flag
+  </Step>
+</Steps>

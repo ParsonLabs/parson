@@ -1,0 +1,56 @@
+[package]
+name = "music-server"
+description = "ParsonLabs Music is the Self Hosted Audio streaming alternative to YouTube Music, Spotify & Apple Music, providing Unrestricted Access to your library in Uncompressed, Lossless Quality"
+version = "0.1.0"
+edition = "2021"
+authors = ["WillKirkmanM <will@parsonlabs.com>"]
+license = "GPL-3.0"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+actix-cors = "0.7.0"
+actix-embed = "0.1.0"
+actix-files = "0.6.6"
+actix-multipart = "0.7.2"
+actix-web = "4"
+actix-web-httpauth = "0.8.2"
+actix-web-rust-embed-responder = "2.2.3"
+actix-ws = "0.2.5"
+argon2 = "0.5.3"
+audiotags = "0.5"
+chrono = { version = "0.4.38", features = ["serde"] }
+diesel = { version = "2.2.2", features = ["chrono", "numeric", "r2d2", "sqlite"]}
+diesel_migrations = { version = "2.2.0", features = ["sqlite"] }
+dirs = "5.0.1"
+dotenvy = "0.15.0"
+fancy-regex = "0.13.0"
+futures = "*"
+image = "0.25.2"
+jsonwebtoken = "9.3.0"
+lazy_static = "1.5.0"
+levenshtein = "1.0.5"
+libsqlite3-sys = { version = "0.29.0", features = ["bundled"] }
+lofty = "0.18.2"
+meilisearch-sdk = "0.27.0"
+mime_guess = "2.0.5"
+rand = "0.8.5"
+ravif = "0.11.9"
+rayon = "1.8.0"
+regex = "1.10.3"
+reqwest = { version = "0.12.3", features = ["json"] }
+rust-embed = "8.5.0"
+scraper = "0.20.0"
+self_update = { version = "0.41.0", features = ["archive-zip"] }
+serde = { version = "1.0.190", features = ["derive"] }
+serde_json = "1.0.107"
+tokio = { version = "1.36.0", features = ["full"] }
+tokio-util = "*"
+tracing = "0.1.40"
+tracing-subscriber = { version = "0.3.17", features = ["registry", "env-filter"] }
+uuid = { version = "1.10.0", features = ["v4", "fast-rng", "macro-diagnostics", "serde"] }
+walkdir = "2.4.0"
+webp = "0.3.0"
+
+[target.'cfg(not(target_os = "windows"))'.dependencies]
+openssl = { version = "0.10.66", features = ["vendored"] }

@@ -1,0 +1,15 @@
+version: '3.8'
+
+services:
+  music-server:
+    image: ghcr.io/willkirkmanm/music
+    container_name: parsonlabs-music
+    ports:
+      - "1993:1993"
+      - "7700:7700"
+    volumes:
+      - "C:/Users/willi/Desktop/plm:/ParsonLabsMusic"
+      - "C:/Users/willi/Desktop/ParsonLabs Music/tpab:/music"
+    environment:
+      - JWT_SECRET=your_auth_secret_here
+    restart: unless-stopped

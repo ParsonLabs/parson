@@ -1,0 +1,11 @@
+{
+  "extends": "@music/typescript-config/base.json",
+  "compilerOptions": {
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "paths": {
+      "@": ["./src/"],
+      "@music/sdk": ["./src/index.ts"]
+    }
+  }
+}

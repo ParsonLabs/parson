@@ -1,0 +1,147 @@
+---
+title: Docker
+description: Deploy ParsonLabs Music to a Docker Container
+---
+
+We use Docker Compose to orchestrate the deployments of both the frontend and the backend containers.
+
+<Files>
+  <Folder name="apps" />
+
+  <Folder name="packages" />
+  <File name="docker-compose.yml" />
+  <File name="docker-compose-dev.yml" />
+  <File name="package.json" />
+</Files>
+
+In the root of the repository, you will see two files, `docker-compose.yml` and `docker-compose-dev.yml`, these will be used to deploy music on both `production` and `development` environments
+
+## For Production
+
+### Editing docker-compose.yml
+To build the app in production, you will need to edit the `docker-compose.yml` file
+
+```yaml title="docker-compose.yml"
+version: '3'
+services:
+  frontend:
+    build:
+      context: .
+      dockerfile: ./docker/production/Dockerfile.frontend
+    ports:
+      - "3000:3000"
+    volumes:
+      - MEDIA_PATH:/Music
+      - MISSING_COVER_ART_PATH:/missing_cover_art
+      - CONFIG_PATH:/Config
+    environment:
+      - BACKEND_PORT=3001
+      - NEXTAUTH_SECRET=SALKDNAKFB@!WQ#
+      - NEXTAUTH_URL=http://localhost:3000
+      - NODE_ENV=production
+      - DEPLOYMENT_TYPE=docker
+  backend:
+    build:
+      context: .
+      dockerfile: ./docker/production/Dockerfile.backend
+    ports:
+      - "3001:3001"
+    volumes:
+      - MEDIA_PATH:/Music
+      - MISSING_COVER_ART_PATH:/missing_cover_art
+      - CONFIG_PATH:/Config
+```
+
+More specifically, the volumes `MEDIA_PATH`, `MISSING_COVER_ART_PATH` and `CONFIG_PATH` will need to be mapped to the respective paths on the host system. The `NEXTAUTH_URL` will also need to be changed to the intended redirect url after a user is logged in.
+
+### Starting music in docker-compose
+To start music, when the volumes and environment variables have been set, run the command:
+
+```bash
+docker-compose up -d
+```
+
+This will start both the `frontend` and `backend` containers as a `daemon`.
+
+<Callout title="Info">
+  Running the containers as a daemon or detached means that the containers will run in the background and means you can safely exit the console.
+</Callout>
+
+
+## For Development
+
+### Editing docker-compose.yml
+To build the app in production, you will need to edit the `docker-compose-dev.yml` file
+
+```yaml title="docker-compose-dev.yml"
+version: '3.8'
+
+x-defaults:
+  &defaults
+  init: true
+  tty: true
+  networks:
+    - monorepo_network
+
+services:
+  frontend:
+    build:
+      context: .
+      dockerfile: ./docker/development/Dockerfile.frontend
+      args:
+        - APP=music
+        - DIR_NAME=web
+        - START_COMMAND=dev
+
+    command: yarn workspace music dev
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./apps/web:/app/apps/web
+      - /app/apps/web/node_modules
+      - /app/apps/web/.next
+      - /apps/web/node_modules
+
+      - MEDIA_PATH:/Music
+      - MISSING_COVER_ART_PATH:/missing_cover_art
+      - CONFIG_PATH:/Config
+    environment:
+      - PORT=3000
+      - BACKEND_PORT=3001
+      - NEXTAUTH_SECRET=SALKDNAKFB@!WQ#
+      - NEXTAUTH_URL=http://localhost:3000
+      - NODE_ENV=development
+      - DEPLOYMENT_TYPE=docker
+  backend:
+    build:
+      context: .
+      dockerfile: ./docker/development/Dockerfile.backend
+    ports:
+      - "3001:3001"
+    volumes:
+      - ./apps/web/backend:/app/src 
+
+      - MEDIA_PATH:/Music
+      - MISSING_COVER_ART_PATH:/missing_cover_art
+      - CONFIG_PATH:/Config
+    environment:
+      - NODE_ENV=development
+
+networks:
+  monorepo_network:
+```
+
+
+More specifically, the volumes `MEDIA_PATH`, `MISSING_COVER_ART_PATH` and `CONFIG_PATH` will need to be mapped to the respective paths on the host system. The `NEXTAUTH_URL` will also need to be changed to the intended redirect url after a user is logged in.
+
+### Starting music in docker-compose
+To start music, when the volumes and environment variables have been set, run the command:
+
+```bash
+docker-compose -f docker-compose-dev.yml up
+```
+
+<Callout title="Note">
+  The `-f` flag specifies the dockerfile that Docker Compose will use, by default it will use `docker-compose.yml` and it needs to be before the running command (such as `up` or `down`). If the above does not work, add `COMPOSE_FILE` as an environment variable and the name of the docker compose file for the same function.
+</Callout>
+

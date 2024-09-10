@@ -78,15 +78,15 @@ services:
 
 You can download the precompiled binaries from the [releases page](https://github.com/WillKirkmanM/music/releases).
 
-- [Windows (x86_64)](https://github.com/WillKirkmanM/music/releases/download/v1.2.0-alpha/music-server-x86_64-pc-windows-gnu.zip)
-- [Linux (x86_64)](https://github.com/WillKirkmanM/music/releases/download/v1.2.0-alpha/music-server-x86_64-unknown-linux-gnu.tar.gz)
-- [Linux (x86_64 MUSL)](https://github.com/WillKirkmanM/music/releases/download/v1.2.0-alpha/music-server-x86_64-unknown-linux-musl.tar.gz)
-- [Linux (ARMv7 gnueabihf)](https://github.com/WillKirkmanM/music/releases/download/v1.2.0-alpha/music-server-armv7-unknown-linux-gnueabihf.tar.gz)
+- [Windows (x86_64)](https://github.com/WillKirkmanM/music/releases/download/v1.3.0-alpha/music-server-x86_64-pc-windows-gnu.zip)
+- [Linux (x86_64)](https://github.com/WillKirkmanM/music/releases/download/v1.3.0-alpha/music-server-x86_64-unknown-linux-gnu.tar.gz)
+- [Linux (x86_64 MUSL)](https://github.com/WillKirkmanM/music/releases/download/v1.3.0-alpha/music-server-x86_64-unknown-linux-musl.tar.gz)
+- [Linux (ARMv7 gnueabihf)](https://github.com/WillKirkmanM/music/releases/download/v1.3.0-alpha/music-server-armv7-unknown-linux-gnueabihf.tar.gz)
 - [Linux (ARMv7 MUSL)](https://github.com/WillKirkmanM/music/releases/download/v1.2.0-alpha/music-server-armv7-unknown-linux-musleabihf.tar.gz)
-- [Linux (ARM gnueabihf)](https://github.com/WillKirkmanM/music/releases/download/v1.2.0-alpha/music-server-arm-unknown-linux-gnueabihf.tar.gz)
-- [Linux (ARM MUSL)](https://github.com/WillKirkmanM/music/releases/download/v1.2.0-alpha/music-server-arm-unknown-linux-musleabihf.tar.gz)
-- [Linux (ARM64)](https://github.com/WillKirkmanM/music/releases/download/v1.2.0-alpha/music-server-aarch64-unknown-linux-gnu.tar.gz)
-- [Linux (ARM64 MUSL)](https://github.com/WillKirkmanM/music/releases/download/v1.2.0-alpha/music-server-aarch64-unknown-linux-musl.tar.gz)
+- [Linux (ARM gnueabihf)](https://github.com/WillKirkmanM/music/releases/download/v1.3.0-alpha/music-server-arm-unknown-linux-gnueabihf.tar.gz)
+- [Linux (ARM MUSL)](https://github.com/WillKirkmanM/music/releases/download/v1.3.0-alpha/music-server-arm-unknown-linux-musleabihf.tar.gz)
+- [Linux (ARM64)](https://github.com/WillKirkmanM/music/releases/download/v1.3.0-alpha/music-server-aarch64-unknown-linux-gnu.tar.gz)
+- [Linux (ARM64 MUSL)](https://github.com/WillKirkmanM/music/releases/download/v1.3.0-alpha/music-server-aarch64-unknown-linux-musl.tar.gz)
 
 ### Compile From Source
 

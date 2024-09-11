@@ -1,0 +1,22 @@
+name: Publish Latest Version to Container Registry
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    branches:
+      - master
+    types: [synchronize]
+
+jobs:
+  build_and_publish:
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.merged == true && github.event.pull_request.base.ref == 'master'
+    steps:
+    - uses: actions/checkout@v3
+    - name: Build & Publish Image
+      run: |
+        docker login --username willkirkmanm --password ${{ secrets.GH_PAT }} ghcr.io
+        docker build . --tag ghcr.io/willkirkmanm/music:latest
+        docker push ghcr.io/willkirkmanm/music:latest

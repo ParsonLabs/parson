@@ -1,5 +1,5 @@
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -11,6 +11,8 @@ use diesel_migrations::{embed_migrations, EmbeddedMigrations, MigrationHarness};
 use dotenvy::dotenv;
 use diesel::sqlite::SqliteConnection;
 use std::error::Error;
+
+use crate::utils::config::is_docker;
 
 #[derive(Debug)]
 pub struct ConnectionOptions {
@@ -89,18 +91,30 @@ pub fn migrations_ran() -> bool {
 }
 
 pub fn get_database_path() -> PathBuf {
-    let mut path = dirs::data_local_dir().unwrap_or_else(|| PathBuf::from("."));
-    path.push("ParsonLabs");
-    path.push("Music");
-    path.push("Database");
-    if let Err(e) = fs::create_dir_all(&path) {
-        eprintln!("Failed to create directories: {}", e);
+    let path = if is_docker() {
+        Path::new("/ParsonLabsMusic/Database").to_path_buf()
+    } else {
+        let mut path = dirs::data_local_dir().unwrap_or_else(|| PathBuf::from("."));
+        path.push("ParsonLabs");
+        path.push("Music");
+        path.push("Database");
+        path
+    };
+
+    if let Some(parent) = path.parent() {
+        if let Err(e) = fs::create_dir_all(parent) {
+            eprintln!("Failed to create directories: {}", e);
+        }
     }
-    path.push("music.db");
-    if !path.exists() {
-        if let Err(e) = fs::File::create(&path) {
+
+    let mut db_path = path.clone();
+    db_path.push("music.db");
+
+    if !db_path.exists() {
+        if let Err(e) = fs::File::create(&db_path) {
             eprintln!("Failed to create database file: {}", e);
         }
     }
-    path
+
+    db_path
 }

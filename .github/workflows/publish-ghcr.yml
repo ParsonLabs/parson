@@ -7,7 +7,7 @@ on:
   pull_request:
     branches:
       - master
-    types: [synchronize]
+    types: [closed]
 
 jobs:
   build_and_publish:

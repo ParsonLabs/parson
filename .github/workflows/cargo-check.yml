@@ -25,4 +25,4 @@ jobs:
           cache-on-failure: true
           matcher: true
           rustflags: ""
-      - run: cargo check
+      - run: cargo check -p music-server

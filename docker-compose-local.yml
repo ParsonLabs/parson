@@ -1,6 +1,8 @@
 services:
   music-server:
-    image: ghcr.io/willkirkmanm/music
+    build:
+      context: .
+      dockerfile: Dockerfile
     container_name: parsonlabs-music
     ports:
       - "1993:1993"

@@ -1,0 +1,35 @@
+name: Web Type Check
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  my-job:
+    name: my-job
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Cache dependencies
+        uses: actions/cache@v4
+        with:
+          path: apps/web/node_modules
+          key: ${{ runner.os }}-bun-${{ hashFiles('apps/web/package.json', 'apps/web/bun.lockb') }}
+          restore-keys: |
+            ${{ runner.os }}-bun-
+
+      - name: Install dependencies
+        run: bun install
+        working-directory: apps/web
+
+      - name: Run type-check
+        run: bun run type-check
+        working-directory: apps/web

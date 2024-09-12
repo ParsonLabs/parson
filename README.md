@@ -123,23 +123,22 @@ sudo emerge --sync && sudo emerge --ask sqlite wget make gcc pkgconfig openssl n
 ```
 bun run build --filter music 
 ```
-### Build the Server
+### Run the Server
 ```
-cargo build --package music-server --release
+cargo run --package music-server --release -- -p 1993
 ```
 
 > [!TIP]
 > The authentication is handled by [JWT Tokens](https://jwt.io/)), they require a special `JWT_SECRET` in order to safely protect your accounts against third parties.
 > It is reccommended to `cp .env.example .env` and edit the `JWT_SECRET=` value to something secret, alternatively, you can use openssl to generate a random secret: `openssl rand -base64 48`.
 
-### Run ParsonLabs Music
-```
-cargo run --package music-server --release -p 1993
-```
-
 > [!NOTE]  
 > **Done! 🥳**.
 > Head to [http://localhost:1993/](http://localhost:1993/) and setup your music library.
 
 ## Documentation
-Any additional troubleshooting information can be found in the Documentation https://docs.parsonlabs.com.
+<p align="center">
+  Any additional troubleshooting information can be found in the Documentation https://docs.parsonlabs.com.
+</p>
+
+![documentation](https://github.com/user-attachments/assets/94dd3cda-0a4b-4536-82b9-9d341360b8e1)

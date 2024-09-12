@@ -6,7 +6,7 @@ use std::{env, fs};
 use std::fs::File;
 use std::io::Write;
 #[cfg(unix)]
-use std::os::unix::fs::PermissionsExt; // Import for setting executable permissions on Unix-like systems
+use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::{Arc, Mutex};
@@ -17,7 +17,6 @@ use diesel::{ExpressionMethods, QueryDsl, RunQueryDsl};
 use meilisearch_sdk::client::Client;
 use meilisearch_sdk::settings::{Settings, TypoToleranceSettings};
 use serde::{Deserialize, Serialize};
-use tracing::info;
 use uuid::Uuid;
 
 use crate::routes::album::fetch_album_info;

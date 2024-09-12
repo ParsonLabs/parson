@@ -2,22 +2,9 @@
 title: Locally
 description: Deploy it Locally
 ---
-
-
-To build music, it is recommended to add the `music.json` configuration file to the web folder during build to generate the static pages:
-
-<Files>
-  <Folder name="apps" defaultOpen>
-    <Folder name="web" defaultOpen>
-      <Folder name="Config" defaultOpen>
-        <File name="music.json" />
-      </Folder>
-    </Folder>
-  </Folder>
-
-  <Folder name="packages" />
-  <File name="package.json" />
-</Files>
+import { Callout } from 'fumadocs-ui/components/callout';
+import { File, Files, Folder } from "fumadocs-ui/components/files";
+import { Step, Steps } from "fumadocs-ui/components/steps"
 
 <Steps>
   <Step>
@@ -31,28 +18,26 @@ To build music, it is recommended to add the `music.json` configuration file to 
   </Step>
   
   <Step>
-    ### Build music only
-    Since music is contained in a `monorepo`, it is possible to target the music app specifically to build:
+    ### Build music
 
+    This will build the Web client for Music.
 
     ```bash
-    bunx cross-env NODE_ENV=production DEPLOYMENT_TYPE=containerless bun run build --filter music --force
+    bun build --filter music
     ``` 
-    <Callout title="Why cross-env?">
-      Music is a self-hostable application, and as such, contains a large range of ways we can deploy it. When deploying locally or in a containerless environment, we have to tell music that we do not intent to look for files in places that would suit containerised environments like docker. 
-    </Callout>
-
-    <Callout title="Why --force?">
-      As we are using specific environments with `cross-env`, [Turborepo](https://turbo.build/repo) does not pick up on a change in environment variables and uses the cached build already generated. The `--force` flag ensures that all builds are clean. 
-    </Callout>
   </Step>
 
   <Step>
     ### Run music
+
+    This will build and run the server for Music, which hosts the Web client.
+
     ```bash
-    bunx cross-env NODE_ENV=production DEVELOPMENT_TYPE=containerless bun run start --filter music
+    cargo run -p music-server --release
     ```
 
-    This will start the production server on port 3000, to change the port, add the `--port` flag
+    This will start music on port `3001`, to change the port, add the `--port` flag
   </Step>
 </Steps>
+
+<Callout title="View Music">View Music Running here: http://localhost:3001/</Callout>

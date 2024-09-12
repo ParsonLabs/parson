@@ -1,20 +1,30 @@
-import { pageTree } from '../source';
+import { source } from '@/app/source';
+import { RootToggle } from "fumadocs-ui/components/layout/root-toggle";
 import { DocsLayout } from 'fumadocs-ui/layout';
-import { RollButton } from "fumadocs-ui/components/roll-button"
 import type { ReactNode } from 'react';
-import { Metadata } from 'next';
+import { baseOptions } from '../layout.config';
 
-export const metadata: Metadata = {
-  title: {
-    default: "ParsonLabs Documentation",
-    template: "%s | ParsonLabs Documentation"
-  }
-}
-
-export default function RootDocsLayout({ children }: { children: ReactNode }) {
+export default function Layout({ children }: { children: ReactNode }) {
   return (
-    <DocsLayout tree={pageTree} nav={{ title: 'ParsonLabs Music' }}>
-      <RollButton />
+    <DocsLayout tree={source.pageTree} {...baseOptions}
+      sidebar={{
+        banner: (
+          <RootToggle
+            options={[
+              {
+                title: 'Music',
+                description: 'Documentation on the ParsonLabs Music project and its subsidiaries.',
+                url: '/docs/music',
+              },
+              {
+                title: 'Developers',
+                description: 'The developer guide for the ParsonLabs Music GitHub repository.',
+                url: '/docs/dev',
+              },
+            ]}
+          />
+        ),
+      }}>
       {children}
     </DocsLayout>
   );

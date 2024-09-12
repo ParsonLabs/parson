@@ -15,8 +15,22 @@ jobs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/master' || (github.event_name == 'pull_request' && github.event.pull_request.merged == true && github.event.pull_request.base.ref == 'master')
     steps:
     - uses: actions/checkout@v3
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v2
+
+    - name: Cache Docker layers
+      uses: actions/cache@v4
+      with:
+        path: /tmp/.buildx-cache
+        key: ${{ runner.os }}-buildx-${{ github.sha }}
+        restore-keys: |
+          ${{ runner.os }}-buildx-
+
+    - name: Log in to GitHub Container Registry
+      run: echo ${{ secrets.GH_PAT }} | docker login ghcr.io -u willkirkmanm --password-stdin
+
     - name: Build & Publish Image
       run: |
-        docker login --username willkirkmanm --password ${{ secrets.GH_PAT }} ghcr.io
-        docker build . --tag ghcr.io/willkirkmanm/music:latest
-        docker push ghcr.io/willkirkmanm/music:latest
+        docker buildx create --use --name builder --driver docker-container
+        docker buildx build --cache-from type=local,src=/tmp/.buildx-cache --cache-to type=local,dest=/tmp/.buildx-cache --tag ghcr.io/willkirkmanm/music:latest --push .

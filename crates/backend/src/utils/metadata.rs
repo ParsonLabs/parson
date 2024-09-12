@@ -131,7 +131,7 @@ pub async fn process_artist(client: &Client, artist: &mut Artist, access_token: 
         artist.description = wikipedia_extract;
         let log = format!("Wikipedia extract downloaded for Artist: {}", artist.name);
         info!(log);
-        log_to_ws(log).await.unwrap();
+        log_to_ws(log).await;
     }
 
     // if !icon_path.exists() {
@@ -151,7 +151,7 @@ pub async fn process_artist(client: &Client, artist: &mut Artist, access_token: 
 
                 let log = format!("Icon art downloaded and stored for Artist: {}", artist.name);
                 info!(log);
-                log_to_ws(log).await.unwrap();
+                log_to_ws(log).await;
             }
             Err(e) => warn!(
                 "Failed to store icon art for Artist: {}. Error: {}",
@@ -161,7 +161,7 @@ pub async fn process_artist(client: &Client, artist: &mut Artist, access_token: 
     } else {
         let log = format!("Icon art not found for Artist: {}", artist.name);
         warn!(log);
-        log_to_ws(log).await.unwrap();
+        log_to_ws(log).await;
     }
 
     let client3 = client.clone();
@@ -182,18 +182,18 @@ pub async fn process_artist(client: &Client, artist: &mut Artist, access_token: 
                 *artist = artist_clone_locked.clone();
                 let log = format!("Audio DB info processed for Artist: {}", artist.name);
                 info!("{}", log);
-                log_to_ws(log).await.unwrap();
+                log_to_ws(log).await;
             }
             Err(e) => {
                 let log = format!("Failed to process Audio DB info for Artist: {}: {}", artist.name, e);
                 warn!("{}", log);
-                log_to_ws(log).await.unwrap();
+                log_to_ws(log).await;
             }
         },
         Err(e) => {
             let log = format!("Failed to join audio DB task for Artist: {}: {:?}", artist.name, e);
             warn!("{}", log);
-            log_to_ws(log).await.unwrap();
+            log_to_ws(log).await;
         }
     }
 
@@ -273,7 +273,7 @@ async fn fetch_album_metadata(
             album.name
         );
         info!("{}", log_message);
-        log_to_ws(log_message).await.unwrap();
+        log_to_ws(log_message).await;
 
         sleep(Duration::from_secs(1)).await;
         album_metadata = fetch_musicbrainz_metadata(
@@ -291,7 +291,7 @@ async fn fetch_album_metadata(
             album.name
         );
         info!("{}", log_message);
-        log_to_ws(log_message).await.unwrap();
+        log_to_ws(log_message).await;
 
         let url = format!(
             "https://musicbrainz.org/ws/2/release/?query={}&fmt=json&limit=10",
@@ -611,7 +611,6 @@ pub async fn process_album(client: &Client, artist_name: String, album: &mut Alb
                 info!(log);
                 log_to_ws(log)
                     .await
-                    .unwrap_or_else(|e| warn!("Failed to log to ws: {}", e));
             }
             Err(e) => warn!(
                 "Failed to store cover art for Album: {}. Error: {}",
@@ -623,7 +622,6 @@ pub async fn process_album(client: &Client, artist_name: String, album: &mut Alb
         warn!(log);
         log_to_ws(log)
             .await
-            .unwrap_or_else(|e| warn!("Failed to log to ws: {}", e));
     }
 
     album.first_release_date = metadata.first_release_date;
@@ -634,8 +632,7 @@ pub async fn process_album(client: &Client, artist_name: String, album: &mut Alb
     let log = format!("Metadata updated for Album: {}", album.name);
     info!(log);
     log_to_ws(log)
-        .await
-        .unwrap_or_else(|e| warn!("Failed to log to ws: {}", e));
+        .await;
 
     sleep(Duration::from_secs(1)).await;
 }

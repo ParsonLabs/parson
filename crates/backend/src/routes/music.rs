@@ -1,7 +1,3 @@
-use std::ffi::OsStr;
-use std::fs::File;
-use std::io::{Read, Seek, SeekFrom};
-use std::path::Path;
 use std::process::Stdio;
 use std::time::Instant;
 
@@ -11,7 +7,6 @@ use actix_web::{get, web, HttpRequest, HttpResponse, Responder};
 use futures::stream::StreamExt;
 use lofty::AudioFile;
 use serde::Deserialize;
-use tokio::fs;
 use tokio::io::{AsyncReadExt, AsyncSeekExt};
 use tokio::process::Command;
 use tokio_util::io::ReaderStream;
@@ -49,7 +44,7 @@ pub async fn songs_list(path: web::Path<String>) -> impl Responder {
 #[get("/index/{pathToLibrary}")]
 pub async fn process_library(path_to_library: web::Path<String>) -> impl Responder {
     info!("Indexing library...");
-    log_to_ws("Indexing library...".to_string()).await.unwrap();
+    log_to_ws("Indexing library...".to_string()).await;
 
     let now = Instant::now();
     let library = index_library(path_to_library.as_str()).await.unwrap();
@@ -85,7 +80,7 @@ pub async fn process_library(path_to_library: web::Path<String>) -> impl Respond
                 artists_without_icon_count
             );
             info!(log);
-            log_to_ws(log).await.unwrap();
+            log_to_ws(log).await;
     
             match get_access_token().await {
                 Ok(access_token) => {
@@ -108,7 +103,7 @@ pub async fn process_library(path_to_library: web::Path<String>) -> impl Respond
                 albums_without_cover_count
             );
             info!(log);
-            log_to_ws(log).await.unwrap();
+            log_to_ws(log).await;
     
             for modified_album in new_album_entries.iter_mut() {
                 process_album(
@@ -143,7 +138,7 @@ pub async fn process_library(path_to_library: web::Path<String>) -> impl Respond
 
     let log = format!("Finished Indexing Library in {} seconds", elapsed);
     info!(log);
-    log_to_ws(log).await.unwrap();
+    log_to_ws(log).await;
 
     let data_to_serialize = if current_library.is_empty() {
         &*library_guard
@@ -293,8 +288,7 @@ async fn index_library_no_cover_url(path: web::Path<String>) -> impl Responder {
 #[get("/test")]
 async fn test() -> impl Responder {
     log_to_ws("Hit the test endpoint.".to_string())
-        .await
-        .unwrap();
+        .await;
 
     HttpResponse::Ok()
 }

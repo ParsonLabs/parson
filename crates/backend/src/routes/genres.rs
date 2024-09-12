@@ -2,7 +2,7 @@ use actix_web::{get, web, HttpResponse};
 use std::collections::HashSet;
 use crate::structures::structures::{Artist, Album, Song};
 use crate::config::get_config;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use serde_json::from_str;
 
 #[derive(Deserialize)]

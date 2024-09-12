@@ -3,7 +3,6 @@
   "root": true,
   "pages": [
     "index",
-    "getting-started",
-    "contributing"
+    "getting-started"
   ]
 }

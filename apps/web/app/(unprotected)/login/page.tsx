@@ -1,8 +1,8 @@
-"use client"
+"use client";
 
 import getBaseURL from "@/lib/Server/getBaseURL";
-
 import { zodResolver } from '@hookform/resolvers/zod';
+import { getServerInfo } from "@music/sdk";
 import { Button } from '@music/ui/components/button';
 import {
   Form,
@@ -15,7 +15,7 @@ import {
 import { Input } from '@music/ui/components/input';
 import { setCookie } from 'cookies-next';
 import { useRouter } from 'next/navigation';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { SubmitHandler, useForm } from 'react-hook-form';
 import * as z from 'zod';
 
@@ -29,34 +29,48 @@ type FormData = z.infer<typeof schema>;
 export default function Login() {
   const router = useRouter();
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [serverInfo, setServerInfo] = useState<{ login_disclaimer?: string } | null>(null);
   const form = useForm<FormData>({
     resolver: zodResolver(schema),
   });
 
+  useEffect(() => {
+    async function fetchServerInfo() {
+      try {
+        const info = await getServerInfo();
+        setServerInfo(info);
+      } catch (error) {
+        console.error('Error fetching server info:', error);
+      }
+    };
+
+    fetchServerInfo();
+  }, []);
+
   const { handleSubmit } = form;
 
-    const onSubmit: SubmitHandler<FormData> = async (data) => {
-        try {
-          const response = await fetch(`${getBaseURL()}/api/auth/login`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(data),
-            credentials: 'include'
-          });
-    
-          if (response.ok) {
-            router.push("/");
-          } else {
-            const errorMessage = await response.text();
-            setErrorMessage(errorMessage || 'Authentication failed');
-          }
-        } catch (error) {
-          console.error('Login error:', error);
-          setErrorMessage('An error occurred during login');
-        }
-    };
+  const onSubmit: SubmitHandler<FormData> = async (data) => {
+    try {
+      const response = await fetch(`${getBaseURL()}/api/auth/login`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(data),
+        credentials: 'include'
+      });
+
+      if (response.ok) {
+        router.push("/");
+      } else {
+        const errorMessage = await response.text();
+        setErrorMessage(errorMessage || 'Authentication failed');
+      }
+    } catch (error) {
+      console.error('Login error:', error);
+      setErrorMessage('An error occurred during login');
+    }
+  };
 
   return (
     <div className="flex flex-col items-center justify-center min-h-screen bg-gray-900">
@@ -111,6 +125,10 @@ export default function Login() {
           </Button>
         </form>
       </Form>
+
+      {serverInfo?.login_disclaimer && (
+        <p className="mt-4 text-center text-gray-400">{serverInfo.login_disclaimer}</p>
+      )}
     </div>
   );
 }

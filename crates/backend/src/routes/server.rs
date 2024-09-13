@@ -14,7 +14,7 @@ async fn get_server_info() -> Result<impl Responder, Box<dyn Error>> {
 
     match server_info.select(ServerInfo::as_select()).first::<ServerInfo>(&mut connection) {
         Ok(server_info_data) => Ok(HttpResponse::Ok().json(server_info_data)),
-        Err(DieselError::NotFound) => Ok(HttpResponse::NotFound().body("Server info not found")),
+        Err(DieselError::NotFound) => Ok(HttpResponse::NoContent().finish()),
         Err(e) => Err(Box::new(e)),
     }
 }

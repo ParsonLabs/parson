@@ -5,10 +5,12 @@ import { LibrarySong, MusicVideoSong } from './types';
 /**
  * Get a random song.
  * @param {number} amount - The number of random songs to retrieve.
+ * @param {string} [genre] - The optional genre to filter the songs by.
  * @returns {Promise<LibrarySong[]>} - A promise that resolves to an array of random songs.
  */
-export async function getRandomSong(amount: number): Promise<LibrarySong[]> {
-  const response: AxiosResponse<LibrarySong[]> = await axios.get(`/song/random/${amount}`);
+export async function getRandomSong(amount: number, genre?: string): Promise<LibrarySong[]> {
+  const params = genre ? { genre } : {};
+  const response: AxiosResponse<LibrarySong[]> = await axios.get(`/song/random/${amount}`, { params });
   return response.data;
 }
 
@@ -21,8 +23,6 @@ export async function getSongInfo(id: string): Promise<LibrarySong> {
   const response: AxiosResponse<LibrarySong> = await axios.get(`/song/info/${id}`);
   return response.data;
 }
-
-
 
 /**
  * Get all songs with music videos.

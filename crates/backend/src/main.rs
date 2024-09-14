@@ -158,7 +158,6 @@ async fn main() -> std::io::Result<()> {
             .service(test)
             .service(stream_song)
             .service(format_contributing_artists_route)
-            .service(index_library_no_cover_url)
             .configure(artist::configure)
             .configure(album::configure)
             .configure(song::configure)
@@ -169,9 +168,10 @@ async fn main() -> std::io::Result<()> {
             .configure(playlist::configure)
             .configure(config::configure)
             .configure(genres::configure);
-
+        
         let library_routes = web::scope("/library")
             .wrap(admin)
+            .service(index_library_no_cover_url)
             .service(process_library);
 
         App::new()

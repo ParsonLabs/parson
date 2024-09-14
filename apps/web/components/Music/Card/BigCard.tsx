@@ -25,7 +25,8 @@ export default function BigCard({ imageSrc, title, artist, songURL, albumURL, ty
     setAudioSource,
     setSong,
     setArtist,
-    setAlbum
+    setAlbum,
+    setPlayedFromAlbum
   } = usePlayer()
   
   function handlePlay() {
@@ -34,6 +35,7 @@ export default function BigCard({ imageSrc, title, artist, songURL, albumURL, ty
     setAlbum(album)
     setSong(song)
     setAudioSource(songURL)
+    setPlayedFromAlbum(false)
   }
 
  

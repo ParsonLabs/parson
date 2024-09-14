@@ -273,7 +273,7 @@ async fn format_contributing_artists_route(artist: web::Path<String>) -> impl Re
         .body(json)
 }
 
-#[get("/library/index/without_cover_url/{path}")]
+#[get("/index/quick/{path}")]
 async fn index_library_no_cover_url(path: web::Path<String>) -> impl Responder {
     println!("Indexing");
     let indexed_library = index_library(path.as_str()).await.unwrap();

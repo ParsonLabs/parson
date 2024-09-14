@@ -1,10 +1,12 @@
 use actix_web::{get, web, HttpResponse};
-use rand::seq::{IteratorRandom, SliceRandom};
+use rand::seq::SliceRandom;
 use serde::{Deserialize, Serialize};
 use tracing::error;
 
 use crate::structures::structures::{Album, Artist, Song};
 use crate::utils::config::get_config;
+
+use super::genres::fetch_albums_by_genres;
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct ResponseSong {
@@ -19,45 +21,45 @@ pub struct ResponseSong {
     pub artist_object: Artist,
 }
 
-pub async fn fetch_random_songs(amount: usize) -> Result<Vec<ResponseSong>, ()> {
+
+pub async fn fetch_random_songs(amount: usize, genre: Option<String>) -> Result<Vec<ResponseSong>, ()> {
     let config = get_config().await.map_err(|_| ())?;
     let library: Vec<Artist> = serde_json::from_str(&config).map_err(|_| ())?;
 
     let mut response_songs = Vec::new();
     let mut rng = rand::thread_rng();
 
+    let albums: Vec<Album> = if let Some(ref genre) = genre {
+        fetch_albums_by_genres(vec![genre.clone()]).await?
+    } else {
+        library.iter().flat_map(|artist| artist.albums.clone()).collect()
+    };
+
     for _ in 0..amount {
-        let mut valid_artist = None;
         let mut valid_album = None;
         let mut valid_song = None;
 
         for _ in 0..10 {
-            if let Some(artist) = library.iter().choose(&mut rng) {
-                if !artist.albums.is_empty() {
-                    valid_artist = Some(artist);
+            if let Some(album) = albums.choose(&mut rng) {
+                if !album.songs.is_empty() {
+                    valid_album = Some(album.clone());
                     break;
                 }
             }
         }
 
-        if let Some(artist) = valid_artist {
-            for _ in 0..10 {
-                if let Some(album) = artist.albums.choose(&mut rng) {
-                    if !album.songs.is_empty() {
-                        valid_album = Some(album);
-                        break;
-                    }
-                }
-            }
-        }
-
-        if let Some(album) = valid_album {
+        if let Some(ref album) = valid_album {
             if let Some(song) = album.songs.choose(&mut rng) {
-                valid_song = Some(song);
+                valid_song = Some(song.clone());
             }
         }
 
         if let Some(song) = valid_song {
+            let artist_object = library.iter()
+                .find(|artist| artist.albums.iter().any(|a| a.id == valid_album.as_ref().unwrap().id))
+                .unwrap()
+                .clone();
+
             let response_song = ResponseSong {
                 id: song.id.clone(),
                 name: song.name.clone(),
@@ -66,8 +68,8 @@ pub async fn fetch_random_songs(amount: usize) -> Result<Vec<ResponseSong>, ()> 
                 track_number: song.track_number,
                 path: song.path.clone(),
                 duration: song.duration,
-                album_object: valid_album.unwrap().clone(),
-                artist_object: valid_artist.unwrap().to_owned().clone(),
+                album_object: valid_album.clone().unwrap(),
+                artist_object,
             };
 
             response_songs.push(response_song);
@@ -104,9 +106,14 @@ pub async fn fetch_song_info(song_id: String) -> Result<ResponseSong, ()> {
     Err(())
 }
 
+#[derive(Deserialize)]
+struct RandomSongQuery {
+    genre: Option<String>,
+}
+
 #[get("/random/{amount}")]
-async fn get_random_song(amount: web::Path<usize>) -> HttpResponse {
-    match fetch_random_songs(*amount).await {
+async fn get_random_song(amount: web::Path<usize>, query: web::Query<RandomSongQuery>) -> HttpResponse {
+    match fetch_random_songs(*amount, query.genre.clone()).await {
         Ok(songs) => HttpResponse::Ok().json(songs),
         Err(_) => HttpResponse::InternalServerError().json("Failed to load configuration"),
     }

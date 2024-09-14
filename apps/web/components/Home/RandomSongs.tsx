@@ -11,15 +11,8 @@ import ScrollButtons from "./ScrollButtons";
 
 export const revalidate = 3600;
 
-async function getRandomSongs(genre?: string) {
-  const randomSongs = await getRandomSong(10);
-  if (genre) {
-    return randomSongs.filter(song => {
-      const releaseAlbumGenres = song.album_object.release_album?.genres?.some(g => g.name === genre);
-      const releaseGroupAlbumGenres = song.album_object.release_group_album?.genres?.some(g => g.name === genre);
-      return releaseAlbumGenres || releaseGroupAlbumGenres;
-    });
-  }
+async function getRandomSongs(genre?: string): Promise<LibrarySong[]> {
+  const randomSongs = await getRandomSong(10, genre);
   return randomSongs;
 }
 

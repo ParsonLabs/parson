@@ -1,12 +1,12 @@
-import { distance } from 'fastest-levenshtein';
 import { usePlayer } from "@/components/Music/Player/usePlayer";
 import getSession from "@/lib/Authentication/JWT/getSession";
-import { Album, Artist, LibrarySong } from "@music/sdk/types";
-import SongContextMenu from "../SongContextMenu";
-import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from "@music/ui/components/table";
-import { useEffect, useState } from 'react';
 import getBaseURL from '@/lib/Server/getBaseURL';
+import { Album, Artist, LibrarySong } from "@music/sdk/types";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@music/ui/components/table";
+import { distance } from 'fastest-levenshtein';
+import { useEffect, useState } from 'react';
 import PlaylistCard from '../Playlist/PlaylistCard';
+import SongContextMenu from "../SongContextMenu";
 
 type PlaylistTableProps = {
   songs: LibrarySong[]
@@ -14,23 +14,21 @@ type PlaylistTableProps = {
   artist: Artist
 }
 
-// Function to normalize strings (e.g., convert to lowercase, remove special characters)
 function normalizeString(str: string): string {
   return str.toLowerCase().replace(/[^a-z0-9\s]/g, '');
 }
 
-// Function to check similarity using Levenshtein distance
 function isSimilarLevenshtein(apiTrack: string, userTrack: string): boolean {
   const normalizedApiTrack = normalizeString(apiTrack);
   const normalizedUserTrack = normalizeString(userTrack);
   const levenshteinDistance = distance(normalizedApiTrack, normalizedUserTrack);
   const maxLength = Math.max(normalizedApiTrack.length, normalizedUserTrack.length);
   const similarity = 1 - (levenshteinDistance / maxLength);
-  return similarity > 0.6; // Adjust the threshold as needed
+  return similarity > 0.6;
 }
 
 export default function AlbumTable({ songs, album, artist }: PlaylistTableProps) {
-  const { setImageSrc, setSong, setAudioSource, setArtist, setAlbum, addToQueue } = usePlayer();
+  const { setImageSrc, setSong, setAudioSource, setArtist, setAlbum, addToQueue, setPlayedFromAlbum } = usePlayer();
   const [orderedSongs, setOrderedSongs] = useState<LibrarySong[]>([]);
 
   const session = getSession();
@@ -77,13 +75,7 @@ export default function AlbumTable({ songs, album, artist }: PlaylistTableProps)
     setAlbum(album);
     setSong(song);
     setAudioSource(songURL);
-
-    let track_number = song.track_number;
-
-    const songsToQueue = album.songs.filter((s) => s.track_number >= track_number);
-    songsToQueue.forEach((s) => {
-      addToQueue(s, album, artist);
-    });
+    setPlayedFromAlbum(true)
   };
 
   function formatDuration(duration: number) {

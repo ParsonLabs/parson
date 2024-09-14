@@ -1,7 +1,6 @@
 "use client"
 
 import getBaseURL from "@/lib/Server/getBaseURL";
-
 import setCache, { getCache } from "@/lib/Caching/cache";
 import { getRandomAlbum } from "@music/sdk";
 import { Album, Artist, LibrarySong } from "@music/sdk/types";
@@ -10,7 +9,8 @@ import { Skeleton } from "@music/ui/components/skeleton";
 import { Play } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
+import { FastAverageColor } from 'fast-average-color';
 
 async function getRandomAlbumAndSongs(): Promise<{ album: Album & { artist_object: Artist }, songs: LibrarySong[] }> {
   let album: Album & { artist_object: Artist } | undefined;
@@ -68,6 +68,7 @@ export function LandingCarouselSkeleton() {
 export default function LandingCarousel() {
   const [album, setAlbum] = useState<Album & { artist_object: Artist } | null>(null);
   const [songs, setSongs] = useState<LibrarySong[]>([]);
+  const [buttonColor, setButtonColor] = useState<string>('');
 
   useEffect(() => {
     async function fetchAlbumAndSongs() {
@@ -86,6 +87,17 @@ export default function LandingCarousel() {
   
     fetchAlbumAndSongs();
   }, []);
+
+  useEffect(() => {
+    async function getButtonColour() {
+      const albumCoverURL = `${getBaseURL()}/image/${encodeURIComponent(album?.cover_url || "")}?raw=true`
+      const fac = new FastAverageColor();
+      const color = await fac.getColorAsync(albumCoverURL)
+      setButtonColor(color.hex);
+    }
+
+    getButtonColour()
+  })
 
   if (!album) return null;
 
@@ -121,7 +133,7 @@ export default function LandingCarousel() {
           <p className="text-base">{album.artist_object.name}</p>
         </Link>
         <Link href={`/album?id=${album.id}`}>
-          <Button className="mt-10 px-4 py-2 text-white rounded">
+          <Button className="mt-10 px-4 py-2 text-white rounded" style={{ backgroundColor: buttonColor }}>
             Play
             <Play className="ml-2 h-4 w-4" />
           </Button>

@@ -18,7 +18,7 @@ import {
   getSongsByGenres,
   setNowPlaying,
 } from "@music/sdk";
-import { Album, Artist, Genre, LibrarySong } from "@music/sdk/types";
+import { Album, Artist, Genre, LibrarySong, Song } from "@music/sdk/types";
 
 const isBrowser = typeof window !== "undefined";
 const audioElement = isBrowser ? new Audio() : null;
@@ -31,6 +31,8 @@ type PlayerContextType = {
   muted: boolean;
   currentTime: number;
   duration: number;
+  playedFromAlbum: boolean;
+  setPlayedFromAlbum: Function;
   togglePlayPause: Function;
   toggleLoopSong: Function;
   playNextSong: Function;
@@ -124,6 +126,7 @@ export function PlayerProvider({ children }: PlayerProviderProps) {
 
   const [isPlaying, setIsPlaying] = useState(false);
   const [queue, setQueueState] = useState<Queue[]>([]);
+  const [playedFromAlbum, setPlayedFromAlbum] = useState(false)
 
   const queueRef = useRef<Queue[]>([]);
 
@@ -200,16 +203,32 @@ export function PlayerProvider({ children }: PlayerProviderProps) {
   );
 
   const playNextSong = useCallback(async () => {
+    if (playedFromAlbum && album) {
+      let nextSongIndex = album.songs.findIndex(albumSong => String(albumSong.id) === String(song.id)) + 1;
+  
+      if (nextSongIndex >= album.songs.length) {
+        nextSongIndex = 0;
+      }
+  
+      const nextSong = album.songs[nextSongIndex];
+      if (nextSong) {
+        setSongCallback(nextSong, artist, album);
+        playAudioSource();
+        return;
+      }
+    }
+  
+  
     let nextSongIndex = currentSongIndex + 1;
     if (nextSongIndex >= queueRef.current.length) {
       nextSongIndex = 0;
     }
     setCurrentSongIndex(nextSongIndex);
     const next = queueRef.current[nextSongIndex];
-
+  
     if (next) {
       const { song: nextSong, artist: nextArtist, album: nextAlbum } = next;
-
+  
       if (nextSong) {
         setSongCallback(nextSong, nextArtist, nextAlbum);
         playAudioSource();
@@ -221,14 +240,14 @@ export function PlayerProvider({ children }: PlayerProviderProps) {
       } else if (song.album_object?.release_group_album?.genres) {
         songGenres = song.album_object.release_group_album.genres;
       }
-
+  
       let recommendedSong = null;
       for (let i = 0; i < songGenres.length; i++) {
         const genre = songGenres[i];
         if (genre?.name) {
           const recommendedSongs = await getSongsByGenres([genre.name]);
           const shuffledRecommendedSongs = [...recommendedSongs];
-
+  
           for (let i = shuffledRecommendedSongs.length - 1; i > 0; i--) {
             const j = Math.floor(Math.random() * (i + 1));
             [
@@ -236,18 +255,18 @@ export function PlayerProvider({ children }: PlayerProviderProps) {
               shuffledRecommendedSongs[j] as any,
             ] = [shuffledRecommendedSongs[j], shuffledRecommendedSongs[i]];
           }
-
+  
           for (let shuffledSong of shuffledRecommendedSongs) {
             if (shuffledSong.name !== song.name) {
               recommendedSong = await getSongInfo(shuffledSong.id);
               break;
             }
           }
-
+  
           if (recommendedSong) break;
         }
       }
-
+  
       if (recommendedSong) {
         const {
           artist_object: recommendedArtist,
@@ -274,9 +293,10 @@ export function PlayerProvider({ children }: PlayerProviderProps) {
     currentSongIndex,
     setSongCallback,
     playAudioSource,
-    song.album_object?.release_album?.genres,
-    song.album_object?.release_group_album?.genres,
-    song.name,
+    song,
+    album,
+    artist,
+    playedFromAlbum,
   ]);
 
   const playPreviousSong = useCallback(() => {
@@ -511,6 +531,8 @@ export function PlayerProvider({ children }: PlayerProviderProps) {
         togglePlayPause,
         toggleLoopSong,
         setAudioVolume,
+        playedFromAlbum,
+        setPlayedFromAlbum,
         handleTimeChange,
         handleTimeUpdate,
         toggleMute,

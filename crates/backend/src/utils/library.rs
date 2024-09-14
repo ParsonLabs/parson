@@ -1,4 +1,6 @@
 use std::error::Error;
+use std::fs::File;
+use std::io::Write;
 use std::sync::{Arc, Mutex};
 
 use audiotags::Tag;
@@ -77,60 +79,114 @@ files.par_iter().for_each(|entry| {
           library.last_mut().unwrap()
       };
 
-      let album_position = artist.albums.iter().position(|a| a.name == album_name_without_cd && a.id == hash_album(&album_name_without_cd.clone(), &artist_name));
-
-      let album = if let Some(album_position) = album_position {
-          &mut artist.albums[album_position]
-      } else {
-          let mut new_album = Album { id: hash_album(&album_name_without_cd.clone(), &artist_name), name: album_name_without_cd.clone(), songs: Vec::new(), cover_url: String::new(), primary_type: String::new(), description: String::new(), first_release_date: String::new(), musicbrainz_id: String::new(), wikidata_id: None, release_album: None, release_group_album: None };
-
-          new_album.songs.push(song.clone());
-
-          if let Some(parent_path) = path.parent() {
-              let mut cover_found = false;
-
-              for image_path in WalkDir::new(parent_path)
-                  .max_depth(1)
-                  .into_iter()
-                  .filter_map(|e| e.ok())
-                  .filter(|e| {
-                      e.file_type().is_file() &&
-                      matches!(e.path().extension().and_then(|s| s.to_str()), Some("jpg") | Some("jpeg") | Some("png") | Some("gif") | Some("bmp") | Some("ico") | Some("tif") | Some("tiff") | Some("webp"))
-                  }) {
-                  new_album.cover_url = image_path.path().to_str().unwrap().to_string();
-                  cover_found = true;
-                  break;
-              }
-          
-              // If no cover was found in the current directory, look in the parent directory
-
-              if !cover_found && parent_path.read_dir().unwrap().any(|e| {
-              if let Ok(entry) = e {
-                  let path = entry.path();
-                  let path_file_name = path.file_name().unwrap().to_str().unwrap();
-                  path.is_dir() && (path_file_name.starts_with("CD") || path_file_name.starts_with("Disc")|| path.file_name().unwrap() == "Covers")
-              } else {
-                  false
-              }}) {
-              if let Some(grandparent_path) = parent_path.parent() {
-                  for image_path in WalkDir::new(grandparent_path)
-                      .max_depth(1)
-                      .into_iter()
-                      .filter_map(|e| e.ok())
-                      .filter(|e| {
-                          e.file_type().is_file() &&
-                          matches!(e.path().extension().and_then(|s| s.to_str()), Some("jpg") | Some("jpeg") | Some("png") | Some("gif") | Some("bmp") | Some("ico") | Some("tif") | Some("tiff") | Some("webp"))
-                      }) {
-                      new_album.cover_url = image_path.path().to_str().unwrap().to_string();
-                      break;
-                  }
-              }
-          }}
-
-          artist.albums.push(new_album);
-          artist.albums.sort_by(|a, b| a.name.cmp(&b.name));
-          artist.albums.last_mut().unwrap()
-      };
+    let album_position = artist.albums.iter().position(|a| a.name == album_name_without_cd && a.id == hash_album(&album_name_without_cd.clone(), &artist_name));
+    
+    let album = if let Some(album_position) = album_position {
+        &mut artist.albums[album_position]
+    } else {
+        let mut new_album = Album {
+            id: hash_album(&album_name_without_cd.clone(), &artist_name),
+            name: album_name_without_cd.clone(),
+            songs: Vec::new(),
+            cover_url: String::new(),
+            primary_type: String::new(),
+            description: String::new(),
+            first_release_date: String::new(),
+            musicbrainz_id: String::new(),
+            wikidata_id: None,
+            release_album: None,
+            release_group_album: None,
+        };
+    
+        new_album.songs.push(song.clone());
+    
+        let mut cover_found = false;
+    
+        if let Ok(tag) = Tag::new().read_from_path(&path) {
+            if let Some(picture) = tag.album_cover() {
+                let cover_art_path = path.with_extension("jpg");
+                let mut file = File::create(&cover_art_path).unwrap();
+                file.write_all(picture.data).unwrap();
+                new_album.cover_url = cover_art_path.to_str().unwrap().to_string();
+                cover_found = true;
+            }
+        }
+    
+        // If no cover art found in metadata, check the current folder
+        if !cover_found {
+            if let Some(parent_path) = path.parent() {
+                for image_path in WalkDir::new(parent_path)
+                    .max_depth(1)
+                    .into_iter()
+                    .filter_map(|e| e.ok())
+                    .filter(|e| {
+                        e.file_type().is_file()
+                            && matches!(
+                                e.path().extension().and_then(|s| s.to_str()),
+                                Some("jpg")
+                                    | Some("jpeg")
+                                    | Some("png")
+                                    | Some("gif")
+                                    | Some("bmp")
+                                    | Some("ico")
+                                    | Some("tif")
+                                    | Some("tiff")
+                                    | Some("webp")
+                            )
+                    })
+                {
+                    new_album.cover_url = image_path.path().to_str().unwrap().to_string();
+                    cover_found = true;
+                    break;
+                }
+    
+                if !cover_found
+                    && parent_path.read_dir().unwrap().any(|e| {
+                        if let Ok(entry) = e {
+                            let path = entry.path();
+                            let path_file_name = path.file_name().unwrap().to_str().unwrap();
+                            path.is_dir()
+                                && (path_file_name.starts_with("CD")
+                                    || path_file_name.starts_with("Disc")
+                                    || path.file_name().unwrap() == "Covers")
+                        } else {
+                            false
+                        }
+                    })
+                {
+                    if let Some(grandparent_path) = parent_path.parent() {
+                        for image_path in WalkDir::new(grandparent_path)
+                            .max_depth(1)
+                            .into_iter()
+                            .filter_map(|e| e.ok())
+                            .filter(|e| {
+                                e.file_type().is_file()
+                                    && matches!(
+                                        e.path().extension().and_then(|s| s.to_str()),
+                                        Some("jpg")
+                                            | Some("jpeg")
+                                            | Some("png")
+                                            | Some("gif")
+                                            | Some("bmp")
+                                            | Some("ico")
+                                            | Some("tif")
+                                            | Some("tiff")
+                                            | Some("webp")
+                                    )
+                            })
+                        {
+                            new_album.cover_url = image_path.path().to_str().unwrap().to_string();
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+    
+        artist.albums.push(new_album);
+        artist.albums.sort_by(|a, b| a.name.cmp(&b.name));
+        artist.albums.last_mut().unwrap()
+    };
       
       album.songs.push(song);
       album.songs.sort_by(|a, b| a.track_number.cmp(&b.track_number));

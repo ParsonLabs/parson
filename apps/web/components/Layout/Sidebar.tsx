@@ -1,7 +1,7 @@
 "use client"
 
 import { Button } from "@music/ui/components/button";
-import { HistoryIcon, Home } from "lucide-react";
+import { HistoryIcon, Home, Compass, LibraryBig, Users } from "lucide-react";
 import Link from "next/link";
 import { ReactNode, useContext, useEffect, useState } from "react";
 import { LyricsContext } from "../Lyrics/LyricsOverlayContext";
@@ -42,10 +42,34 @@ export default function Sidebar({ children, sidebarContent }: SidebarProps) {
           </Link>
         </Button>
         <Button variant="ghost" asChild size={isOpen ? "default" : "icon"} className={`w-full flex items-center justify-start ${!isOpen && "h-12 w-12 flex-col items-center justify-center"}`}>
+          <Link href="/explore">
+            <div className={`flex ${isOpen ? "flex-row" : "flex-col"} items-center text-white text-semibold`} style={{ mixBlendMode: 'difference', pointerEvents: 'none' }}>
+              <Compass className={`h-6 w-6 ${isOpen && "mr-4"}`} />
+              <span className={`${"block mt-1"}`}>Explore</span>
+            </div>
+          </Link>
+        </Button>
+        <Button variant="ghost" asChild size={isOpen ? "default" : "icon"} className={`w-full flex items-center justify-start ${!isOpen && "h-12 w-12 flex-col items-center justify-center"}`}>
+          <Link href="/social">
+            <div className={`flex ${isOpen ? "flex-row" : "flex-col"} items-center text-white text-semibold`} style={{ mixBlendMode: 'difference', pointerEvents: 'none' }}>
+              <Users className={`h-6 w-6 ${isOpen && "mr-4"}`} />
+              <span className={`${"block mt-1"}`}>Social</span>
+            </div>
+          </Link>
+        </Button>
+        <Button variant="ghost" asChild size={isOpen ? "default" : "icon"} className={`w-full flex items-center justify-start ${!isOpen && "h-12 w-12 flex-col items-center justify-center"}`}>
           <Link href="/history">
             <div className={`flex ${isOpen ? "flex-row" : "flex-col"} items-center text-white text-semibold`} style={{ mixBlendMode: 'difference', pointerEvents: 'none' }}>
               <HistoryIcon className={`h-6 w-6 ${isOpen && "mr-4"}`} />
               <span className={`${"block mt-1"}`}>History</span>
+            </div>
+          </Link>
+        </Button>
+        <Button variant="ghost" asChild size={isOpen ? "default" : "icon"} className={`w-full flex items-center justify-start ${!isOpen && "h-12 w-12 flex-col items-center justify-center"}`}>
+          <Link href="/l">
+            <div className={`flex ${isOpen ? "flex-row" : "flex-col"} items-center text-white text-semibold`} style={{ mixBlendMode: 'difference', pointerEvents: 'none' }}>
+              <LibraryBig className={`h-6 w-6 ${isOpen && "mr-4"}`} />
+              <span className={`${"block mt-1"}`}>Library</span>
             </div>
           </Link>
         </Button>

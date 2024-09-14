@@ -17,7 +17,7 @@ function formatFollowers(followers: number): string {
   }
 }
 
-export default async function ArtistCard({ artist }: ArtistCardProps) {
+export default function ArtistCard({ artist }: ArtistCardProps) {
   const artistIconURL = artist.icon_url.length === 0 ? "/snf.png" : `${getBaseURL()}/image/${encodeURIComponent(artist.icon_url)}`
 
   return (

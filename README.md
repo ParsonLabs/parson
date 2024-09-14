@@ -17,14 +17,17 @@
 
 <p align="center">ParsonLabs Music is the Self Hosted Audio streaming alternative to YouTube Music, Spotify & Apple Music, providing Unrestricted Access to your library in Uncompressed, Lossless Quality</p>
 
+![home-w](https://github.com/user-attachments/assets/6e905e19-aca6-408e-a117-c077bf2be8e4)
+![explore-page](https://github.com/user-attachments/assets/dc913ca6-df90-40ea-9025-1180bb60655f)
+![library-showcase](https://github.com/user-attachments/assets/09974ffa-7ea6-483a-aaa8-0f86ffff078a)
+![music-album-md](https://github.com/user-attachments/assets/7c19b7db-f427-4864-899a-0cb42aa3ea82)
+![pfp-showcase](https://github.com/user-attachments/assets/a72c56f3-a5fa-4c07-9f99-045c9648a46a)
 ![genres-showcase](https://github.com/user-attachments/assets/9c85421f-a96a-42ae-9747-7efc23c6bd16)
 ![music-video-home](https://github.com/user-attachments/assets/398a49fd-a569-480f-89b5-0c57f73b526f)
 ![plm-complete](https://github.com/user-attachments/assets/b5b012e3-7e91-4a33-b932-a04d68d14aee)
 ![genre-selection](https://github.com/user-attachments/assets/e00e86f8-1bf5-4070-a2ab-f2fa79d0fcec)
-![home-plm](https://github.com/user-attachments/assets/996d0285-cf17-4e07-98fc-f6bf482308f1)
-![music-album-md](https://github.com/user-attachments/assets/7c19b7db-f427-4864-899a-0cb42aa3ea82)
-![pfp-showcase](https://github.com/user-attachments/assets/a72c56f3-a5fa-4c07-9f99-045c9648a46a)
 ![music-video](https://github.com/user-attachments/assets/3471f42f-e476-4069-ac9c-0b150332b950)
+![home-plm](https://github.com/user-attachments/assets/996d0285-cf17-4e07-98fc-f6bf482308f1)
 ![updated-lyrics](https://github.com/user-attachments/assets/ecbecfc3-4f97-4cfc-9127-f8479d235ab8)
 ![updated-artist](https://github.com/user-attachments/assets/b84e3dfe-5fe3-412c-b151-4c027ee23782)
 ![ArtistAlbumSearch](https://github.com/user-attachments/assets/87dfe43e-c5c3-4058-a6e7-4dbb2ab8f8c6)
@@ -123,23 +126,22 @@ sudo emerge --sync && sudo emerge --ask sqlite wget make gcc pkgconfig openssl n
 ```
 bun run build --filter music 
 ```
-### Build the Server
+### Run the Server
 ```
-cargo build --package music-server --release
+cargo run --package music-server --release -- -p 1993
 ```
 
 > [!TIP]
 > The authentication is handled by [JWT Tokens](https://jwt.io/)), they require a special `JWT_SECRET` in order to safely protect your accounts against third parties.
 > It is reccommended to `cp .env.example .env` and edit the `JWT_SECRET=` value to something secret, alternatively, you can use openssl to generate a random secret: `openssl rand -base64 48`.
 
-### Run ParsonLabs Music
-```
-cargo run --package music-server --release -p 1993
-```
-
 > [!NOTE]  
 > **Done! 🥳**.
 > Head to [http://localhost:1993/](http://localhost:1993/) and setup your music library.
 
 ## Documentation
-Any additional troubleshooting information can be found in the Documentation https://docs.parsonlabs.com.
+<p align="center">
+  Any additional troubleshooting information can be found in the Documentation https://docs.parsonlabs.com.
+</p>
+
+![documentation](https://github.com/user-attachments/assets/94dd3cda-0a4b-4536-82b9-9d341360b8e1)

@@ -26,3 +26,27 @@ pre-build = [
 pre-build = [
     "choco install nasm"
 ]
+
+[target.x86_64-unknown-linux-gnu]
+pre-build = [
+    "apt-get update",
+    "apt-get install -y nasm"
+]
+
+[target.aarch64-unknown-linux-gnu]
+pre-build = [
+    "apt-get update",
+    "apt-get install -y nasm"
+]
+
+[target.armv7-unknown-linux-gnueabihf]
+pre-build = [
+    "apt-get update",
+    "apt-get install -y nasm"
+]
+
+[target.arm-unknown-linux-gnueabihf]
+pre-build = [
+    "apt-get update",
+    "apt-get install -y nasm"
+]

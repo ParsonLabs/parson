@@ -15,8 +15,8 @@ export default function AlbumCard({ artist, album }: AlbumCardProps) {
   return (
     <div className="w-44 h-44">
       <Link href={`/album?id=${album.id}`}>
-        <Image src={albumCoverURL} alt={album.name + " Image"} height={256} width={256} className="rounded cursor-pointer transition-filter duration-300 hover:brightness-50" />
-        <p className="font-bold text-white overflow-hidden text-ellipsis" title={album.name}>{album.name}</p>
+        <Image src={albumCoverURL} alt={album.name + " Image"} height={256} width={256} className="rounded cursor-pointer transition-filter duration-300 hover:brightness-50 object-fill w-full h-full" />
+        <p className="mt-3 font-bold text-white overflow-hidden text-ellipsis" title={album.name}>{album.name}</p>
       </Link>
 
       <Link href={`/artist?id=${artist.id}`}>

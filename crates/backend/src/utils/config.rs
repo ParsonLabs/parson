@@ -13,14 +13,33 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use lazy_static::lazy_static;
 
 pub fn is_docker() -> bool {
-  if Path::new("/.dockerenv").exists() {
-      return true;
-  }
+    if Path::new("/.dockerenv").exists() {
+        return true;
+    }
 
-  match fs::read_to_string("/proc/self/cgroup") {
-      Ok(contents) => contents.contains("docker"),
-      Err(_) => false,
-  }
+    if let Ok(contents) = fs::read_to_string("/proc/self/cgroup") {
+        if contents.contains("docker") {
+            return true;
+        }
+    }
+
+    if let Ok(contents) = fs::read_to_string("/proc/1/cgroup") {
+        if contents.contains("containerd") || contents.contains("cri-o") {
+            return true;
+        }
+    }
+
+    if Path::new("/run/.containerenv").exists() {
+        return true;
+    }
+
+    if let Ok(contents) = fs::read_to_string("/proc/self/mountinfo") {
+        if contents.contains("/docker/") || contents.contains("/kubepods/") {
+            return true;
+        }
+    }
+
+    false
 }
 
 #[get("/get")]

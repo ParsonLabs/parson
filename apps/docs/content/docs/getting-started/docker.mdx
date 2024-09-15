@@ -28,7 +28,6 @@ In order to tell the container where your media is located, we can simply edit b
 <Callout title="Values to Edit">
   - `/path/to/config` - This is the path where all of the ParsonLabs Music data will be stored 
   - `/path/to/music` - This is the path to your music folder
-  - `JWT_SECRET` - This is the secret encoding password for authentication
 </Callout>
 
 
@@ -37,10 +36,8 @@ In order to tell the container where your media is located, we can simply edit b
 docker run -d \
   --name parsonlabs-music \
   -p 1993:1993 \
-  -p 7700:7700 \
   -v "/path/to/config:/ParsonLabsMusic" \
   -v "/path/to/music:/music" \
-  -e JWT_SECRET=your_auth_secret_here \
   --restart unless-stopped \
   ghcr.io/willkirkmanm/music
 ```
@@ -62,12 +59,9 @@ services:
     container_name: parsonlabs-music
     ports:
       - "1993:1993"
-      - "7700:7700"
     volumes:
       - "/path/to/config:/ParsonLabsMusic"
       - "/path/to/music:/music"
-    environment:
-      - JWT_SECRET=your_auth_secret_here
     restart: unless-stopped
 ```
 
@@ -81,12 +75,9 @@ services:
     container_name: parsonlabs-music
     ports:
       - "1993:1993"
-      - "7700:7700"
     volumes:
       - "/path/to/config:/ParsonLabsMusic"
       - "/path/to/music:/music"
-    environment:
-      - JWT_SECRET=your_auth_secret_here
     restart: unless-stopped
 ```
 
@@ -119,10 +110,8 @@ To deploy ParsonLabs Music using Podman, you can follow similar steps to Docker.
 podman run -d \
   --name parsonlabs-music \
   -p 1993:1993 \
-  -p 7700:7700 \
   -v "/path/to/config:/ParsonLabsMusic" \
   -v "/path/to/music:/music" \
-  -e JWT_SECRET=your_auth_secret_here \
   --restart unless-stopped \
   ghcr.io/willkirkmanm/music
 ```
@@ -150,7 +139,6 @@ podman-compose -f docker-compose-local.yml up -d
 ## Changing Ports
 <Callout title="What Ports do What?">
   - `1993:1993` - This port handles the server and website of ParsonLabs Music.
-  - `7700:7700` - This port deals with Meilisearch, the way we search through your library.
 </Callout>
 
 ### Changing Port Mappings
@@ -163,6 +151,33 @@ services:
     ...
     ports:
       - "9000:1993"
-      - "7700:7700"
+    ...
+```
+
+## Environment variables
+
+### JWT Secret
+The JWT Secret is used in authentication to sign and verify the JWT's that are recieved in the server are legitimate. Although Music randomly generates a JWT Secret everytime the server is restarted, it is possible to assign a custom secret through the environment variable `JWT_SECRET=`.
+
+For example, for `Docker run` through adding the `-e JWT_SECRET="your_super_secure_secret"`:
+```bash
+docker run -d \
+  --name parsonlabs-music \
+  ...
+  -e JWT_SECRET="your_super_secure_secret" \
+  --restart unless-stopped \
+  ghcr.io/willkirkmanm/music
+```
+
+Similarly for `docker-compose`:
+
+```yaml
+version: '3.8'
+
+services:
+  music-server:
+    ...
+    environment:
+      JWT_SECRET: "your_super_secure_secret"
     ...
 ```

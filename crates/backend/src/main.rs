@@ -12,7 +12,6 @@ use actix_web::{middleware, web, App, HttpServer};
 use actix_web_httpauth::middleware::HttpAuthentication;
 use routes::authentication::admin_guard;
 use routes::authentication::refresh;
-use routes::search::ensure_meilisearch_is_installed;
 use tokio::task;
 use tracing::{info, Level};
 use tracing_subscriber::FmtSubscriber;
@@ -133,10 +132,6 @@ async fn main() -> std::io::Result<()> {
     info!("Starting server on port {}", port); 
 
     task::spawn(async move {
-        if let Err(e) = ensure_meilisearch_is_installed().await {
-            eprintln!("Failed to ensure Meilisearch is installed: {}", e);
-        }
-    
         if !migrations_ran() {
             if let Err(e) = run_migrations() {
                 eprintln!("Failed to run migrations: {}", e);
@@ -201,7 +196,6 @@ async fn main() -> std::io::Result<()> {
             .configure(database::configure)
             .route("/{filename:.*}", web::get().to(serve_embedded_file))
     })
-    .workers(8)
     .bind(("0.0.0.0", port))?
     .run()
     .await

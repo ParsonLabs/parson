@@ -4,7 +4,7 @@ description: Deploy it Locally
 ---
 import { Callout } from 'fumadocs-ui/components/callout';
 import { File, Files, Folder } from "fumadocs-ui/components/files";
-import { Step, Steps } from "fumadocs-ui/components/steps"
+import { Step, Steps } from "fumadocs-ui/components/steps";
 
 <Steps>
   <Step>
@@ -36,7 +36,11 @@ import { Step, Steps } from "fumadocs-ui/components/steps"
     cargo run -p music-server --release
     ```
 
-    This will start music on port `3001`, to change the port, add the `--port` flag
+    This will start music on port `3001`, to change the port, add the `--port` flag like so:
+
+    ```bash
+    cargo run -p music-server --release -- --port 1993
+    ```
   </Step>
 </Steps>
 

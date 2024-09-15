@@ -1,23 +1,22 @@
-use dirs;
-use reqwest::get;
-use std::collections::HashSet;
 use std::error::Error;
-use std::{env, fs};
-use std::fs::File;
-use std::io::Write;
-#[cfg(unix)]
-use std::os::unix::fs::PermissionsExt;
+use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use std::sync::{Arc, Mutex};
 
 use actix_web::{delete, get, post, web, HttpResponse, Responder};
 use chrono::NaiveDateTime;
 use diesel::{ExpressionMethods, QueryDsl, RunQueryDsl};
-use meilisearch_sdk::client::Client;
-use meilisearch_sdk::settings::{Settings, TypoToleranceSettings};
+use dirs;
+use lazy_static::lazy_static;
+use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
+use serde_json::{self, from_str};
+use tantivy::collector::TopDocs;
+use tantivy::query::{FuzzyTermQuery, QueryParser};
+use tantivy::schema::{*, Term};
+use tantivy::{doc, Index, IndexWriter, ReloadPolicy};
+use tokio::task;
+use tracing::error;
 
 use crate::routes::album::fetch_album_info;
 use crate::routes::artist::fetch_artist_info;
@@ -34,7 +33,6 @@ pub struct CombinedItem {
     pub id: String,
     pub description: Option<String>,
     pub acronym: String,
-    pub generated_id: Uuid,
 }
 
 fn extract_acronym(name: &str) -> String {
@@ -55,76 +53,134 @@ fn extract_acronym(name: &str) -> String {
     }
 }
 
-pub async fn populate_search_data() -> Result<Vec<CombinedItem>, Box<dyn Error + Send + Sync>> {
+lazy_static! {
+    static ref TEMP_DIR_PATH: Arc<Mutex<Option<PathBuf>>> = Arc::new(Mutex::new(None));
+}
+
+pub fn get_tantivy_index_path() -> PathBuf {
+    let path = if is_docker() {
+        Path::new("/ParsonLabsMusic/Search").to_path_buf()
+    } else {
+        let mut path = dirs::data_local_dir().unwrap_or_else(|| PathBuf::from("."));
+        path.push("ParsonLabs");
+        path.push("Music");
+        path.push("Search");
+        path
+    };
+
+    if let Err(e) = fs::create_dir_all(&path) {
+        eprintln!("Failed to create directories: {}", e);
+    }
+
+    path
+}
+
+pub async fn populate_search_data() -> Result<Vec<CombinedItem>, Box<dyn std::error::Error + Send + Sync>> {
     let config = match get_config().await {
         Ok(config) => config,
         Err(_e) => {
-            let no_config = "Meilisearch could not populate the search data! This is expected if the library has not been indexed yet or music.json file is not present.";
+            let no_config = "Tantivy could not populate the search data! This is expected if the library has not been indexed yet or music.json file is not present.";
+            error!("{}", no_config);
             return Err(no_config.to_string().into());
         }
     };
 
-    let library: Vec<Artist> = serde_json::from_str(&config)?;
+    let library: Vec<Artist> = from_str(&config)?;
 
-    let generated_ids = Arc::new(Mutex::new(HashSet::new()));
+    let index_path = get_tantivy_index_path();
 
-    let unique_uuid = |generated_ids: &Arc<Mutex<HashSet<Uuid>>>| -> Uuid {
-        let mut id;
-        loop {
-            id = Uuid::new_v4();
-            let mut ids = generated_ids.lock().unwrap();
-            if !ids.contains(&id) {
-                ids.insert(id);
-                break;
-            }
-        }
-        id
-    };
+    if index_path.exists() {
+        std::fs::remove_dir_all(&index_path)?;
+    }
 
-    let client = Client::new("http://127.0.0.1:7700", None::<&str>)?;
-    let index = client.index("library");
+    if let Err(e) = fs::create_dir_all(&index_path) {
+        error!("Failed to create index directory: {}", e);
+        return Err(format!("Failed to create index directory: {}", e).into());
+    }
 
-    index.delete_all_documents().await?;
+    {
+        let mut temp_dir_path = TEMP_DIR_PATH.lock().unwrap();
+        *temp_dir_path = Some(index_path.clone());
+    }
+
+    let mut schema_builder = Schema::builder();
+    schema_builder.add_text_field("item_type", TEXT | STORED);
+    schema_builder.add_text_field("name", TEXT | STORED);
+    schema_builder.add_text_field("id", TEXT | STORED);
+    schema_builder.add_text_field("description", TEXT | STORED);
+    schema_builder.add_text_field("acronym", TEXT | STORED);
+    let schema = schema_builder.build();
+
+    let index = Index::create_in_dir(&index_path, schema.clone())?;
+
+    let mut index_writer: IndexWriter = index.writer(100_000_000)?;
 
     let mut combined_items = Vec::new();
 
     for artist in library {
-        let artist_id = unique_uuid(&generated_ids);
+        let artist_doc = doc!(
+            schema.get_field("item_type").unwrap() => "artist",
+            schema.get_field("name").unwrap() => artist.name.clone(),
+            schema.get_field("id").unwrap() => artist.id.clone(),
+            schema.get_field("description").unwrap() => artist.description.clone(),
+            schema.get_field("acronym").unwrap() => extract_acronym(&artist.name),
+        );
+        index_writer.add_document(artist_doc)?;
+
         combined_items.push(CombinedItem {
             item_type: "artist".to_string(),
             name: artist.name.clone(),
             id: artist.id.clone(),
             description: Some(artist.description),
             acronym: extract_acronym(&artist.name),
-            generated_id: artist_id,
         });
 
         for album in &artist.albums {
-            let album_id = unique_uuid(&generated_ids);
+            let album_doc = doc!(
+                schema.get_field("item_type").unwrap() => "album",
+                schema.get_field("name").unwrap() => album.name.clone(),
+                schema.get_field("id").unwrap() => album.id.clone(),
+                schema.get_field("description").unwrap() => album.description.clone(),
+                schema.get_field("acronym").unwrap() => extract_acronym(&album.name),
+            );
+            index_writer.add_document(album_doc)?;
+
             combined_items.push(CombinedItem {
                 item_type: "album".to_string(),
                 name: album.name.clone(),
                 id: album.id.clone(),
                 description: Some(album.description.clone()),
                 acronym: extract_acronym(&album.name),
-                generated_id: album_id,
             });
 
             for song in &album.songs {
-                let song_id = unique_uuid(&generated_ids);
+                let song_doc = doc!(
+                    schema.get_field("item_type").unwrap() => "song",
+                    schema.get_field("name").unwrap() => song.name.clone(),
+                    schema.get_field("id").unwrap() => song.id.clone(),
+                    schema.get_field("description").unwrap() => "",
+                    schema.get_field("acronym").unwrap() => extract_acronym(&song.name),
+                );
+                index_writer.add_document(song_doc)?;
+
                 combined_items.push(CombinedItem {
                     item_type: "song".to_string(),
                     name: song.name.clone(),
                     id: song.id.clone(),
                     description: None,
                     acronym: extract_acronym(&song.name),
-                    generated_id: song_id,
                 });
             }
         }
     }
 
-    index.add_documents(&combined_items, Some("generated_id")).await?;
+    index_writer.commit()?;
+
+    let meta_path = index_path.join("meta.json");
+    if !meta_path.exists() {
+        error!("Index metadata file does not exist after commit at {:?}", meta_path);
+        return Err("Index metadata file does not exist after commit".into());
+    }
 
     Ok(combined_items)
 }
@@ -133,7 +189,10 @@ pub async fn populate_search_data() -> Result<Vec<CombinedItem>, Box<dyn Error +
 async fn populate_search() -> HttpResponse {
     match populate_search_data().await {
         Ok(combined_items) => HttpResponse::Ok().json(combined_items),
-        Err(_) => HttpResponse::InternalServerError().finish(),
+        Err(e) => {
+            error!("Failed to populate search data: {:?}", e);
+            HttpResponse::InternalServerError().body(format!("Failed to populate search data: {:?}", e))
+        }
     }
 }
 
@@ -142,7 +201,7 @@ struct SearchQuery {
     q: String,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 struct ArtistInfo {
     id: String,
     name: String,
@@ -151,7 +210,7 @@ struct ArtistInfo {
     description: String,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 struct AlbumInfo {
     id: String,
     name: String,
@@ -160,14 +219,14 @@ struct AlbumInfo {
     description: String,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 struct SongInfo {
     id: String,
     name: String,
     duration: f64,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 struct ResponseCombinedItem {
     item_type: String,
     name: String,
@@ -181,116 +240,183 @@ struct ResponseCombinedItem {
 
 #[get("/library")]
 async fn search_fn(query: web::Query<SearchQuery>) -> HttpResponse {
-    let client = Client::new("http://localhost:7700", None::<&str>).unwrap();
-    let index = client.index("library");
-
-    // Set sortable attributes
-    let settings = Settings::new().with_sortable_attributes(&["name"]);
-    if let Err(e) = index.set_settings(&settings).await {
-        return HttpResponse::InternalServerError().body(format!("Failed to set settings: {:?}", e));
-    }
-
-    let typo_tolerance = TypoToleranceSettings {
-        enabled: Some(true),
-        disable_on_attributes: None,
-        disable_on_words: None,
-        min_word_size_for_typos: None,
+    let index_path: PathBuf = {
+        let temp_dir_path = TEMP_DIR_PATH.lock().unwrap();
+        match &*temp_dir_path {
+            Some(path) => path.clone(),
+            None => {
+                error!("TempDir path is not set");
+                return HttpResponse::InternalServerError().body("TempDir path is not set");
+            }
+        }
     };
 
-    if let Err(e) = index.set_typo_tolerance(&typo_tolerance).await {
-        return HttpResponse::InternalServerError().body(format!("Failed to set typo tolerance: {:?}", e));
-    }
-
-    match index.search()
-        .with_query(&query.q)
-        .with_sort(&["name:asc"])
-        .execute::<CombinedItem>()
-        .await
-    {
-        Ok(search_results) => {
-            let hits_futures: Vec<_> = search_results.hits.into_iter().map(|result| {
-                async move {
-                    let song_object = if result.result.item_type == "song" {
-                        fetch_song_info(result.result.id.clone()).await.ok()
-                    } else {
-                        None
-                    };
-                    let album_object = if result.result.item_type == "album" {
-                        fetch_album_info(result.result.id.clone()).await.ok()
-                    } else {
-                        None
-                    };
-                    let artist_object = if result.result.item_type == "artist" {
-                        fetch_artist_info(result.result.id.clone()).await.ok()
-                    } else {
-                        None
-                    };
-                    
-                    ResponseCombinedItem {
-                        item_type: result.result.item_type.clone(),
-                        name: result.result.name,
-                        id: result.result.id,
-                        description: result.result.description,
-                        acronym: result.result.acronym,
-                        artist_object: if result.result.item_type == "song" {
-                            song_object.as_ref().map(|song| ArtistInfo {
-                                id: song.artist_object.id.clone(),
-                                name: song.artist_object.name.clone(),
-                                icon_url: song.artist_object.icon_url.clone(),
-                                followers: song.artist_object.followers,
-                                description: song.artist_object.description.clone(),
-                            })
-                        } else if result.result.item_type == "album" {
-                            album_object.as_ref().map(|album| ArtistInfo {
-                                id: album.artist_object.id.clone(),
-                                name: album.artist_object.name.clone(),
-                                icon_url: album.artist_object.icon_url.clone(),
-                                followers: album.artist_object.followers,
-                                description: album.artist_object.description.clone(),
-                            })
-                        } else if result.result.item_type == "artist" {
-                            artist_object.as_ref().map(|artist| ArtistInfo {
-                                id: artist.id.clone(),
-                                name: artist.name.clone(),
-                                icon_url: artist.icon_url.clone(),
-                                followers: artist.followers,
-                                description: artist.description.clone(),
-                            })
-                        } else {
-                            None
-                        },
-                        album_object: if result.result.item_type == "song" {
-                            song_object.as_ref().map(|song| AlbumInfo {
-                                id: song.album_object.id.clone(),
-                                name: song.album_object.name.clone(),
-                                cover_url: song.album_object.cover_url.clone(),
-                                first_release_date: song.album_object.first_release_date.clone(),
-                                description: song.album_object.description.clone(),
-                            })
-                        } else {
-                            album_object.as_ref().map(|album| AlbumInfo {
-                                id: album.id.clone(),
-                                name: album.name.clone(),
-                                cover_url: album.cover_url.clone(),
-                                first_release_date: album.first_release_date.clone(),
-                                description: album.description.clone(),
-                            })
-                        },
-                        song_object: song_object.as_ref().map(|song| SongInfo {
-                            id: song.id.clone(),
-                            name: song.name.clone(),
-                            duration: song.duration,
-                        }),
-                    }
-                }
-            }).collect();
-
-            let hits: Vec<ResponseCombinedItem> = futures::future::join_all(hits_futures).await;
-
-            HttpResponse::Ok().json(hits)
+    if !index_path.exists() {
+        if let Err(e) = std::fs::create_dir_all(&index_path) {
+            error!("Failed to create directory: {:?}", e);
+            return HttpResponse::InternalServerError().body(format!("Failed to create directory: {:?}", e));
         }
-        Err(e) => HttpResponse::InternalServerError().body(format!("Search failed: {:?}", e)),
     }
+
+    let meta_path = index_path.join("meta.json");
+    if !meta_path.exists() {
+        error!("Index metadata file does not exist at {:?}", meta_path);
+        return HttpResponse::InternalServerError().body("Index metadata file does not exist");
+    }
+
+    let mut schema_builder = Schema::builder();
+    schema_builder.add_text_field("item_type", TEXT | STORED);
+    schema_builder.add_text_field("name", TEXT | STORED);
+    schema_builder.add_text_field("id", TEXT | STORED);
+    schema_builder.add_text_field("description", TEXT | STORED);
+    schema_builder.add_text_field("acronym", TEXT | STORED);
+    let schema = schema_builder.build();
+
+    let index = match Index::open_in_dir(&index_path) {
+        Ok(index) => index,
+        Err(e) => {
+            error!("Failed to open index: {:?}", e);
+            return HttpResponse::InternalServerError().body(format!("Failed to open index: {:?}", e));
+        }
+    };
+
+    let reader = match index.reader_builder().reload_policy(ReloadPolicy::OnCommitWithDelay).try_into() {
+        Ok(reader) => reader,
+        Err(e) => {
+            error!("Failed to create reader: {:?}", e);
+            return HttpResponse::InternalServerError().body(format!("Failed to create reader: {:?}", e));
+        }
+    };
+
+    let searcher = reader.searcher();
+
+    let query_parser = QueryParser::for_index(&index, vec![
+        schema.get_field("name").unwrap(),
+        schema.get_field("description").unwrap(),
+    ]);
+
+    let parsed_query = match query_parser.parse_query(&query.q) {
+        Ok(parsed_query) => parsed_query,
+        Err(e) => {
+            error!("Failed to parse query: {:?}", e);
+            return HttpResponse::BadRequest().body(format!("Failed to parse query: {:?}", e));
+        }
+    };
+
+    let top_docs = match searcher.search(&parsed_query, &TopDocs::with_limit(10)) {
+        Ok(top_docs) => top_docs,
+        Err(e) => {
+            error!("Search failed: {:?}", e);
+            return HttpResponse::InternalServerError().body(format!("Search failed: {:?}", e));
+        }
+    };
+
+    let fuzzy_query = FuzzyTermQuery::new(
+        Term::from_field_text(schema.get_field("name").unwrap(), &query.q),
+        2,
+        true,
+    );
+
+    let fuzzy_top_docs = match searcher.search(&fuzzy_query, &TopDocs::with_limit(10)) {
+        Ok(fuzzy_top_docs) => fuzzy_top_docs,
+        Err(e) => {
+            error!("Fuzzy search failed: {:?}", e);
+            return HttpResponse::InternalServerError().body(format!("Fuzzy search failed: {:?}", e));
+        }
+    };
+
+    let combined_top_docs = top_docs.into_iter().chain(fuzzy_top_docs.into_iter()).collect::<Vec<_>>();
+
+    let hits: Vec<ResponseCombinedItem> = task::spawn_blocking(move || {
+        combined_top_docs.into_par_iter().map(|(_score, doc_address)| {
+            let searcher = searcher.clone();
+            let schema = schema.clone();
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            rt.block_on(async move {
+                let retrieved_doc: tantivy::TantivyDocument = searcher.doc(doc_address).unwrap();
+                let item_type = retrieved_doc.get_first(schema.get_field("item_type").unwrap()).unwrap().as_str().unwrap().to_string();
+                let name = retrieved_doc.get_first(schema.get_field("name").unwrap()).unwrap().as_str().unwrap().to_string();
+                let id = retrieved_doc.get_first(schema.get_field("id").unwrap()).unwrap().as_str().unwrap().to_string();
+                let description = retrieved_doc.get_first(schema.get_field("description").unwrap()).map(|f| f.as_str().unwrap().to_string());
+                let acronym = retrieved_doc.get_first(schema.get_field("acronym").unwrap()).unwrap().as_str().unwrap().to_string();
+
+                let song_object = if item_type == "song" {
+                    fetch_song_info(id.clone()).await.ok()
+                } else {
+                    None
+                };
+                let album_object = if item_type == "album" {
+                    fetch_album_info(id.clone()).await.ok()
+                } else {
+                    None
+                };
+                let artist_object = if item_type == "artist" {
+                    fetch_artist_info(id.clone()).await.ok()
+                } else {
+                    None
+                };
+
+                ResponseCombinedItem {
+                    item_type: item_type.clone(),
+                    name,
+                    id,
+                    description,
+                    acronym,
+                    artist_object: if item_type == "song" {
+                        song_object.as_ref().map(|song| ArtistInfo {
+                            id: song.artist_object.id.clone(),
+                            name: song.artist_object.name.clone(),
+                            icon_url: song.artist_object.icon_url.clone(),
+                            followers: song.artist_object.followers,
+                            description: song.artist_object.description.clone(),
+                        })
+                    } else if item_type == "album" {
+                        album_object.as_ref().map(|album| ArtistInfo {
+                            id: album.artist_object.id.clone(),
+                            name: album.artist_object.name.clone(),
+                            icon_url: album.artist_object.icon_url.clone(),
+                            followers: album.artist_object.followers,
+                            description: album.artist_object.description.clone(),
+                        })
+                    } else if item_type == "artist" {
+                        artist_object.as_ref().map(|artist| ArtistInfo {
+                            id: artist.id.clone(),
+                            name: artist.name.clone(),
+                            icon_url: artist.icon_url.clone(),
+                            followers: artist.followers,
+                            description: artist.description.clone(),
+                        })
+                    } else {
+                        None
+                    },
+                    album_object: if item_type == "song" {
+                        song_object.as_ref().map(|song| AlbumInfo {
+                            id: song.album_object.id.clone(),
+                            name: song.album_object.name.clone(),
+                            cover_url: song.album_object.cover_url.clone(),
+                            first_release_date: song.album_object.first_release_date.clone(),
+                            description: song.album_object.description.clone(),
+                        })
+                    } else {
+                        album_object.as_ref().map(|album| AlbumInfo {
+                            id: album.id.clone(),
+                            name: album.name.clone(),
+                            cover_url: album.cover_url.clone(),
+                            first_release_date: album.first_release_date.clone(),
+                            description: album.description.clone(),
+                        })
+                    },
+                    song_object: song_object.as_ref().map(|song| SongInfo {
+                        id: song.id.clone(),
+                        name: song.name.clone(),
+                        duration: song.duration,
+                    }),
+                }
+            })
+        }).collect::<Vec<_>>()
+    }).await.unwrap();
+
+    HttpResponse::Ok().json(hits)
 }
 
 #[derive(Deserialize)]
@@ -378,144 +504,4 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
             .service(get_last_searched_queries)
             .service(populate_search)
     );
-}
-
-pub fn get_meilisearch_path() -> PathBuf {
-    let path = if is_docker() {
-        Path::new("/ParsonLabsMusic/Meilisearch").to_path_buf()
-    } else {
-        let mut path = dirs::data_local_dir().unwrap_or_else(|| PathBuf::from("."));
-        path.push("ParsonLabs");
-        path.push("Music");
-        path.push("Meilisearch");
-        path
-    };
-
-    if let Err(e) = fs::create_dir_all(&path) {
-        eprintln!("Failed to create directories: {}", e);
-    }
-
-    path
-}
-
-pub async fn ensure_meilisearch_is_installed() -> Result<(), Box<dyn std::error::Error>> {
-    let base_dir = get_meilisearch_path();
-    let (meilisearch_binary, url) = match std::env::consts::OS {
-        "windows" => (
-            base_dir.join("meilisearch-windows-amd64.exe"),
-            "https://github.com/meilisearch/meilisearch/releases/latest/download/meilisearch-windows-amd64.exe",
-        ),
-        "macos" => {
-            if std::env::consts::ARCH == "aarch64" {
-                (
-                    base_dir.join("meilisearch-macos-apple-silicon"),
-                    "https://github.com/meilisearch/meilisearch/releases/latest/download/meilisearch-macos-apple-silicon",
-                )
-            } else {
-                (
-                    base_dir.join("meilisearch-macos-amd64"),
-                    "https://github.com/meilisearch/meilisearch/releases/latest/download/meilisearch-macos-amd64",
-                )
-            }
-        }
-        "linux" => {
-            if std::env::consts::ARCH == "aarch64" {
-                (
-                    base_dir.join("meilisearch-linux-aarch64"),
-                    "https://github.com/meilisearch/meilisearch/releases/latest/download/meilisearch-linux-aarch64",
-                )
-            } else {
-                (
-                    base_dir.join("meilisearch-linux-amd64"),
-                    "https://github.com/meilisearch/meilisearch/releases/latest/download/meilisearch-linux-amd64",
-                )
-            }
-        }
-        _ => {
-            eprintln!("Unsupported platform");
-            return Err("Unsupported platform".into());
-        }
-    };
-
-    if !meilisearch_binary.exists() {
-        println!("Downloading Meilisearch from {}...", url);
-        download_file(url, &meilisearch_binary).await?;
-
-        #[cfg(unix)]
-        {
-            let mut perms = fs::metadata(&meilisearch_binary)?.permissions();
-            perms.set_mode(0o755); // rwxr-xr-x
-            fs::set_permissions(&meilisearch_binary, perms)?;
-        }
-    }
-
-    run_meilisearch(&meilisearch_binary).await;
-    Ok(())
-}
-
-async fn download_file(url: &str, dest: &Path) -> Result<(), Box<dyn std::error::Error>> {
-    println!("Starting download from {}", url);
-
-    let response = match get(url).await {
-        Ok(resp) => resp,
-        Err(e) => {
-            eprintln!("Failed to send request: {} ({:?})", e, e);
-            return Err(Box::new(e));
-        }
-    };
-
-    if !response.status().is_success() {
-        let status = response.status();
-        eprintln!("Failed to download file: HTTP {}", status);
-        return Err(format!("Failed to download file: HTTP {}", status).into());
-    }
-
-    let bytes = match response.bytes().await {
-        Ok(b) => b,
-        Err(e) => {
-            eprintln!("Failed to read response bytes: {} ({:?})", e, e);
-            return Err(Box::new(e));
-        }
-    };
-
-    let mut file = match File::create(dest) {
-        Ok(f) => f,
-        Err(e) => {
-            eprintln!("Failed to create file: {} ({:?})", e, e);
-            return Err(Box::new(e));
-        }
-    };
-
-    if let Err(e) = file.write_all(&bytes) {
-        eprintln!("Failed to write to file: {} ({:?})", e, e);
-        return Err(Box::new(e));
-    }
-
-    println!("Download completed successfully");
-    Ok(())
-}
-
-async fn run_meilisearch(meilisearch_binary: &Path) {
-    let base_dir = get_meilisearch_path();
-
-    let original_dir = match env::current_dir() {
-        Ok(dir) => dir,
-        Err(e) => {
-            eprintln!("Failed to get current directory: {}", e);
-            return;
-        }
-    };
-
-    if let Err(e) = env::set_current_dir(&base_dir) {
-        eprintln!("Failed to change directory to Meilisearch path: {}", e);
-        return;
-    }
-
-    if let Err(e) = Command::new(meilisearch_binary).spawn() {
-        eprintln!("Failed to run Meilisearch: {}", e);
-    }
-
-    if let Err(e) = env::set_current_dir(&original_dir) {
-        eprintln!("Failed to restore original directory: {}", e);
-    }
 }

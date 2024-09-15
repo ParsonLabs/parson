@@ -52,10 +52,8 @@
 docker run -d \
   --name parsonlabs-music \
   -p 1993:1993 \
-  -p 7700:7700 \
   -v "/path/to/config:/ParsonLabsMusic" \
   -v "/path/to/music:/music" \
-  -e JWT_SECRET=your_auth_secret_here \
   --restart unless-stopped \
   ghcr.io/willkirkmanm/music
 ```
@@ -68,12 +66,9 @@ services:
     container_name: parsonlabs-music
     ports:
       - "1993:1993"
-      - "7700:7700"
     volumes:
       - "/path/to/config:/ParsonLabsMusic"
       - "/path/to/music:/music"
-    environment:
-      - JWT_SECRET=your_auth_secret_here
     restart: unless-stopped
 ```
 
@@ -81,15 +76,15 @@ services:
 
 You can download the precompiled binaries from the [releases page](https://github.com/WillKirkmanM/music/releases).
 
-- [Windows (x86_64)](https://github.com/WillKirkmanM/music/releases/download/v1.3.0-alpha/music-server-x86_64-pc-windows-gnu.zip)
-- [Linux (x86_64)](https://github.com/WillKirkmanM/music/releases/download/v1.3.0-alpha/music-server-x86_64-unknown-linux-gnu.tar.gz)
-- [Linux (x86_64 MUSL)](https://github.com/WillKirkmanM/music/releases/download/v1.3.0-alpha/music-server-x86_64-unknown-linux-musl.tar.gz)
-- [Linux (ARMv7 gnueabihf)](https://github.com/WillKirkmanM/music/releases/download/v1.3.0-alpha/music-server-armv7-unknown-linux-gnueabihf.tar.gz)
-- [Linux (ARMv7 MUSL)](https://github.com/WillKirkmanM/music/releases/download/v1.2.0-alpha/music-server-armv7-unknown-linux-musleabihf.tar.gz)
-- [Linux (ARM gnueabihf)](https://github.com/WillKirkmanM/music/releases/download/v1.3.0-alpha/music-server-arm-unknown-linux-gnueabihf.tar.gz)
-- [Linux (ARM MUSL)](https://github.com/WillKirkmanM/music/releases/download/v1.3.0-alpha/music-server-arm-unknown-linux-musleabihf.tar.gz)
-- [Linux (ARM64)](https://github.com/WillKirkmanM/music/releases/download/v1.3.0-alpha/music-server-aarch64-unknown-linux-gnu.tar.gz)
-- [Linux (ARM64 MUSL)](https://github.com/WillKirkmanM/music/releases/download/v1.3.0-alpha/music-server-aarch64-unknown-linux-musl.tar.gz)
+- [Windows (x86_64)](https://github.com/WillKirkmanM/music/releases/download/v1.6.0-alpha/music-server-x86_64-pc-windows-gnu.zip)
+- [Linux (x86_64)](https://github.com/WillKirkmanM/music/releases/download/v1.6.0-alpha/music-server-x86_64-unknown-linux-gnu.tar.gz)
+- [Linux (x86_64 MUSL)](https://github.com/WillKirkmanM/music/releases/download/v1.6.0-alpha/music-server-x86_64-unknown-linux-musl.tar.gz)
+- [Linux (ARMv7 gnueabihf)](https://github.com/WillKirkmanM/music/releases/download/v1.6.0-alpha/music-server-armv7-unknown-linux-gnueabihf.tar.gz)
+- [Linux (ARMv7 MUSL)](https://github.com/WillKirkmanM/music/releases/download/v1.6.0-alpha/music-server-armv7-unknown-linux-musleabihf.tar.gz)
+- [Linux (ARM gnueabihf)](https://github.com/WillKirkmanM/music/releases/download/v1.6.0-alpha/music-server-arm-unknown-linux-gnueabihf.tar.gz)
+- [Linux (ARM MUSL)](https://github.com/WillKirkmanM/music/releases/download/v1.6.0-alpha/music-server-arm-unknown-linux-musleabihf.tar.gz)
+- [Linux (ARM64)](https://github.com/WillKirkmanM/music/releases/download/v1.6.0-alpha/music-server-aarch64-unknown-linux-gnu.tar.gz)
+- [Linux (ARM64 MUSL)](https://github.com/WillKirkmanM/music/releases/download/v1.6.0-alpha/music-server-aarch64-unknown-linux-musl.tar.gz)
 
 ### Compile From Source
 
@@ -130,10 +125,6 @@ bun run build --filter music
 ```
 cargo run --package music-server --release -- -p 1993
 ```
-
-> [!TIP]
-> The authentication is handled by [JWT Tokens](https://jwt.io/)), they require a special `JWT_SECRET` in order to safely protect your accounts against third parties.
-> It is reccommended to `cp .env.example .env` and edit the `JWT_SECRET=` value to something secret, alternatively, you can use openssl to generate a random secret: `openssl rand -base64 48`.
 
 > [!NOTE]  
 > **Done! 🥳**.

@@ -1,13 +1,16 @@
 use std::path::PathBuf;
+use std::sync::Mutex;
 use std::{env, error::Error, fs, path::Path};
 
 use actix_web::web::{self, Json};
 use actix_web::{get, Responder};
 use dotenvy::dotenv;
+use rand::distributions::Alphanumeric;
+use rand::Rng;
 use serde_json::{json, Value};
 use tokio::fs::File;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tracing::error;
+use lazy_static::lazy_static;
 
 pub fn is_docker() -> bool {
   if Path::new("/.dockerenv").exists() {
@@ -155,7 +158,11 @@ pub fn get_profile_picture_path() -> PathBuf {
     path
 }
 
-pub fn get_jwt_secret() -> String {
+lazy_static! {
+    static ref JWT_SECRET: Mutex<String> = Mutex::new(generate_jwt_secret());
+}
+
+fn generate_jwt_secret() -> String {
     dotenv().ok();
 
     if let Ok(secret) = env::var("JWT_SECRET") {
@@ -174,7 +181,15 @@ pub fn get_jwt_secret() -> String {
         }
     }
 
-    error!("A JWT Secret was not found! It is highly recommended to set it using -s or --jwt-secret or the JWT_SECRET environment variable.");
+    let secure_secret: String = rand::thread_rng()
+        .sample_iter(&Alphanumeric)
+        .take(64)
+        .map(char::from)
+        .collect();
 
-    "secret".to_string()
+    secure_secret
+}
+
+pub fn get_jwt_secret() -> String {
+    JWT_SECRET.lock().unwrap().clone()
 }

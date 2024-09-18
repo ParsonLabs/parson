@@ -6,6 +6,7 @@ import Image from "next/image";
 import { useContext, useEffect, useRef, useState } from "react";
 import { usePlayer } from "../Music/Player/usePlayer";
 import { LyricsContext } from "./LyricsOverlayContext";
+import { useReverb } from "../Providers/SlowedReverbProvider";
 
 type QueuePanelProps = {
   children: React.ReactNode;
@@ -23,7 +24,7 @@ export interface LyricsObjectResponse {
   syncedLyrics?: string;
 }
 
-const parseLyrics = (lyrics: string) => {
+const parseLyrics = (lyrics: string, slowdownFactor: number = 1) => {
   return lyrics.split("\n").map((line) => {
     const time = line.substring(line.indexOf("[") + 1, line.indexOf("]"));
     const text = line.substring(line.indexOf("]") + 1).trim();
@@ -43,7 +44,7 @@ const parseLyrics = (lyrics: string) => {
       }
     }
 
-    const timeInSeconds = minutes * 60 + seconds + hundredths / 100;
+    const timeInSeconds = (minutes * 60 + seconds + hundredths / 100) * slowdownFactor;
     return { time: timeInSeconds, text };
   });
 };
@@ -57,11 +58,10 @@ export default function LyricsOverlay({ children }: QueuePanelProps) {
   const [currentLyricIndex, setCurrentLyricIndex] = useState(-1);
   const [isUserScrolling, setIsUserScrolling] = useState(false);
   const lyricsRef = useRef<HTMLDivElement>(null);
-  const [scrollTimeoutID, setScrollTimeoutID] = useState<NodeJS.Timeout | null>(
-    null
-  );
+  const [scrollTimeoutID, setScrollTimeoutID] = useState<NodeJS.Timeout | null>(null);
   const [backgroundColour, setBackgroundColour] = useState("");
   const [noLyricMessage, setNoLyricMessage] = useState("");
+  const { reverb } = useReverb()
 
   useEffect(() => {
     if (imageSrc) {
@@ -117,18 +117,19 @@ export default function LyricsOverlay({ children }: QueuePanelProps) {
         );
         const data: LyricsObjectResponse[] = await response.json();
         setCurrentLyrics(data[0]?.plainLyrics ?? "")
+        const slowdownFactor = reverb ?  1/0.7 : 1;
         if (data[0]?.syncedLyrics) {
-          setLyrics(parseLyrics(data[0].syncedLyrics));
+          setLyrics(parseLyrics(data[0].syncedLyrics, slowdownFactor));
           setIsSyncedLyrics(true);
         } else if (data[0]?.plainLyrics) {
-          setLyrics(parseLyrics(data[0].plainLyrics));
+          setLyrics(parseLyrics(data[0].plainLyrics, slowdownFactor));
           setIsSyncedLyrics(false);
         }
       }
     };
 
     fetchLyrics();
-  }, [song, setCurrentLyrics]);
+  }, [song, setCurrentLyrics, reverb]);
 
   useEffect(() => {
     let animationFrameId: number;
@@ -156,7 +157,6 @@ export default function LyricsOverlay({ children }: QueuePanelProps) {
     return () => cancelAnimationFrame(animationFrameId);
   }, [lyrics, currentTime]);
 
-  
   useEffect(() => {
     const noLyricMessages = [
       "Why do some songs have lyrics and others just have 'WOO!'s and 'YEAH!'s? It's like they're trying to confuse me on purpose",
@@ -181,18 +181,12 @@ export default function LyricsOverlay({ children }: QueuePanelProps) {
 
   return areLyricsVisible ? (
     <>
-    {/* <div className="bg-cover bg-center blur-3xl" style={{ backgroundImage: `url(${imageSrc})`, position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', filter: 'blur(96px) brightness(50%)' }} /> */}
     <Image className="bg-cover bg-center blur-3xl" alt={`${song.name} Cover`} width={1000} height={1000} src={imageSrc} style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', filter: 'blur(96px) brightness(50%)' }} />
     <ScrollArea className="h-full overflow-x-hidden overflow-y-auto">
       <div
         onScroll={handleScroll}
         ref={lyricsRef}
         className="mb-32"
-        // style={{
-        //   background: `linear-gradient(90deg, #4b5563, ${backgroundColour}, #4b5563)`,
-        //   backgroundSize: "150% 200%",
-        //   backgroundPosition: "center",
-        // }}
         >
         <div className="p-20">
           {lyrics.length > 0 ? (

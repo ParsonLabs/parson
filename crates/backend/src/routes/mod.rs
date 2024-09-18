@@ -13,3 +13,5 @@ pub mod song;
 pub mod user;
 pub mod database;
 pub mod genres;
+pub mod web;
+pub mod config;

@@ -1,10 +1,12 @@
+use std::collections::HashSet;
+
 use actix_web::{get, web, HttpResponse};
 use rand::seq::SliceRandom;
 use serde::{Deserialize, Serialize};
 use tracing::error;
 
-use crate::structures::structures::{Album, Artist, Song};
-use crate::utils::config::get_config;
+use crate::structures::structures::{Album, Artist, MusicVideo, Song};
+use crate::utils::config::{fetch_library, get_config};
 
 use super::genres::fetch_albums_by_genres;
 
@@ -19,6 +21,7 @@ pub struct ResponseSong {
     pub duration: f64,
     pub album_object: Album,
     pub artist_object: Artist,
+    pub music_video: MusicVideo,
 }
 
 
@@ -70,6 +73,7 @@ pub async fn fetch_random_songs(amount: usize, genre: Option<String>) -> Result<
                 duration: song.duration,
                 album_object: valid_album.clone().unwrap(),
                 artist_object,
+                music_video: song.music_video.unwrap_or_default(),
             };
 
             response_songs.push(response_song);
@@ -79,24 +83,39 @@ pub async fn fetch_random_songs(amount: usize, genre: Option<String>) -> Result<
     Ok(response_songs)
 }
 
-pub async fn fetch_song_info(song_id: String) -> Result<ResponseSong, ()> {
-    let config = get_config().await.map_err(|_| ())?;
-    let library: Vec<Artist> = serde_json::from_str(&config).map_err(|_| ())?;
+pub async fn fetch_song_info(song_id: String, include: Option<HashSet<String>>) -> Result<ResponseSong, ()> {
+    let library = fetch_library().await.map_err(|_| ())?;
 
-    for artist in &library {
-        for album in &artist.albums {
-            for song in &album.songs {
+    for artist in library.iter() {
+        for album in artist.albums.iter() {
+            for song in album.songs.iter() {
                 if song.id == song_id {
+                    let include_fields = include.unwrap_or_else(|| {
+                        let mut all_fields = HashSet::new();
+                        all_fields.insert("id".to_string());
+                        all_fields.insert("name".to_string());
+                        all_fields.insert("artist".to_string());
+                        all_fields.insert("contributing_artists".to_string());
+                        all_fields.insert("track_number".to_string());
+                        all_fields.insert("path".to_string());
+                        all_fields.insert("duration".to_string());
+                        all_fields.insert("album_object".to_string());
+                        all_fields.insert("artist_object".to_string());
+                        all_fields.insert("music_video".to_string());
+                        all_fields
+                    });
+
                     return Ok(ResponseSong {
-                        id: song.id.clone(),
-                        name: song.name.clone(),
-                        artist: song.artist.clone(),
-                        contributing_artists: song.contributing_artists.clone(),
-                        track_number: song.track_number,
-                        path: song.path.clone(),
-                        duration: song.duration,
-                        album_object: album.clone(),
-                        artist_object: artist.clone(),
+                        id: if include_fields.contains("id") { song.id.clone() } else { String::new() },
+                        name: if include_fields.contains("name") { song.name.clone() } else { String::new() },
+                        artist: if include_fields.contains("artist") { song.artist.clone() } else { String::new() },
+                        contributing_artists: if include_fields.contains("contributing_artists") { song.contributing_artists.clone() } else { vec![String::new()] },
+                        track_number: if include_fields.contains("track_number") { song.track_number } else { 0 },
+                        path: if include_fields.contains("path") { song.path.clone() } else { String::new() },
+                        duration: if include_fields.contains("duration") { song.duration } else { 0.0 },
+                        album_object: if include_fields.contains("album_object") { album.clone() } else { Album::default() },
+                        artist_object: if include_fields.contains("artist_object") { artist.clone() } else { Artist::default() },
+                        music_video: if include_fields.contains("music_video") { song.music_video.clone().unwrap_or_default() } else { MusicVideo::default() },
                     });
                 }
             }
@@ -122,7 +141,7 @@ async fn get_random_song(amount: web::Path<usize>, query: web::Query<RandomSongQ
 #[get("/info/{id}")]
 async fn get_song_info(id: web::Path<String>) -> HttpResponse {
     let id_str = id.into_inner();
-    match fetch_song_info(id_str.clone()).await {
+    match fetch_song_info(id_str.clone(), None).await {
         Ok(song) => HttpResponse::Ok().json(song),
         Err(_) => {
             error!("Song with ID {} not found.", id_str);

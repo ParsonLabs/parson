@@ -1,16 +1,15 @@
 "use client";
 
-import { ScrollArea, ScrollBar } from "@music/ui/components/scroll-area";
-import { useState, useEffect } from "react";
-import { useGradientHover } from "../Providers/GradientHoverProvider";
-import getBaseURL from "@/lib/Server/getBaseURL";
 import getSession from "@/lib/Authentication/JWT/getSession";
 import setCache, { getCache } from "@/lib/Caching/cache";
 import { getListenHistory, getSongInfo } from "@music/sdk";
 import { LibrarySong } from "@music/sdk/types";
-import BigCard from "../Music/Card/BigCard";
-import AlbumCard from "../Music/Card/Album/AlbumCard";
+import { ScrollArea, ScrollBar } from "@music/ui/components/scroll-area";
+import { useEffect, useState } from "react";
 import ArtistCard from "../Music/Artist/ArtistCard";
+import AlbumCard from "../Music/Card/Album/AlbumCard";
+import SongCard from "../Music/Card/SongCard";
+import { useGradientHover } from "../Providers/GradientHoverProvider";
 
 function capitalizeWords(str: string): string {
   return str.replace(/\b\w/g, char => char.toUpperCase());
@@ -117,20 +116,7 @@ export default function LibraryButtons() {
               className="relative flex items-center justify-center overflow-hidden w-full h-96 rounded-lg scale-90"
               key={index}
             >
-              <BigCard
-                title={song.name}
-                album={song.album_object}
-                artist={song.artist_object}
-                imageSrc={
-                  song.album_object.cover_url.length === 0
-                    ? "/snf.png"
-                    : `${getBaseURL()}/image/${encodeURIComponent(song.album_object.cover_url)}`
-                }
-                albumURL=""
-                songURL={`${getBaseURL()}/api/stream/${encodeURIComponent(song.path)}?bitrate=0`}
-                type="Song"
-                song={song}
-              />
+              <SongCard album_cover={song.album_object.cover_url} album_id={song.album_object.id} album_name={song.album_object.name} artist_id={song.artist_object.id} artist_name={song.artist} path={song.path} song_id={song.id} song_name={song.name} />
             </div>
           ))}
         </div>
@@ -143,7 +129,14 @@ export default function LibraryButtons() {
             if (album && artist) {
               return (
                 <div className="relative flex items-center justify-center overflow-hidden w-full h-96 scale-90 rounded-lg" key={index}>
-                  <AlbumCard artist={artist} album={album} />
+                  <AlbumCard 
+                    artist_id={artist.id}
+                    artist_name={artist.name}
+                    album_id={album.id}
+                    album_name={album.name}
+                    album_cover={album.cover_url}
+                    first_release_date={album.first_release_date}
+                  />
                 </div>
               );
             }
@@ -170,22 +163,25 @@ export default function LibraryButtons() {
           {randomCombination.map((item, index) => (
             <div className="relative flex items-center justify-center overflow-hidden w-full h-96 scale-90 rounded-lg" key={index}>
               {item.type === 'song' && item.data ? (
-                <BigCard
-                  title={item.data.name}
-                  album={item.data.album_object}
-                  artist={item.data.artist_object}
-                  imageSrc={
-                    item.data.album_object.cover_url.length === 0
-                      ? "/snf.png"
-                      : `${getBaseURL()}/image/${encodeURIComponent(item.data.album_object.cover_url)}`
-                  }
-                  albumURL=""
-                  songURL={`${getBaseURL()}/api/stream/${encodeURIComponent(item.data.path)}?bitrate=0`}
-                  type="Song"
-                  song={item.data}
-                />
+                <SongCard 
+                  album_cover={item.data.album_object.cover_url} 
+                  album_id={item.data.album_object.id} 
+                  album_name={item.data.album_object.name} 
+                  artist_id={item.data.artist_object.id} 
+                  artist_name={item.data.artist_object.name} 
+                  path={item.data.path} 
+                  song_id={item.data.id} 
+                  song_name={item.data.name} 
+                />              
               ) : item.type === 'album' && item.data ? (
-                <AlbumCard artist={item.data.artist_object} album={item.data.album_object} />
+                <AlbumCard 
+                  artist_id={item.data.artist_object.id}
+                  artist_name={item.data.artist_object.name}
+                  album_id={item.data.album_object.id}
+                  album_name={item.data.album_object.name}
+                  album_cover={item.data.album_object.cover_url}
+                  first_release_date={item.data.album_object.first_release_date}
+                />              
               ) : item.data && <ArtistCard artist={item.data.artist_object} />
               }
             </div>

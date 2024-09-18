@@ -31,6 +31,7 @@ use routes::server;
 use routes::social;
 use routes::song;
 use routes::user;
+use routes::web as web_routes;
 
 use utils::config;
 use utils::database::database::{migrations_ran, redo_migrations};
@@ -39,6 +40,8 @@ use utils::database::database::run_migrations;
 use utils::websocket::ws;
 
 use rust_embed::RustEmbed;
+
+// use discord::run_discord;
 
 #[derive(RustEmbed)]
 #[folder = "../../apps/web/out"]
@@ -141,6 +144,8 @@ async fn main() -> std::io::Result<()> {
         if let Err(e) = populate_search_data().await {
             eprintln!("Failed to populate search data: {}", e);
         }
+
+        // run_modules().await;
     });
 
     HttpServer::new(move || {
@@ -162,7 +167,8 @@ async fn main() -> std::io::Result<()> {
             .configure(social::configure)
             .configure(playlist::configure)
             .configure(config::configure)
-            .configure(genres::configure);
+            .configure(genres::configure)
+            .configure(web_routes::configure);    
         
         let library_routes = web::scope("/library")
             .wrap(admin)
@@ -200,3 +206,7 @@ async fn main() -> std::io::Result<()> {
     .run()
     .await
 }
+
+// async fn run_modules() {
+//     run_discord().await;
+// }

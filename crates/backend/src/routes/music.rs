@@ -1,11 +1,10 @@
 use std::process::Stdio;
 use std::time::Instant;
 
-use actix_web::body::BodyStream;
 use actix_web::http::header;
+use actix_web::web::Bytes;
 use actix_web::{get, web, HttpRequest, HttpResponse, Responder};
-use futures::stream::StreamExt;
-use lofty::AudioFile;
+use futures::Stream;
 use serde::Deserialize;
 use tokio::io::{AsyncReadExt, AsyncSeekExt};
 use tokio::process::Command;
@@ -155,18 +154,19 @@ pub async fn process_library(path_to_library: web::Path<String>) -> impl Respond
 }
 
 #[derive(Deserialize)]
-struct BitrateQueryParams {
-    bitrate: u32,
+pub struct BitrateQueryParams {
+    pub bitrate: u32,
+    pub slowed_reverb: Option<bool>,
 }
-
 #[get("/stream/{song}")]
 async fn stream_song(
     req: HttpRequest,
     path: web::Path<String>,
-    bitrate: web::Query<BitrateQueryParams>,
+    query: web::Query<BitrateQueryParams>,
 ) -> impl Responder {
     let song = path.into_inner();
-    let bitrate = bitrate.into_inner().bitrate;
+    let bitrate = query.bitrate;
+    let slowed_reverb = query.slowed_reverb.unwrap_or(false);
 
     let file = tokio::fs::metadata(&song).await.unwrap();
     let song_file_size = file.len();
@@ -176,11 +176,6 @@ async fn stream_song(
     if !path.is_file() {
         panic!("ERROR: Path is not a file!");
     }
-
-    let tagged_file = lofty::Probe::open(path)
-        .expect("ERROR: Bad path provided!")
-        .read()
-        .expect("ERROR: Failed to read file!");
 
     let range = req.headers().get("Range").and_then(|v| v.to_str().ok());
     let (start, end) = match range {
@@ -198,14 +193,13 @@ async fn stream_song(
     };
 
     let content_range = format!("bytes {}-{}/{}", start, end, song_file_size);
-    use actix_web::web::Bytes;
 
-    if bitrate == 0 {
+    if bitrate == 0 && !slowed_reverb {
         let mut file = tokio::fs::File::open(&song).await.unwrap();
         let mut buffer = vec![0; (end - start + 1) as usize];
         file.seek(tokio::io::SeekFrom::Start(start)).await.unwrap();
         file.read_exact(&mut buffer).await.unwrap();
-
+    
         let extension = path.extension().and_then(std::ffi::OsStr::to_str);
         let mime_type = match extension {
             Some("mp3") => "audio/mpeg",
@@ -215,51 +209,51 @@ async fn stream_song(
             Some("aac") => "audio/aac",
             _ => "application/octet-stream",
         };
-
+    
         HttpResponse::PartialContent()
             .append_header((header::CONTENT_TYPE, mime_type))
             .append_header((header::CONTENT_RANGE, content_range))
             .body(Bytes::from(buffer))
-       } else {
-        let audio_bitrate = (tagged_file.properties().audio_bitrate().unwrap() * 1000 / 8) as u64;
-        let start_time = start / audio_bitrate;
-        let duration = (end - start + 1) / audio_bitrate;
-    
-        let mut command = Command::new("ffmpeg")
-            .args(&[
-                "-ss", &start_time.to_string(),
-                "-t", &duration.to_string(),
+    } else {
+        let mut command = Command::new("ffmpeg");
+
+        if slowed_reverb {
+            command.args(&[
                 "-i", &song,
-                "-af", "loudnorm=I=-14:LRA=11:TP=-1",
-                "-ab", &format!("{}k", bitrate),
+                "-filter_complex", "asetrate=44100*0.8, atempo=0.9, aecho=0.8:0.88:60:0.4",
+                "-v", "0",
                 "-f", "mp3",
                 "pipe:1",
-            ])
-            .stdout(Stdio::piped())
-            .spawn()
-            .expect("Failed to start ffmpeg process");
-    
-        let stdout = command
-            .stdout
-            .take()
-            .expect("Failed to take stdout of ffmpeg");
-    
+            ]);
+        } else {
+            command.args(&[
+                "-i", &song,
+                "-map", "0:a:0",
+                "-b:a", &format!("{}k", bitrate),
+                "-v", "0",
+                "-f", "mp3",
+                "pipe:1",
+            ]);
+        }
+
+        let mut command = command.stdout(Stdio::piped()).spawn().expect("Failed to start ffmpeg process");
+
+        let stdout = command.stdout.take().expect("Failed to take stdout of ffmpeg");
+
         let stream = ReaderStream::new(stdout);
-        let body_stream = stream.map(|result| {
-            result.map(|bytes| bytes.into()).map_err(|e| {
-                println!("Error processing stream: {:?}", e);
-                actix_web::error::ErrorInternalServerError(e)
-            })
-        });
-    
-        let new_content_length = (duration * bitrate as u64 * 1000 / 8) as u64;
-        let new_end = start + new_content_length - 1;
-        let new_content_range = format!("bytes {}-{}/{}", start, new_end, new_content_length);
-    
+
+        let new_content_length = stream.size_hint().1.unwrap_or(0) as u64;
+        let new_content_range = if new_content_length > 0 {
+            let new_end = start + new_content_length - 1;
+            format!("bytes {}-{}/{}", start, new_end, new_content_length)
+        } else {
+            format!("bytes {}-{}", start, start)
+        };
+
         HttpResponse::PartialContent()
             .append_header((header::CONTENT_TYPE, "audio/mpeg"))
             .append_header((header::CONTENT_RANGE, new_content_range))
-            .body(BodyStream::new(body_stream))
+            .streaming(stream)
     }
 }
 

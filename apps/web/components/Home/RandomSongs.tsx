@@ -2,11 +2,10 @@
 
 import getSession from "@/lib/Authentication/JWT/getSession";
 import setCache, { getCache } from "@/lib/Caching/cache";
-import getBaseURL from "@/lib/Server/getBaseURL";
 import { getRandomSong } from "@music/sdk";
 import { LibrarySong } from "@music/sdk/types";
 import { useEffect, useState } from "react";
-import BigCard from "../Music/Card/BigCard";
+import SongCard from "../Music/Card/SongCard";
 import ScrollButtons from "./ScrollButtons";
 
 export const revalidate = 3600;
@@ -48,27 +47,12 @@ export default function RandomSongs({ genre }: RandomSongsProps) {
   if (loading) return null;
   if (!randomSongs || randomSongs.length === 0) return null;
 
-  const session = getSession();
-
   return (
     <ScrollButtons heading="Random Selection">
-      <div className="flex flex-row">
+      <div className="flex flex-row pb-28">
         {randomSongs.map((song, index) => (
           <div className="mr-20" key={index}>
-            <BigCard
-              title={song.name}
-              album={song.album_object}
-              artist={song.artist_object}
-              imageSrc={
-                song.album_object.cover_url.length === 0
-                  ? "/snf.png"
-                  : `${getBaseURL()}/image/${encodeURIComponent(song.album_object.cover_url)}`
-              }
-              albumURL=""
-              songURL={`${getBaseURL()}/api/stream/${encodeURIComponent(song.path)}?bitrate=${(session && session.bitrate) ?? 0}`}
-              type="Song"
-              song={song}
-            />
+            <SongCard album_cover={song.album_object.cover_url} album_id={song.album_object.id} album_name={song.album_object.name} artist_id={song.artist_object.id} artist_name={song.artist} path={song.path} song_id={song.id} song_name={song.name} />
           </div>
         ))}
       </div>

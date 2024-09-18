@@ -6,9 +6,10 @@ import ListenAgain from "@/components/Home/ListenAgain";
 import MusicVideos from "@/components/Home/MusicVideos";
 import RandomSongs from "@/components/Home/RandomSongs";
 import RecommendedAlbums from "@/components/Home/RecommendedAlbums";
+import SimilarTo from "@/components/Home/SimilarTo";
 import GenreButtons from "@/components/Layout/GenreButtons";
 import { useGradientHover } from "@/components/Providers/GradientHoverProvider";
-import { getConfig } from "@music/sdk";
+import { getConfig, hasConfig } from "@music/sdk";
 import { Button } from "@music/ui/components/button";
 import Link from "next/link";
 import { useEffect, useState } from "react";
@@ -18,11 +19,10 @@ export default function Home() {
 
   const { setGradient } = useGradientHover()
 
-  
   useEffect(() => {
     async function checkConfig() {
-      const config = await getConfig();
-      if (config && !config.error) {
+      const config = await hasConfig();
+      if (config) {
         setConfigExists(true);
       } else {
         setConfigExists(false);
@@ -40,6 +40,7 @@ export default function Home() {
           <LandingCarousel />
         </div>
         <ListenAgain />
+        <SimilarTo />
         <RecommendedAlbums />
         <RandomSongs />
         <FromYourLibrary />

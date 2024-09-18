@@ -1,13 +1,12 @@
 "use client"
 
-import getBaseURL from "@/lib/Server/getBaseURL";
 
-import { useState, useEffect } from "react";
-import BigCard from "@/components/Music/Card/BigCard";
-import { getListenHistory, getSongInfo } from "@music/sdk";
-import { ScrollArea } from "@music/ui/components/scroll-area";
-import { LibrarySong } from "@music/sdk/types";
+import SongCard from "@/components/Music/Card/SongCard";
 import getSession from "@/lib/Authentication/JWT/getSession";
+import { getListenHistory, getSongInfo } from "@music/sdk";
+import { LibrarySong } from "@music/sdk/types";
+import { ScrollArea } from "@music/ui/components/scroll-area";
+import { useEffect, useState } from "react";
 
 export default function HistoryPage() {
   const [listenHistorySongs, setListenHistorySongs] = useState<LibrarySong[]>([]);
@@ -36,20 +35,7 @@ export default function HistoryPage() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 h-full w-full">
           {listenHistorySongs.map((song, index) => (
             <div className="h-64" key={index}>
-              <BigCard
-                title={song.name}
-                album={song.album_object}
-                artist={song.artist_object}
-                imageSrc={
-                  song.album_object.cover_url.length === 0
-                    ? "/snf.png"
-                    : `${getBaseURL()}/image/${encodeURIComponent(song.album_object.cover_url)}`
-                }
-                albumURL=""
-                songURL={`${getBaseURL()}/api/stream/${encodeURIComponent(song.path)}?bitrate=0`}
-                type="Song"
-                song={song}
-              />
+              <SongCard album_cover={song.album_object.cover_url} album_id={song.album_object.id} album_name={song.album_object.name} artist_id={song.artist_object.id} artist_name={song.artist} path={song.path} song_id={song.id} song_name={song.name} />
             </div>
           ))}
         </div>

@@ -56,7 +56,15 @@ export default function PlaylistTable({ songsWithMetadata }: PlaylistTableProps)
         </TableHeader>
 
         {sortedSongs.map((song: LibrarySong & { album_object: Album, artist_object: Artist }, index) => (
-          <SongContextMenu song={song} album={song.album_object} artist={song.artist_object} key={song.id}>
+          <SongContextMenu
+            song_name={song.name}
+            song_id={song.id}
+            artist_id={song.artist_object.id}
+            artist_name={song.artist_object.name}
+            album_id={song.album_object.id}
+            album_name={song.album_object.name}
+            key={song.id}
+          >
             <TableBody key={song.id}>
               <TableRow onClick={() => handlePlay(song.album_object.cover_url, song, `${getBaseURL()}/api/stream/${encodeURIComponent(song.path)}?bitrate=${session && session.bitrate}`, song.artist_object, song.album_object)}>
                 <TableCell className="font-medium">{index + 1}</TableCell>

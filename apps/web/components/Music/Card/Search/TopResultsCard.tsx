@@ -6,15 +6,13 @@ import Image from 'next/image';
 import { useEffect, useState } from 'react';
 import ArtistCard from '../../Artist/ArtistCard';
 import AlbumCard from '../Album/AlbumCard';
-import BigCard from '../BigCard';
+import SongCard from '../SongCard';
 
 type ResultCardProps = {
   result: CombinedItem 
 }
 
 export default function TopResultsCard({ result }: ResultCardProps) {
-  const session = getSession()
-
   const [artist, setArtist] = useState<Artist | null>(null)
   const [album, setAlbum] = useState<LibraryAlbum | null>(null)
   const [song, setSong] = useState<LibrarySong | null>(null)
@@ -72,19 +70,15 @@ const coverUrl = result.item_type === "song"
             }}
           />
           <div className="relative z-10">
-            <BigCard
-              artist={song.artist_object}
-              album={song.album_object}
-              songURL={`${getBaseURL()}/api/stream/${encodeURIComponent(song.path)}?bitrate=${session && session.bitrate}`}
-              title={result.name}
-              type="Song"
-              imageSrc={
-                song.album_object.cover_url.length == 0
-                  ? "/snf.png"
-                  : `${getBaseURL()}/image/${encodeURIComponent(song.album_object.cover_url)}`
-              }
-              albumURL=""
-              song={song}
+            <SongCard
+              song_name={song.name}
+              song_id={song.id}
+              path={song.path}
+              artist_id={song.artist_object.id}
+              artist_name={song.artist}
+              album_id={song.album_object.id}
+              album_name={song.album_object.name}
+              album_cover={song.album_object.cover_url ?? ""}
             />
           </div>
         </div>
@@ -137,7 +131,14 @@ const coverUrl = result.item_type === "song"
             }}
           />
           <div className="relative z-10">
-            <AlbumCard album={album} artist={album.artist_object} />
+            <AlbumCard 
+              artist_id={album.artist_object.id}
+              artist_name={album.artist_object.name}
+              album_id={album.id}
+              album_name={album.name}
+              album_cover={album.cover_url}
+              first_release_date={album.first_release_date}
+            />
           </div>
         </div>
       );

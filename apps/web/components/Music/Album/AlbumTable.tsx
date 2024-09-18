@@ -100,7 +100,15 @@ export default function AlbumTable({ songs, album, artist }: PlaylistTableProps)
         </TableHeader>
 
         {orderedSongs.map(song => (
-          <SongContextMenu song={song} album={album} artist={artist} key={song.id}>
+          <SongContextMenu
+            song_name={song.name}
+            song_id={song.id}
+            artist_id={artist.id}
+            artist_name={artist.name}
+            album_id={album.id}
+            album_name={album.name}
+            key={song.id}
+          >            
             <TableBody key={song.id} >
               <TableRow id={sanitizeSongName(song.name)} onClick={() => handlePlay(album.cover_url, song, `${getBaseURL()}/api/stream/${encodeURIComponent(song.path)}?bitrate=${bitrate}`, artist)}>
                 <TableCell className="font-medium">{song.track_number}</TableCell>

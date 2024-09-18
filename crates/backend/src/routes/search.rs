@@ -341,7 +341,7 @@ async fn search_fn(query: web::Query<SearchQuery>) -> HttpResponse {
                 let acronym = retrieved_doc.get_first(schema.get_field("acronym").unwrap()).unwrap().as_str().unwrap().to_string();
 
                 let song_object = if item_type == "song" {
-                    fetch_song_info(id.clone()).await.ok()
+                    fetch_song_info(id.clone(), None).await.ok()
                 } else {
                     None
                 };

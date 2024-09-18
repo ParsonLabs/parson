@@ -6,7 +6,8 @@ import Description from "@/components/Description/Description";
 import ScrollButtons from "@/components/Home/ScrollButtons";
 import PageGradient from "@/components/Layout/PageGradient";
 import AlbumCard from "@/components/Music/Card/Album/AlbumCard";
-import BigCard from "@/components/Music/Card/BigCard";
+import SongCard from "@/components/Music/Card/SongCard";
+import getSession from "@/lib/Authentication/JWT/getSession";
 import { getArtistInfo } from "@music/sdk";
 import { Album, Artist, LibrarySong } from "@music/sdk/types";
 import { useSearchParams } from "next/navigation";
@@ -93,30 +94,17 @@ export default function ArtistComponent() {
       </div>
 
       <ScrollButtons heading="Songs">
-        <div className="flex flex-row justify-center items-start">
+        <div className="flex flex-row justify-center items-start pb-20">
           {randomSongs.map((song, index) => (
             <div key={index} className="w-full sm:w-1/2 md:w-1/3 lg:w-1/4 p-8">
-               <BigCard
-                 title={song.name}
-                 album={song.album_object}
-                 artist={song.artist_object}
-                 imageSrc={
-                   song.album_object.cover_url.length === 0
-                   ? "/snf.png"
-                   : `${getBaseURL()}/image/${encodeURIComponent(song.album_object.cover_url)}`
-                 }
-                 albumURL=""
-                 songURL={`${getBaseURL()}/api/stream/${encodeURIComponent(song.path)}?bitrate=0`}
-                 type="Song"
-                 song={song}
-                 />
+              <SongCard album_cover={song.album_object.cover_url} album_id={song.album_object.id} album_name={song.album_object.name} artist_id={song.artist_object.id} artist_name={song.artist} path={song.path} song_id={song.id} song_name={song.name} />
             </div>
           ))}
         </div>
       </ScrollButtons>
 
       <ScrollButtons heading="Albums">
-        <div className="flex flex-row items-start">
+        <div className="flex flex-row items-start pb-20">
           {albums
             .sort((a: Album, b: Album) => {
               const dateA = new Date(a.first_release_date).getTime();
@@ -129,7 +117,14 @@ export default function ArtistComponent() {
             })
             .map((album: Album, index: number) => (
               <div key={index} className="w-full sm:w-1/2 md:w-1/3 lg:w-1/4 p-8">
-                <AlbumCard artist={artist} album={album} />
+                <AlbumCard
+                  artist_id={artist.id}
+                  artist_name={artist.name}
+                  album_id={album.id}
+                  album_name={album.name}
+                  album_cover={album.cover_url}
+                  first_release_date={album.first_release_date}
+                />
               </div>
             ))}
         </div>

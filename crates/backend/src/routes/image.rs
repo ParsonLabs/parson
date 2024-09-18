@@ -24,7 +24,7 @@ pub async fn image(req: HttpRequest, path: web::Path<String>) -> Result<impl Res
                     CacheDirective::MaxAge(604800),
                 ]))
                 .body(data)),
-            Err(_) => Ok(HttpResponse::NotFound().body("Image not found")),
+            Err(_) => Ok(HttpResponse::NoContent().body("Image not found")),
         }
     } else {
         let img = match ImageReader::open(&file_path)?.decode() {
@@ -93,6 +93,6 @@ fn serve_raw_image(file_path: &str) -> Result<HttpResponse, Error> {
                 CacheDirective::MaxAge(604800),
             ]))
             .body(data)),
-        Err(_) => Ok(HttpResponse::NotFound().body("Image not found")),
+        Err(_) => Ok(HttpResponse::NoContent().body("Image not found")),
     }
 }

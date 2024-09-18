@@ -12,7 +12,25 @@ pub struct Album {
     pub primary_type: String,
     pub description: String,
     pub release_album: Option<ReleaseAlbum>,
-    pub release_group_album: Option<ReleaseGroupAlbum>
+    pub release_group_album: Option<ReleaseGroupAlbum>,
+}
+
+impl Default for Album {
+    fn default() -> Self {
+        Album {
+            id: String::new(),
+            name: String::new(),
+            cover_url: String::new(),
+            songs: Vec::new(),
+            first_release_date: String::new(),
+            musicbrainz_id: String::new(),
+            wikidata_id: None,
+            primary_type: String::new(),
+            description: String::new(),
+            release_album: None,
+            release_group_album: None,
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -26,6 +44,20 @@ pub struct Artist {
     pub tadb_music_videos: Option<String>,
 }
 
+impl Default for Artist {
+    fn default() -> Self {
+        Artist {
+            id: String::new(),
+            name: String::new(),
+            icon_url: String::new(),
+            followers: 0,
+            albums: Vec::new(),
+            description: String::new(),
+            tadb_music_videos: None,
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize, Clone)]
 pub struct Song {
     pub id: String,
@@ -35,7 +67,22 @@ pub struct Song {
     pub track_number: u16,
     pub path: String,
     pub duration: f64,
-    pub music_video: Option<MusicVideo>
+    pub music_video: Option<MusicVideo>,
+}
+
+impl Default for Song {
+    fn default() -> Self {
+        Song {
+            id: String::new(),
+            name: String::new(),
+            artist: String::new(),
+            contributing_artists: Vec::new(),
+            track_number: 0,
+            path: String::new(),
+            duration: 0.0,
+            music_video: None,
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Clone)]

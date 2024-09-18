@@ -1,16 +1,19 @@
 use std::path::PathBuf;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::{env, error::Error, fs, path::Path};
 
 use actix_web::web::{self, Json};
-use actix_web::{get, Responder};
+use actix_web::{get, HttpResponse, Responder};
 use dotenvy::dotenv;
 use rand::distributions::Alphanumeric;
 use rand::Rng;
-use serde_json::{json, Value};
+use serde_json::{from_str, json, Value};
 use tokio::fs::File;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use lazy_static::lazy_static;
+use tokio::sync::RwLock;
+
+use crate::structures::structures::Artist;
 
 pub fn is_docker() -> bool {
     if Path::new("/.dockerenv").exists() {
@@ -59,7 +62,12 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
     cfg.service(
       web::scope("/config")
           .service(get)
+          .service(has_config)
     );
+}
+
+lazy_static! {
+    static ref LIBRARY_CACHE: RwLock<Option<Arc<Vec<Artist>>>> = RwLock::new(None);
 }
 
 pub async fn get_config() -> Result<String, Box<dyn Error>> {
@@ -70,6 +78,19 @@ pub async fn get_config() -> Result<String, Box<dyn Error>> {
     file.read_to_string(&mut contents).await?;
 
     Ok(contents)
+}
+
+pub async fn fetch_library() -> Result<Arc<Vec<Artist>>, Box<dyn Error>> {
+    let mut cache = LIBRARY_CACHE.write().await;
+    if let Some(library) = &*cache {
+        return Ok(library.clone());
+    }
+
+    let config = get_config().await?;
+    let library: Vec<Artist> = from_str(&config)?;
+    let library = Arc::new(library);
+    *cache = Some(library.clone());
+    Ok(library)
 }
 
 pub fn get_config_path() -> PathBuf {
@@ -91,6 +112,18 @@ pub fn get_config_path() -> PathBuf {
     }
 
     path
+}
+
+
+#[get("/has_config")]
+async fn has_config() -> impl Responder {
+    let config_path = get_config_path();
+
+    if Path::new(&config_path).exists() {
+        HttpResponse::Ok().body("Config file exists")
+    } else {
+        HttpResponse::NotFound().body("Config file not found")
+    }
 }
 
 pub async fn save_config(indexed_json: &String) -> std::io::Result<()> {

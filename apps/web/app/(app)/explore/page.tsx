@@ -3,11 +3,13 @@
 import { getAlbumsByGenres, listAllGenres, getAlbumInfo } from "@music/sdk";
 import { useEffect, useState } from "react";
 import { Card, CardTitle } from "@music/ui/components/card";
-import { Album } from "@music/sdk/types";
+import { Album, Artist } from "@music/sdk/types";
 import Image from "next/image";
 import getBaseURL from "@/lib/Server/getBaseURL";
 import { FastAverageColor } from "fast-average-color";
 import AlbumCard from "@/components/Music/Card/Album/AlbumCard";
+
+export type LibraryAlbum = Album & { artist_object: Artist };
 
 function capitalizeWords(str: string): string {
   return str.replace(/\b\w/g, char => char.toUpperCase());
@@ -18,7 +20,7 @@ export default function ExplorePage() {
   const [albums, setAlbums] = useState<{ [key: string]: Album[] }>({});
   const [backgroundColors, setBackgroundColors] = useState<{ [key: string]: string }>({});
   const [selectedGenre, setSelectedGenre] = useState<string | null>(null);
-  const [albumDetails, setAlbumDetails] = useState<{ [key: string]: Album }>({});
+  const [albumDetails, setAlbumDetails] = useState<{ [key: string]: LibraryAlbum }>({});
 
   useEffect(() => {
     async function fetchGenresAndAlbums() {
@@ -58,12 +60,12 @@ export default function ExplorePage() {
     async function fetchAlbumDetails() {
       if (selectedGenre) {
         const genreAlbums = albums[selectedGenre];
-        const albumDetailsMap: { [key: string]: Album } = {};
+        const albumDetailsMap: { [key: string]: LibraryAlbum } = {};
 
         if (genreAlbums) {
           const albumDetailsPromises = genreAlbums.map(async (album) => {
             const albumInfo = await getAlbumInfo(album.id);
-            albumDetailsMap[album.id] = albumInfo;
+            albumDetailsMap[album.id] = albumInfo as LibraryAlbum;
           });
 
           await Promise.all(albumDetailsPromises);
@@ -96,8 +98,15 @@ export default function ExplorePage() {
         <div className="pt-10 flex flex-wrap -mx-2">
           {albums[selectedGenre]?.map((album) => (
             <div key={album.id} className="w-full sm:w-1/2 md:w-1/3 lg:w-1/4 px-2 mb-4 py-16">
-              {albumDetails[album.id] && (albumDetails[album.id] as any).artist_object ? (
-                <AlbumCard album={albumDetails[album.id] as any} artist={(albumDetails[album.id] as any).artist_object} />
+              {albumDetails[album.id] ? (
+                <AlbumCard
+                  artist_id={albumDetails[album.id]?.artist_object?.id ?? ""}
+                  artist_name={albumDetails[album.id]?.artist_object?.name ?? ""}
+                  album_id={albumDetails[album.id]?.id ?? ""}
+                  album_name={albumDetails[album.id]?.name ?? ""}
+                  album_cover={albumDetails[album.id]?.cover_url ?? ""}
+                  first_release_date={albumDetails[album.id]?.first_release_date ?? ""}
+                />
               ) : null}
             </div>
           ))}

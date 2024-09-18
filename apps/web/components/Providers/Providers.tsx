@@ -7,6 +7,7 @@ import { GradientHoverProvider } from './GradientHoverProvider';
 import { ScrollProvider } from './ScrollProvider';
 import SidebarProvider from './SideBarProvider';
 import { ThemeProvider } from './ThemeProvider';
+import { SlowedReverbProvider } from './SlowedReverbProvider';
 
 interface ProvidersProps {
   children: ReactNode;
@@ -18,15 +19,17 @@ export default function Providers({ children }: ProvidersProps) {
       <GradientHoverProvider>
         <ScrollProvider>
           <SidebarProvider>
-            <PlayerProvider>
-              <PanelProvider>
-                <LyricsOverlayProvider>
-                  <AIOverlayProvider>
-                    {children}
-                  </AIOverlayProvider>
-                </LyricsOverlayProvider>
-              </PanelProvider>
-            </PlayerProvider>
+            <SlowedReverbProvider>
+              <PlayerProvider>
+                <PanelProvider>
+                  <LyricsOverlayProvider>
+                    <AIOverlayProvider>
+                      {children}
+                    </AIOverlayProvider>
+                  </LyricsOverlayProvider>
+                </PanelProvider>
+              </PlayerProvider>
+            </SlowedReverbProvider>
           </SidebarProvider>
         </ScrollProvider>
       </GradientHoverProvider>

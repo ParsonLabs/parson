@@ -6,6 +6,7 @@ import { getPlaylist, getPlaylists, getSongInfo } from "@music/sdk";
 import { useEffect, useState } from "react";
 import AlbumCard from "../Music/Card/Album/AlbumCard";
 import ScrollButtons from "./ScrollButtons";
+import { LibrarySong } from "@music/sdk/types";
 
 async function getSongsFromYourLibrary(user_id: number, genre?: string) {
   const playlists = await getPlaylists(user_id);
@@ -38,7 +39,7 @@ interface RecommendedAlbumsProps {
 }
 
 export default function RecommendedAlbums({ genre }: RecommendedAlbumsProps) {
-  const [librarySongs, setLibrarySongs] = useState<any[]>([]);
+  const [librarySongs, setLibrarySongs] = useState<LibrarySong[]>([]);
   const [loading, setLoading] = useState(true);
   
   useEffect(() => {
@@ -71,12 +72,16 @@ export default function RecommendedAlbums({ genre }: RecommendedAlbumsProps) {
 
   return (
     <ScrollButtons heading="Recommended Albums">
-      <div className="flex flex-row">
+      <div className="flex flex-row pb-28">
         {librarySongs.map((song, index) => (
           <div className="mr-20" key={index}>
             <AlbumCard 
-              album={song.album_object}
-              artist={song.artist_object}
+              album_cover={song.album_object.cover_url}
+              album_id={song.album_object.id}
+              album_name={song.album_object.name}
+              artist_id={song.artist_object.id}
+              artist_name={song.artist}
+              first_release_date={song.album_object.first_release_date}
               key={song.id}
               />
           </div>

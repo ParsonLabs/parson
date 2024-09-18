@@ -3,7 +3,7 @@ use rand::seq::{IteratorRandom, SliceRandom};
 use serde::{Deserialize, Serialize};
 
 use crate::structures::structures::{Artist, ReleaseAlbum, ReleaseGroupAlbum, Song};
-use crate::utils::config::get_config;
+use crate::utils::config::{fetch_library, get_config};
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct ResponseAlbum {
@@ -69,8 +69,7 @@ pub async fn fetch_random_albums(amount: usize) -> Result<Vec<ResponseAlbum>, ()
 }
 
 pub async fn fetch_album_info(album_id: String) -> Result<ResponseAlbum, ()> {
-    let config = get_config().await.map_err(|_| ())?;
-    let library: Vec<Artist> = serde_json::from_str(&config).map_err(|_| ())?;
+    let library = fetch_library().await.map_err(|_| ())?;
 
     for artist in library.iter() {
         for album in artist.albums.iter() {

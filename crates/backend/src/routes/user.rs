@@ -58,16 +58,21 @@ struct ListenHistoryQuery {
     user_id: i32,
 }
 
-#[get("/get_listen_history")]
-async fn get_listen_history(query: web::Query<ListenHistoryQuery>) -> Result<HttpResponse, Box<dyn Error>> {
+pub async fn fetch_listen_history(user_id_param: i32) -> Result<Vec<ListenHistoryItem>, Box<dyn Error>> {
     use crate::utils::database::schema::listen_history_item::dsl::*;
 
-    let mut connection = establish_connection().get().unwrap();
+    let mut connection = establish_connection().get()?;
 
     let results = listen_history_item
-        .filter(user_id.eq(query.user_id))
+        .filter(user_id.eq(user_id_param))
         .load::<ListenHistoryItem>(&mut connection)?;
 
+    Ok(results)
+}
+
+#[get("/get_listen_history")]
+async fn get_listen_history(query: web::Query<ListenHistoryQuery>) -> Result<HttpResponse, Box<dyn Error>> {
+    let results = fetch_listen_history(query.user_id).await?;
     Ok(HttpResponse::Ok().json(results))
 }
 

@@ -24,8 +24,17 @@ export default function MusicVideoCard({ song }: MusicVideoCardProps) {
   if (!song || !song.music_video) return null
 
   const getVideoId = (url: string) => {
-    const urlParams = new URLSearchParams(new URL(url).search);
-    return urlParams.get("v");
+    try {
+      const urlObj = new URL(url);
+      if (urlObj.hostname === 'www.youtube.com' || urlObj.hostname === 'youtube.com') {
+        return urlObj.searchParams.get('v');
+      } else if (urlObj.hostname === 'youtu.be') {
+        return urlObj.pathname.slice(1);
+      }
+    } catch (error) {
+      console.error('Invalid URL:', url);
+      return null;
+    }
   };
 
   const videoId = getVideoId(song.music_video.url);

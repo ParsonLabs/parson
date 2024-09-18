@@ -1,7 +1,8 @@
 use actix_web::{get, web, HttpResponse};
 use std::collections::HashSet;
-use crate::structures::structures::{Artist, Album, Song};
+use crate::structures::structures::{Album, Artist, Genre, Song};
 use crate::config::get_config;
+use crate::utils::config::fetch_library;
 use serde::Deserialize;
 use serde_json::from_str;
 
@@ -86,19 +87,11 @@ pub async fn fetch_albums_by_genres(genres: Vec<String>) -> Result<Vec<Album>, (
 
     for artist in &library {
         for album in &artist.albums {
-            let mut album_genres = HashSet::new();
-            if let Some(release_album) = &album.release_album {
-                for genre in &release_album.genres {
-                    album_genres.insert(genre.name.clone());
+            if let Ok(album_genres) = get_genre_info_by_album(&album.id).await {
+                let album_genre_names: HashSet<String> = album_genres.into_iter().map(|g| g.name).collect();
+                if !album_genre_names.is_disjoint(&genre_set) {
+                    response_albums.push(album.clone());
                 }
-            }
-            if let Some(release_group_album) = &album.release_group_album {
-                for genre in &release_group_album.genres {
-                    album_genres.insert(genre.name.clone());
-                }
-            }
-            if !album_genres.is_disjoint(&genre_set) {
-                response_albums.push(album.clone());
             }
         }
     }
@@ -113,21 +106,14 @@ pub async fn fetch_artists_by_genres(genres: Vec<String>) -> Result<Vec<Artist>,
     let genre_set: HashSet<String> = genres.into_iter().collect();
 
     for artist in &library {
-        let mut artist_genres = HashSet::new();
         for album in &artist.albums {
-            if let Some(release_album) = &album.release_album {
-                for genre in &release_album.genres {
-                    artist_genres.insert(genre.name.clone());
+            if let Ok(album_genres) = get_genre_info_by_album(&album.id).await {
+                let album_genre_names: HashSet<String> = album_genres.into_iter().map(|g| g.name).collect();
+                if !album_genre_names.is_disjoint(&genre_set) {
+                    response_artists.push(artist.clone());
+                    break;
                 }
             }
-            if let Some(release_group_album) = &album.release_group_album {
-                for genre in &release_group_album.genres {
-                    artist_genres.insert(genre.name.clone());
-                }
-            }
-        }
-        if !artist_genres.is_disjoint(&genre_set) {
-            response_artists.push(artist.clone());
         }
     }
     Ok(response_artists)
@@ -143,24 +129,57 @@ pub async fn fetch_songs_by_genres(genres: Vec<String>) -> Result<Vec<Song>, ()>
     for artist in &library {
         for album in &artist.albums {
             for song in &album.songs {
-                let mut song_genres = HashSet::new();
-                if let Some(release_album) = &album.release_album {
-                    for genre in &release_album.genres {
-                        song_genres.insert(genre.name.clone());
+                if let Ok(song_genres) = get_genre_info_by_song(&song.id).await {
+                    let song_genre_names: HashSet<String> = song_genres.into_iter().map(|g| g.name).collect();
+                    if !song_genre_names.is_disjoint(&genre_set) {
+                        response_songs.push(song.clone());
                     }
-                }
-                if let Some(release_group_album) = &album.release_group_album {
-                    for genre in &release_group_album.genres {
-                        song_genres.insert(genre.name.clone());
-                    }
-                }
-                if !song_genres.is_disjoint(&genre_set) {
-                    response_songs.push(song.clone());
                 }
             }
         }
     }
     Ok(response_songs)
+}
+
+pub async fn get_genre_info_by_song(song_id: &str) -> Result<Vec<Genre>, ()> {
+    let library = fetch_library().await.map_err(|_| ())?;
+
+    for artist in library.iter() {
+        for album in artist.albums.iter() {
+            for song in album.songs.iter() {
+                if song.id == song_id {
+                    return Ok(get_genres_from_album(album));
+                }
+            }
+        }
+    }
+
+    Err(())
+}
+
+pub async fn get_genre_info_by_album(album_id: &str) -> Result<Vec<Genre>, ()> {
+    let library = fetch_library().await.map_err(|_| ())?;
+
+    for artist in library.iter() {
+        for album in artist.albums.iter() {
+            if album.id == album_id {
+                return Ok(get_genres_from_album(album));
+            }
+        }
+    }
+
+    Err(())
+}
+
+fn get_genres_from_album(album: &Album) -> Vec<Genre> {
+    let mut genres = Vec::new();
+    if let Some(release_album) = &album.release_album {
+        genres.extend(release_album.genres.clone());
+    }
+    if let Some(release_group_album) = &album.release_group_album {
+        genres.extend(release_group_album.genres.clone());
+    }
+    genres
 }
 
 pub fn configure(cfg: &mut web::ServiceConfig) {

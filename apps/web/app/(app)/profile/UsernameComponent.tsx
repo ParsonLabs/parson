@@ -1,22 +1,18 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import Image from "next/image";
-import { Avatar, AvatarFallback, AvatarImage } from "@music/ui/components/avatar";
 import FollowButton from "@/components/Friends/FollowButton";
-import { getCookie } from "cookies-next";
-import { getListenHistory, getUserInfo, getSongInfo, getAlbumInfo, LibraryAlbum, getProfilePicture } from "@music/sdk";
-import { useRouter } from "next/router";
-import getSession, { ExtendedJWTPayload } from "@/lib/Authentication/JWT/getSession";
-import { useSearchParams } from "next/navigation";
-import { Artist, LibrarySong } from "@music/sdk/types";
 import ScrollButtons from "@/components/Home/ScrollButtons";
-import BigCard from "@/components/Music/Card/BigCard";
-import getBaseURL from "@/lib/Server/getBaseURL";
-import AlbumCard from "@/components/Music/Card/Album/AlbumCard";
-import ArtistCard from "@/components/Music/Artist/ArtistCard";
-import setCache, { getCache } from "@/lib/Caching/cache";
 import PageGradient from "@/components/Layout/PageGradient";
+import ArtistCard from "@/components/Music/Artist/ArtistCard";
+import AlbumCard from "@/components/Music/Card/Album/AlbumCard";
+import SongCard from "@/components/Music/Card/SongCard";
+import getSession from "@/lib/Authentication/JWT/getSession";
+import { getCache } from "@/lib/Caching/cache";
+import { getListenHistory, getProfilePicture, getSongInfo, getUserInfo, LibraryAlbum } from "@music/sdk";
+import { Artist, LibrarySong } from "@music/sdk/types";
+import { Avatar, AvatarFallback, AvatarImage } from "@music/ui/components/avatar";
+import { useSearchParams } from "next/navigation";
+import { useEffect, useState } from "react";
 
 export default function UsernameComponent() {
   const searchParams = useSearchParams();
@@ -154,8 +150,12 @@ export default function UsernameComponent() {
           {topAlbums.map((album, index) => (
             <div className="mr-20" key={index}>
               <AlbumCard 
-                album={album}
-                artist={album.artist}
+                artist_id={album.artist.id}
+                artist_name={album.artist.name}
+                album_id={album.id}
+                album_name={album.name}
+                album_cover={album.cover_url}
+                first_release_date={album.first_release_date}
                 key={album.id}
               />
             </div>
@@ -167,20 +167,7 @@ export default function UsernameComponent() {
         <div className="flex flex-row">
           {topSongs.map((song, index) => (
             <div className="mr-20" key={index}>
-              <BigCard
-                title={song.name}
-                album={song.album_object}
-                artist={song.artist_object}
-                imageSrc={
-                  song.album_object.cover_url.length === 0
-                    ? "/snf.png"
-                    : `${getBaseURL()}/image/${encodeURIComponent(song.album_object.cover_url)}`
-                }
-                albumURL=""
-                songURL={`${getBaseURL()}/api/stream/${encodeURIComponent(song.path)}?bitrate=${(session && session.bitrate) ?? 0}`}
-                type="Song"
-                song={song}
-              />
+              <SongCard album_cover={song.album_object.cover_url} album_id={song.album_object.id} album_name={song.album_object.name} artist_id={song.artist_object.id} artist_name={song.artist} path={song.path} song_id={song.id} song_name={song.name} />
             </div>
           ))}
         </div>

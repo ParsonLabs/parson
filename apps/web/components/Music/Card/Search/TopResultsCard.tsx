@@ -13,8 +13,6 @@ type ResultCardProps = {
 }
 
 export default function TopResultsCard({ result }: ResultCardProps) {
-  const session = getSession()
-
   const [artist, setArtist] = useState<Artist | null>(null)
   const [album, setAlbum] = useState<LibraryAlbum | null>(null)
   const [song, setSong] = useState<LibrarySong | null>(null)

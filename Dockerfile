@@ -30,6 +30,8 @@ RUN yarn build
 FROM rust:slim-buster AS backend-builder
 WORKDIR /usr/src
 
+RUN rustup update
+
 RUN apt-get update && apt-get install -y --no-install-recommends \
     sqlite3 libsqlite3-dev wget make build-essential pkg-config libssl-dev \
     && rm -rf /var/lib/apt/lists/*

@@ -23,14 +23,18 @@ import {
 } from "@music/ui/components/form";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
+import { useState } from "react";
 
 const FormSchema = z.object({
   bitrate: z.string({
     required_error: "Please select a bitrate.",
   }),
+  customBitrate: z.number().optional(),
 });
 
 export default function ChangeBitrate() {
+  const [message, setMessage] = useState<string | null>(null);
+
   const bitrateMapping: { [key: string]: number } = {
     low: 96,
     normal: 128,
@@ -46,6 +50,7 @@ export default function ChangeBitrate() {
     resolver: zodResolver(FormSchema),
     defaultValues: {
       bitrate: selectedBitrate,
+      customBitrate: undefined,
     },
   });
 
@@ -59,11 +64,15 @@ export default function ChangeBitrate() {
       lossless: 0,
     };
 
-    const newBitrate = bitrateMapping[data.bitrate];
+    const newBitrate =
+      data.bitrate === "custom" ? Number(data.customBitrate) : bitrateMapping[data.bitrate];
 
     if (newBitrate !== undefined) {
-      const session = getSession()
+      const session = getSession();
       setBitrate(Number(session?.sub), newBitrate);
+      setMessage("Bitrate changed successfully!");
+    } else {
+      setMessage("Failed to change bitrate.");
     }
   }
 
@@ -73,45 +82,78 @@ export default function ChangeBitrate() {
   }
 
   return (
-      <div className="text-white bg-gray-900 rounded-md">
-        <form onSubmit={form.handleSubmit(onSubmit)}>
-          <Form {...form}>
+    <div className="text-white bg-gray-900 rounded-md">
+      <form onSubmit={form.handleSubmit(onSubmit)}>
+        <Form {...form}>
+          <FormField
+            control={form.control}
+            name="bitrate"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel className="block text-2xl font-medium text-white">
+                  Audio Quality
+                </FormLabel>
+                <Select
+                  value={form.watch("bitrate")}
+                  onValueChange={onBitrateChange}
+                >
+                  <FormControl>
+                    <SelectTrigger className="w-[180px] bg-gray-800 border border-gray-600 text-white">
+                      <SelectValue placeholder="Select a bitrate" />
+                    </SelectTrigger>
+                  </FormControl>
+
+                  <SelectContent className="bg-gray-800 text-white">
+                    <SelectItem value="low">Low</SelectItem>
+                    <SelectItem value="normal">Normal</SelectItem>
+                    <SelectItem value="high">High</SelectItem>
+                    <SelectItem value="lossless">Lossless</SelectItem>
+                    <SelectItem value="custom">Custom</SelectItem>
+                  </SelectContent>
+                </Select>
+                <FormDescription className="text-sm text-gray-400">
+                  Set the audio quality when streaming, Low = 96kbps, Normal =
+                  128kbps, High = 256kbps...
+                </FormDescription>
+                <FormMessage className="text-sm text-red-600" />
+              </FormItem>
+            )}
+          />
+          {form.watch("bitrate") === "custom" && (
             <FormField
               control={form.control}
-              name="bitrate"
+              name="customBitrate"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel className="block text-2xl font-medium text-white">Audio Quality</FormLabel>
-                  <Select
-                    value={form.watch("bitrate")}
-                    onValueChange={onBitrateChange}
-                  >
-                    <FormControl>
-                      <SelectTrigger className="w-[180px] bg-gray-800 border border-gray-600 text-white">
-                        <SelectValue placeholder="Select a bitrate" />
-                      </SelectTrigger>
-                    </FormControl>
-  
-                    <SelectContent className="bg-gray-800 text-white">
-                      <SelectItem value="low">Low</SelectItem>
-                      <SelectItem value="normal">Normal</SelectItem>
-                      <SelectItem value="high">High</SelectItem>
-                      <SelectItem value="lossless">Lossless</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <FormDescription className="text-sm text-gray-400">
-                    Set the audio quality when streaming, Low = 96kbps, Normal =
-                    128kbps, High = 256kbps...
-                  </FormDescription>
+                  <FormLabel className="block text-2xl font-medium text-white">
+                    Custom Bitrate
+                  </FormLabel>
+                  <FormControl>
+                    <input
+                      type="number"
+                      {...field}
+                      value={field.value ?? ""}
+                      onChange={(e) => field.onChange(Number(e.target.value))}
+                      className="w-[180px] bg-gray-800 border border-gray-600 text-white"
+                      placeholder="Enter custom bitrate"
+                    />
+                  </FormControl>
                   <FormMessage className="text-sm text-red-600" />
                 </FormItem>
               )}
             />
-            <Button type="submit" className="w-1/3 mt-4 px-4 py-2 text-white bg-indigo-600 rounded-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
-              Change Quality
-            </Button>
-          </Form>
-        </form>
-      </div>
-    );;
+          )}
+          <Button
+            type="submit"
+            className="w-1/3 mt-4 px-4 py-2 text-white bg-indigo-600 rounded-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+          >
+            Change Quality
+          </Button>
+          {message && (
+            <div className="mt-4 text-sm text-green-500">{message}</div>
+          )}
+        </Form>
+      </form>
+    </div>
+  );
 }

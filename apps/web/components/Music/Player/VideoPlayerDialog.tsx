@@ -18,11 +18,12 @@ export type VideoPlayerDialogProps = {
 export default function VideoPlayerDialog({ url }: VideoPlayerDialogProps) {
   const { isPlaying, togglePlayPause, song, currentTime, handleTimeChange } = usePlayer();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [isHovered, setIsHovered] = useState(false);
   const videoTimeRef = useRef(currentTime);
   const playerRef = useRef<ReactPlayer>(null);
   const hasUpdatedTimeRef = useRef(false);
 
-   useEffect(() => {
+  useEffect(() => {
     if (isPlaying && isDialogOpen) {
       togglePlayPause();
     }
@@ -56,8 +57,11 @@ export default function VideoPlayerDialog({ url }: VideoPlayerDialogProps) {
   return (
     <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
       <DialogTrigger asChild>
-        <button>
-          <Video />
+        <button
+          onMouseEnter={() => setIsHovered(true)}
+          onMouseLeave={() => setIsHovered(false)}
+        >
+          <Video color={isHovered ? "white" : "gray"} />
         </button>
       </DialogTrigger>
       <DialogContent className="max-w-[1000px] h-[80vh] bg-gray-900 text-white">

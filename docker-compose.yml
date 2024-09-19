@@ -7,6 +7,4 @@ services:
     volumes:
       - "/path/to/config:/ParsonLabsMusic"
       - "/path/to/music:/music"
-    environment:
-      - JWT_SECRET=your_auth_secret_here
     restart: unless-stopped

@@ -130,7 +130,6 @@ pub async fn login(form: web::Json<AuthData>) -> impl Responder {
 
                 if let Err(_) = response.add_cookie(
                     &Cookie::build("plm_accessToken", generated_access_token)
-                        .http_only(true)
                         .same_site(SameSite::Lax)
                         .path("/")
                         .finish(),
@@ -283,7 +282,6 @@ pub async fn refresh(req: HttpRequest) -> impl Responder {
                 HttpResponse::Ok()
                     .cookie(
                         Cookie::build("plm_accessToken", new_access_token.clone())
-                            .http_only(true)
                             .same_site(SameSite::Lax)
                             .path("/")
                             .finish()

@@ -19,7 +19,7 @@ export interface RefreshTokenData {
 interface UpdateUserData {
   username?: string;
   password?: string;
-  roles?: string[]; // Added roles property
+  roles?: string[];
 }
 
 /**

@@ -114,9 +114,8 @@ pub async fn login(form: web::Json<AuthData>) -> impl Responder {
                 });
 
                 if let Err(_) = response.add_cookie(
-                    &Cookie::build("refreshToken", generated_refresh_token)
+                    &Cookie::build("plm_refreshToken", generated_refresh_token)
                         .http_only(true)
-                        .secure(true)
                         .same_site(SameSite::Lax)
                         .path("/")
                         .finish(),
@@ -130,8 +129,8 @@ pub async fn login(form: web::Json<AuthData>) -> impl Responder {
                 }
 
                 if let Err(_) = response.add_cookie(
-                    &Cookie::build("accessToken", generated_access_token)
-                        .secure(true)
+                    &Cookie::build("plm_accessToken", generated_access_token)
+                        .http_only(true)
                         .same_site(SameSite::Lax)
                         .path("/")
                         .finish(),
@@ -195,7 +194,7 @@ pub async fn register(form: web::Json<RegisterData>, req: HttpRequest) -> impl R
         "admin".to_string()
     }     else {
         let token = req
-            .cookie("accessToken")
+            .cookie("plm_accessToken")
             .map(|cookie| cookie.value().to_string());
         if let Some(token) = token {
             let jwt_secret = get_jwt_secret();
@@ -257,7 +256,7 @@ pub async fn refresh(req: HttpRequest) -> impl Responder {
 
     let secret = get_jwt_secret();
 
-    let refresh_token = match req.cookie("refreshToken") {
+    let refresh_token = match req.cookie("plm_refreshToken") {
         Some(cookie) => cookie.value().to_string(),
         None => {
             return HttpResponse::Unauthorized().json(ResponseAuthData {
@@ -283,8 +282,8 @@ pub async fn refresh(req: HttpRequest) -> impl Responder {
 
                 HttpResponse::Ok()
                     .cookie(
-                        Cookie::build("accessToken", new_access_token.clone())
-                            .secure(true)
+                        Cookie::build("plm_accessToken", new_access_token.clone())
+                            .http_only(true)
                             .same_site(SameSite::Lax)
                             .path("/")
                             .finish()
@@ -325,7 +324,7 @@ pub fn validator(
         if let Ok(cookie_str) = cookie_header.to_str() {
             cookie_str.split(';')
                 .filter_map(|cookie| Cookie::parse_encoded(cookie.trim()).ok())
-                .find(|cookie| cookie.name() == "accessToken")
+                .find(|cookie| cookie.name() == "plm_accessToken")
                 .map(|cookie| cookie.value().to_string())
         } else {
             None
@@ -372,7 +371,7 @@ pub fn admin_guard(
         if let Ok(cookie_str) = cookie_header.to_str() {
             cookie_str.split(';')
                 .filter_map(|cookie| Cookie::parse_encoded(cookie.trim()).ok())
-                .find(|cookie| cookie.name() == "accessToken")
+                .find(|cookie| cookie.name() == "plm_accessToken")
                 .map(|cookie| cookie.value().to_string())
         } else {
             None

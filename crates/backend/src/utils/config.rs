@@ -16,6 +16,10 @@ use tokio::sync::RwLock;
 use crate::structures::structures::Artist;
 
 pub fn is_docker() -> bool {
+    if env::var("RUNNING_IN_DOCKER").is_ok() {
+        return true;
+    }
+
     if Path::new("/.dockerenv").exists() {
         return true;
     }
@@ -163,8 +167,14 @@ pub fn get_icon_art_path() -> PathBuf {
 
     if let Some(parent) = path.parent() {
         if let Err(e) = fs::create_dir_all(parent) {
-            eprintln!("Failed to create directories: {}", e);
+            eprintln!("Failed to create parent directories: {}", e);
         }
+    } else {
+        eprintln!("Parent directory is None for path: {:?}", path);
+    }
+
+    if let Err(e) = fs::create_dir_all(&path) {
+        eprintln!("Failed to create artist icons directory: {}", e);
     }
 
     path
@@ -183,8 +193,14 @@ pub fn get_cover_art_path() -> PathBuf {
 
     if let Some(parent) = path.parent() {
         if let Err(e) = fs::create_dir_all(parent) {
-            eprintln!("Failed to create directories: {}", e);
+            eprintln!("Failed to create parent directories: {}", e);
         }
+    } else {
+        eprintln!("Parent directory is None for path: {:?}", path);
+    }
+
+    if let Err(e) = fs::create_dir_all(&path) {
+        eprintln!("Failed to create album covers directory: {}", e);
     }
 
     path
@@ -203,8 +219,14 @@ pub fn get_profile_picture_path() -> PathBuf {
 
     if let Some(parent) = path.parent() {
         if let Err(e) = fs::create_dir_all(parent) {
-            eprintln!("Failed to create directories: {}", e);
+            eprintln!("Failed to create parent directories: {}", e);
         }
+    } else {
+        eprintln!("Parent directory is None for path: {:?}", path);
+    }
+
+    if let Err(e) = fs::create_dir_all(&path) {
+        eprintln!("Failed to create album covers directory: {}", e);
     }
 
     path

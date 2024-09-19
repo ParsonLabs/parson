@@ -20,7 +20,7 @@ interface CustomAxiosRequestConfig extends AxiosRequestConfig {
 
 const setupInterceptors = (instance: AxiosInstance): void => {
   instance.interceptors.request.use((config: InternalAxiosRequestConfig): InternalAxiosRequestConfig => {
-    const token = getCookie('accessToken');
+    const token = getCookie('plm_accessToken');
     if (token) {
       if (!config.headers) {
         config.headers = new AxiosHeaders();
@@ -53,11 +53,11 @@ const setupInterceptors = (instance: AxiosInstance): void => {
 
             return axiosInstance(originalRequest);
           } catch (refreshError) {
-            deleteCookie("accessToken");
+            deleteCookie("plm_accessToken");
             return Promise.reject(refreshError);
           }
         } else {
-          deleteCookie("accessToken");
+          deleteCookie("plm_accessToken");
           return Promise.reject(error);
         }
       }

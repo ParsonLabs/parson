@@ -6,7 +6,6 @@ services:
     container_name: parsonlabs-music
     ports:
       - "1993:1993"
-      - "7700:7700"
     volumes:
       - "/path/to/config:/ParsonLabsMusic"
       - "/path/to/music:/music"

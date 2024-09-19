@@ -77,9 +77,9 @@ export type Account = {
 	providerType: string;
 	providerId: string;
 	providerAccountId: string;
-	refreshToken?: string;
-	accessToken?: string;
-	accessTokenExpires?: Date;
+	plm_refreshToken?: string;
+	plm_accessToken?: string;
+	plm_accessTokenExpires?: Date;
 	createdAt: Date;
 	updatedAt: Date;
 };
@@ -89,7 +89,7 @@ export type Session = {
 	userId: number;
 	expires: Date;
 	sessionToken: string;
-	accessToken: string;
+	plm_accessToken: string;
 	createdAt: Date;
 	updatedAt: Date;
 };

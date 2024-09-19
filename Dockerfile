@@ -27,10 +27,8 @@ WORKDIR /app/apps/web
 RUN yarn build
 
 # Stage 3: Build the Rust backend
-FROM rust:slim-buster AS backend-builder
+FROM rust:1.81 AS backend-builder
 WORKDIR /usr/src
-
-RUN rustup update
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     sqlite3 libsqlite3-dev wget make build-essential pkg-config libssl-dev \
@@ -60,11 +58,11 @@ RUN diesel migration run --config-file /usr/src/diesel.toml
 RUN cargo build --release
 
 # Stage 4: Create the final image
-FROM debian:bullseye-slim AS runner
+FROM debian:bookworm-slim AS runner
 WORKDIR /app
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libssl1.1 \
+    libssl3 \
     sqlite3 \
     libsqlite3-dev \
     wget \
@@ -84,6 +82,7 @@ COPY --from=installer --chown=nextjs:nodejs /app/apps/web/out ./apps/web/out
 
 # Set SSL_CERT_FILE environment variable
 ENV SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
+ENV RUNNING_IN_DOCKER=true
 
 EXPOSE 1993
 EXPOSE 7700

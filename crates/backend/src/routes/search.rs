@@ -68,8 +68,16 @@ pub fn get_tantivy_index_path() -> PathBuf {
         path
     };
 
+    if let Some(parent) = path.parent() {
+        if let Err(e) = fs::create_dir_all(parent) {
+            eprintln!("Failed to create parent directories: {}", e);
+        }
+    } else {
+        eprintln!("Parent directory is None for path: {:?}", path);
+    }
+
     if let Err(e) = fs::create_dir_all(&path) {
-        eprintln!("Failed to create directories: {}", e);
+        eprintln!("Failed to create search directory: {}", e);
     }
 
     path

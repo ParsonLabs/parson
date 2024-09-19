@@ -9,7 +9,7 @@ export type ExtendedJWTPayload = JwtPayload & {
 
 
 export default function getSession(): ExtendedJWTPayload | null {
-  const jwt = getCookie("accessToken");
+  const jwt = getCookie("plm_accessToken");
   if (!jwt) return null
 
   const user: ExtendedJWTPayload = jwtDecode(jwt);

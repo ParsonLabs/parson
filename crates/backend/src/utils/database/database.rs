@@ -103,8 +103,14 @@ pub fn get_database_path() -> PathBuf {
 
     if let Some(parent) = path.parent() {
         if let Err(e) = fs::create_dir_all(parent) {
-            eprintln!("Failed to create directories: {}", e);
+            eprintln!("Failed to create parent directories: {}", e);
         }
+    } else {
+        eprintln!("Parent directory is None for path: {:?}", path);
+    }
+
+    if let Err(e) = fs::create_dir_all(&path) {
+        eprintln!("Failed to create database directory: {}", e);
     }
 
     let mut db_path = path.clone();

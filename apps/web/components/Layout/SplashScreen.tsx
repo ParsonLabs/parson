@@ -48,17 +48,25 @@ const SplashScreen: React.FC<SplashScreenProps> = ({ children }) => {
       if (response.ok) {
         const session = getSession();
         if (session) {
-          push("/home");
+          const currentPath = window.location.pathname;
+          const queryParams = window.location.search;
+          if (currentPath === "/") {
+            push("/home");
+          } else {
+            push(`${currentPath}${queryParams}`);
+          }
+
           setLoading(false);
-          setItemWithExpiry("loading", "false", 3600000); 
+          setItemWithExpiry("loading", "false", 3600000);
         } else {
           push("/login");
           setLoading(false);
           setItemWithExpiry("loading", "false", 3600000);
         }
       } else {
+        push("/")
         setLoading(false);
-        setItemWithExpiry("loading", "false", 3600000); 
+        setItemWithExpiry("loading", "false", 3600000);
       }
     };
   

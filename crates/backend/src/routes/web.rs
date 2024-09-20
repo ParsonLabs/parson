@@ -130,7 +130,15 @@ async fn fetch_similar_albums(user_id: u32) -> Result<(Vec<AlbumCardProps>, Stri
     
     let last_10_songs: Vec<_> = listen_history_songs.iter().take(10).collect();
     
-    let random_song = last_10_songs.choose(&mut rand::thread_rng()).unwrap();
+    if last_10_songs.is_empty() {
+        return Err(());
+    }
+    
+    let random_song = match last_10_songs.choose(&mut rand::thread_rng()) {
+        Some(song) => song,
+        None => return Err(()),
+    };
+    
     
     let song_genres = get_genre_info_by_song(&random_song.song_id).await?;
     let song_genre = song_genres.into_iter().next().unwrap_or(Genre {

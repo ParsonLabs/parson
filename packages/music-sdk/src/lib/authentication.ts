@@ -60,3 +60,18 @@ export async function updateUser(data: UpdateUserData): Promise<ResponseAuthData
   const response = await axios.put('/auth/update', data);
   return response.data;
 }
+
+/**
+ * Validate JWT by making a request to /api/format/test.
+ * @returns {Promise<"valid" | "invalid" | "error">} - A promise that resolves to "valid" if the JWT is valid, "invalid" if the JWT is invalid, and "error" for other errors.
+ */
+export async function validateJWT(): Promise<"valid" | "invalid" | "error"> {
+  try {
+    const response = await axios.get('/format/test');
+    if (response.status === 200) return "valid";
+    if (response.status === 403) return "invalid";
+    return "error";
+  } catch (error) {
+    return "error";
+  }
+}

@@ -196,6 +196,8 @@ async fn fetch_albums_info(album_ids: Vec<String>) -> Result<Vec<ResponseAlbum>,
                 primary_type: album.primary_type.clone(),
                 description: album.description.clone(),
                 artist_object: (*artist).clone(),
+                contributing_artists: album.contributing_artists.clone(),
+                contributing_artists_ids: album.contributing_artists_ids.clone(),
                 release_album: album.release_album.clone(),
                 release_group_album: album.release_group_album.clone(),
             });

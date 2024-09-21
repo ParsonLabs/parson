@@ -100,7 +100,9 @@ export interface Artist {
   icon_url: string;
   followers: number;
   albums: Album[];
+  featured_on_album_ids: string[];
   description: string;
+  tadb_music_videos?: string;
 }
 
 export interface Album {
@@ -113,6 +115,8 @@ export interface Album {
     wikidata_id: string | null;
     primary_type: string;
     description: string;
+    contributing_artists: string[];
+    contributing_artists_ids: string[];
     release_album?: ReleaseAlbum;
     release_group_album?: ReleaseGroupAlbum;
 }
@@ -122,6 +126,7 @@ export interface LibrarySong {
     name: string;
     artist: string;
     contributing_artists: string[];
+    contributing_artist_ids: string[];
     track_number: number;
     path: string;
     duration: number;

@@ -83,6 +83,8 @@ export function PlayerProvider({ children }: PlayerProviderProps) {
     path: "",
     track_number: 0,
     id: "",
+    contributing_artist_ids: [],
+    music_video: undefined,
     duration: 0,
     artist_object: {
       albums: [],
@@ -91,6 +93,7 @@ export function PlayerProvider({ children }: PlayerProviderProps) {
       icon_url: "",
       id: "",
       name: "",
+      featured_on_album_ids: []
     },
     album_object: {
       cover_url: "",
@@ -102,6 +105,10 @@ export function PlayerProvider({ children }: PlayerProviderProps) {
       primary_type: "",
       songs: [],
       wikidata_id: "",
+      contributing_artists: [],
+      contributing_artists_ids: [],
+      release_album: undefined,
+      release_group_album: undefined,
     },
   });
   const [artist, setArtist] = useState<Artist>({
@@ -111,6 +118,8 @@ export function PlayerProvider({ children }: PlayerProviderProps) {
     followers: 0,
     icon_url: "",
     description: "",
+    featured_on_album_ids: [],
+    tadb_music_videos: undefined
   });
   const [album, setAlbum] = useState<Album>({
     cover_url: "",
@@ -122,6 +131,8 @@ export function PlayerProvider({ children }: PlayerProviderProps) {
     primary_type: "",
     wikidata_id: "",
     songs: [],
+    contributing_artists: [],
+    contributing_artists_ids: [],
   });
 
   const [isPlaying, setIsPlaying] = useState(false);

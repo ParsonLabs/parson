@@ -7,6 +7,8 @@ import { distance } from 'fastest-levenshtein';
 import { useEffect, useState } from 'react';
 import PlaylistCard from '../Playlist/PlaylistCard';
 import SongContextMenu from "../SongContextMenu";
+import { getArtistInfo } from "@music/sdk";
+import Link from "next/link";
 
 type PlaylistTableProps = {
   songs: LibrarySong[]
@@ -30,6 +32,7 @@ function isSimilarLevenshtein(apiTrack: string, userTrack: string): boolean {
 export default function AlbumTable({ songs, album, artist }: PlaylistTableProps) {
   const { setImageSrc, setSong, setAudioSource, setArtist, setAlbum, addToQueue, setPlayedFromAlbum } = usePlayer();
   const [orderedSongs, setOrderedSongs] = useState<LibrarySong[]>([]);
+  const [contributingArtists, setContributingArtists] = useState<{ [key: string]: Artist[] }>({});
 
   const session = getSession();
   const bitrate = session?.bitrate ?? 0;
@@ -69,6 +72,22 @@ export default function AlbumTable({ songs, album, artist }: PlaylistTableProps)
     }
   }, [songs, album]);
 
+  useEffect(() => {
+    const fetchContributingArtists = async () => {
+      const artistMap: { [key: string]: Artist[] } = {};
+
+      for (const song of songs) {
+        const artistPromises = song.contributing_artist_ids.map(id => getArtistInfo(id));
+        const artists = await Promise.all(artistPromises);
+        artistMap[song.id] = artists;
+      }
+
+      setContributingArtists(artistMap);
+    };
+
+    fetchContributingArtists();
+  }, [songs]);
+
   const handlePlay = async (coverURL: string, song: LibrarySong, songURL: string, artist: Artist) => {
     setImageSrc(`${getBaseURL()}/image/${encodeURIComponent(album.cover_url)}`);
     setArtist(artist);
@@ -91,14 +110,14 @@ export default function AlbumTable({ songs, album, artist }: PlaylistTableProps)
   return (
     <div className="pb-24">
       <Table>
-        <TableHeader>
+        {/* <TableHeader>
           <TableRow>
             <TableHead className="w-[80px]">#</TableHead>
             <TableHead className="w-[200px]">Title</TableHead>
             <TableHead className="text-right">Duration</TableHead>
           </TableRow>
-        </TableHeader>
-
+        </TableHeader> */}
+    
         {orderedSongs.map(song => (
           <SongContextMenu
             song_name={song.name}
@@ -114,7 +133,21 @@ export default function AlbumTable({ songs, album, artist }: PlaylistTableProps)
                 <TableCell className="font-medium">{song.track_number}</TableCell>
                 <TableCell>
                   <div className="w-[300px] overflow-hidden whitespace-nowrap text-overflow">
-                    <PlaylistCard song={song} coverURL={album.cover_url} artist={artist} album={album} />
+                    <PlaylistCard song={song} coverURL={album.cover_url} artist={artist} album={album} showCover={false} showArtist={false} />
+                    <div className="text-gray-500">
+                      <Link href={`/artist?id=${artist.id}`}>
+                        {artist.name}
+                      </Link>
+                      {(contributingArtists[song.id]?.length ?? 0) > 0 && ', '}
+                      {(contributingArtists[song.id] ?? []).map((contributingArtist, index) => (
+                        <span key={contributingArtist.id}>
+                          <Link href={`/artist?id=${contributingArtist.id}`} onClick={(e) => e.stopPropagation()}>
+                            {contributingArtist.name}
+                          </Link>
+                          {index < (contributingArtists[song.id]?.length ?? 0) - 1 && ', '}
+                        </span>
+                      ))}
+                    </div>
                   </div>
                 </TableCell>
                 <TableCell className="text-right">{formatDuration(song.duration)}</TableCell>

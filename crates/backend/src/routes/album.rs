@@ -17,6 +17,8 @@ pub struct ResponseAlbum {
     pub primary_type: String,
     pub description: String,
     pub artist_object: Artist,
+    pub contributing_artists: Vec<String>,
+    pub contributing_artists_ids: Vec<String>,
     pub release_album: Option<ReleaseAlbum>,
     pub release_group_album: Option<ReleaseGroupAlbum>
 }
@@ -59,6 +61,8 @@ pub async fn fetch_random_albums(amount: usize) -> Result<Vec<ResponseAlbum>, ()
                 primary_type: album.primary_type.clone(),
                 description: album.description.clone(),
                 artist_object: valid_artist.unwrap().to_owned().clone(),
+                contributing_artists: album.contributing_artists.clone(),
+                contributing_artists_ids: album.contributing_artists_ids.clone(),
                 release_album: album.release_album.clone(),
                 release_group_album: album.release_group_album.clone()
             });
@@ -85,6 +89,8 @@ pub async fn fetch_album_info(album_id: String) -> Result<ResponseAlbum, ()> {
                     primary_type: album.primary_type.clone(),
                     description: album.description.clone(),
                     artist_object: artist.clone(),
+                    contributing_artists: album.contributing_artists.clone(),
+                    contributing_artists_ids: album.contributing_artists_ids.clone(),
                     release_album: album.release_album.clone(),
                     release_group_album: album.release_group_album.clone()
                 });

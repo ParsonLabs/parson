@@ -105,6 +105,7 @@ export default function ExplorePage() {
                   album_id={albumDetails[album.id]?.id ?? ""}
                   album_name={albumDetails[album.id]?.name ?? ""}
                   album_cover={albumDetails[album.id]?.cover_url ?? ""}
+                  album_songs_count={Number(albumDetails[album.id]?.songs.length) ?? ""}
                   first_release_date={albumDetails[album.id]?.first_release_date ?? ""}
                 />
               ) : null}

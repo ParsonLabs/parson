@@ -71,7 +71,7 @@ export default function RecommendedAlbums({ genre }: RecommendedAlbumsProps) {
   if (!librarySongs || librarySongs.length === 0) return null;
 
   return (
-    <ScrollButtons heading="Recommended Albums">
+    <ScrollButtons heading="Recommended Albums" id="RecommendedAlbums">
       <div className="flex flex-row pb-28">
         {librarySongs.map((song, index) => (
           <div className="mr-20" key={index}>
@@ -79,6 +79,7 @@ export default function RecommendedAlbums({ genre }: RecommendedAlbumsProps) {
               album_cover={song.album_object.cover_url}
               album_id={song.album_object.id}
               album_name={song.album_object.name}
+              album_songs_count={song.album_object.songs.length}
               artist_id={song.artist_object.id}
               artist_name={song.artist}
               first_release_date={song.album_object.first_release_date}

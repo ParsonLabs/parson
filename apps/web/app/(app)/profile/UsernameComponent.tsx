@@ -155,6 +155,7 @@ export default function UsernameComponent() {
                 album_id={album.id}
                 album_name={album.name}
                 album_cover={album.cover_url}
+                album_songs_count={album.songs.length}
                 first_release_date={album.first_release_date}
                 key={album.id}
               />

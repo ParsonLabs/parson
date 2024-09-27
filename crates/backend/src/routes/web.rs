@@ -23,6 +23,7 @@ struct SongInfo {
     album_id: String,
     album_name: String,
     album_cover: String,
+    album_songs_count: usize,
     release_date: String,
     item_type: String,
 }
@@ -34,6 +35,7 @@ struct AlbumCardProps {
     album_id: String,
     album_name: String,
     album_cover: String,
+    album_songs_count: usize,
     first_release_date: String,
 }
 
@@ -54,6 +56,7 @@ async fn find_song_info_min(song_id: String) -> Result<SongInfo, ()> {
                         album_name: album.name.clone(),
                         album_cover: album.cover_url.clone(),
                         release_date: album.first_release_date.clone(),
+                        album_songs_count: album.songs.len().clone(),
                         item_type: "song".to_string(),
                     });
                 }
@@ -112,6 +115,7 @@ async fn fetch_listen_history_songs(user_id: u32) -> Result<Vec<SongInfo>, ()> {
                 album_id: album_id.clone(),
                 album_name: songs[0].album_name.clone(),
                 album_cover: songs[0].album_cover.clone(),
+                album_songs_count: songs[0].album_songs_count.clone(),
                 release_date: songs[0].release_date.clone(),
                 item_type: "album".to_string(),
             });
@@ -165,6 +169,7 @@ async fn fetch_similar_albums(user_id: u32) -> Result<(Vec<AlbumCardProps>, Stri
             album_id: album.id,
             album_name: album.name,
             album_cover: album.cover_url,
+            album_songs_count: album.songs.len(),
             first_release_date: album.first_release_date,
         }
     }).collect();

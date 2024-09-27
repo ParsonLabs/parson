@@ -48,7 +48,7 @@ export default function RandomSongs({ genre }: RandomSongsProps) {
   if (!randomSongs || randomSongs.length === 0) return null;
 
   return (
-    <ScrollButtons heading="Random Selection">
+    <ScrollButtons heading="Random Selection" id="RandomSongs">
       <div className="flex flex-row pb-28">
         {randomSongs.map((song, index) => (
           <div className="mr-20" key={index}>

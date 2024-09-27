@@ -39,7 +39,7 @@ export default function MainLayout({ children }: any) {
         <Sidebar
           sidebarContent={
             <>
-              <Separator className="bg-gray-800" />
+              {/* <Separator className="bg-gray-800" /> */}
               <Suspense>
                 <FriendActivity />
               </Suspense>

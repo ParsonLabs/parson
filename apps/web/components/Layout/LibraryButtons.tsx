@@ -135,6 +135,7 @@ export default function LibraryButtons() {
                     album_id={album.id}
                     album_name={album.name}
                     album_cover={album.cover_url}
+                    album_songs_count={album.songs.length}
                     first_release_date={album.first_release_date}
                   />
                 </div>
@@ -180,6 +181,7 @@ export default function LibraryButtons() {
                   album_id={item.data.album_object.id}
                   album_name={item.data.album_object.name}
                   album_cover={item.data.album_object.cover_url}
+                  album_songs_count={item.data.album_object.songs.length}
                   first_release_date={item.data.album_object.first_release_date}
                 />              
               ) : item.data && <ArtistCard artist={item.data.artist_object} />

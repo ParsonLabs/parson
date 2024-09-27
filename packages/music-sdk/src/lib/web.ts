@@ -9,6 +9,7 @@ export interface SongInfo {
   album_id: string;
   album_name: string;
   album_cover: string;
+  album_songs_count: number;
   release_date: string;
   item_type: 'song' | 'album';
 }
@@ -19,6 +20,7 @@ export interface AlbumCardProps {
   album_id: string;
   album_name: string;
   album_cover: string;
+  album_songs_count: number,
   first_release_date: string;
 }
 

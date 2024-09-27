@@ -8,6 +8,7 @@ import { ListMusic, Plus } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import CreatePlaylistDialog from "../Music/Playlist/CreatePlaylistDialog";
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@music/ui/components/accordion"
 
 interface Playlist extends OriginalPlaylist {
   users: string[];
@@ -46,17 +47,26 @@ export default function Playlists() {
 
   return (
     <div>
-      <h3 className="font-heading text-white font-semibold text-xl">Playlists</h3>
-      {playlists?.map(playlist => (
-        <div className="pl-5 text-sm flex flex-row items-center gap-3 py-2 " key={playlist.id}>
-          <ListMusic className="size-4"/>
-          <Link href={"/playlist?id=" + playlist.id} key={playlist.id}>
-            <p className="text-sm" key={playlist.id}>{playlist.name}</p>
-            <p className="text-xs font-thin">Playlist • {playlist.users.join(", ")}</p>
-          </Link>
-        </div>
-      ))}
-   
+      <Accordion type="single" collapsible>
+        <AccordionItem value="playlists">
+          <AccordionTrigger className="font-heading text-white font-semibold text-sm">
+            <ListMusic className="h-6 w-6 ml-4 mr-4" />
+            Playlists
+          </AccordionTrigger>
+          <AccordionContent>
+            {playlists?.map(playlist => (
+              <div className="pl-5 text-sm flex flex-row items-center gap-3 py-2" key={playlist.id}>
+                <ListMusic className="size-4" />
+                <Link href={"/playlist?id=" + playlist.id} key={playlist.id}>
+                  <p className="text-sm" key={playlist.id}>{playlist.name}</p>
+                  <p className="text-xs font-thin">Playlist • {playlist.users.join(", ")}</p>
+                </Link>
+              </div>
+            ))}
+          </AccordionContent>
+        </AccordionItem>
+      </Accordion>
+
       <div className="mt-6 flex justify-center">
         <CreatePlaylistDialog>
           <Button style={{ backgroundColor: "#353535" }}>
@@ -66,5 +76,5 @@ export default function Playlists() {
         </CreatePlaylistDialog>
       </div>
     </div>
-  )
+  );
 }

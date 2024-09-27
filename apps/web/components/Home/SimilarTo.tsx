@@ -47,7 +47,7 @@ export default function SimilarTo() {
   return similarAlbums.length !== 0 && (
     <>
       <PageGradient imageSrc={albumCoverSrc} />
-      <ScrollButtons heading={capitalizeWords(genre ?? "")} topText="SIMILAR TO" imageUrl={albumCoverSrc}>
+      <ScrollButtons heading={capitalizeWords(genre ?? "")} topText="SIMILAR TO" imageUrl={albumCoverSrc} id="SimilarTo">
         <div className="w-full h-full">
           <div className="grid grid-flow-col grid-rows-2 gap-2 w-full h-full">
             {similarAlbums.map((album, index) => (
@@ -58,6 +58,7 @@ export default function SimilarTo() {
                   album_id={album.album_id}
                   album_name={album.album_name}
                   album_cover={album.album_cover}
+                  album_songs_count={album.album_songs_count}
                   first_release_date={album.first_release_date}
                 />
               </div>

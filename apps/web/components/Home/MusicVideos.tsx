@@ -46,7 +46,7 @@ export default function MusicVideos() {
   if (loading) return null;
 
   return songs && (
-    <ScrollButtons heading="Music Videos">
+    <ScrollButtons heading="Music Videos" id="MusicVideos">
       <div className="flex flex-row">
         {songs.map((song) => (
           <MusicVideoCard key={song.id} song={song} />

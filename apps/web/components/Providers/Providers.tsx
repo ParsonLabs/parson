@@ -8,6 +8,7 @@ import { ScrollProvider } from './ScrollProvider';
 import SidebarProvider from './SideBarProvider';
 import { ThemeProvider } from './ThemeProvider';
 import { SlowedReverbProvider } from './SlowedReverbProvider';
+import { LayoutConfigProvider } from './LayoutConfigContext';
 
 interface ProvidersProps {
   children: ReactNode;
@@ -16,23 +17,25 @@ interface ProvidersProps {
 export default function Providers({ children }: ProvidersProps) {
   return (
     <ThemeProvider>
-      <GradientHoverProvider>
-        <ScrollProvider>
-          <SidebarProvider>
-            <SlowedReverbProvider>
-              <PlayerProvider>
-                <PanelProvider>
-                  <LyricsOverlayProvider>
-                    <AIOverlayProvider>
-                      {children}
-                    </AIOverlayProvider>
-                  </LyricsOverlayProvider>
-                </PanelProvider>
-              </PlayerProvider>
-            </SlowedReverbProvider>
-          </SidebarProvider>
-        </ScrollProvider>
-      </GradientHoverProvider>
+      <LayoutConfigProvider>
+        <GradientHoverProvider>
+          <ScrollProvider>
+            <SidebarProvider>
+              <SlowedReverbProvider>
+                <PlayerProvider>
+                  <PanelProvider>
+                    <LyricsOverlayProvider>
+                      <AIOverlayProvider>
+                        {children}
+                      </AIOverlayProvider>
+                    </LyricsOverlayProvider>
+                  </PanelProvider>
+                </PlayerProvider>
+              </SlowedReverbProvider>
+            </SidebarProvider>
+          </ScrollProvider>
+        </GradientHoverProvider>
+      </LayoutConfigProvider>
     </ThemeProvider>
   );
 }

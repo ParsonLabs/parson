@@ -36,7 +36,7 @@ export default function GenreButtons({ children }: GenreButtonsProps) {
 
   return (
     <>
-      <ScrollArea className="w-full whitespace-nowrap rounded-md pb-10">
+      <ScrollArea className="w-5/6 whitespace-nowrap rounded-md pb-10">
         <div className="flex w-max space-x-4 p-4">
           {genres.map((genre, index) => (
             <button

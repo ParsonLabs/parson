@@ -36,7 +36,7 @@ export default function ListenAgain({ genre }: ListenAgainProps) {
   return listenHistorySongs && (
     <>
       <PageGradient imageSrc={albumCoverSrc} />
-      <ScrollButtons heading="Listen Again" showUser>
+      <ScrollButtons heading="Listen Again" showUser id="ListenAgain">
         <div className="flex flex-row pb-28">
           {listenHistorySongs.map((item, index) => {
             if (item.item_type === "album") {
@@ -48,6 +48,7 @@ export default function ListenAgain({ genre }: ListenAgainProps) {
                     album_id={item.album_id}
                     album_name={item.album_name}
                     album_cover={item.album_cover ?? ""}
+                    album_songs_count={item.album_songs_count}
                     first_release_date={item.release_date}
                   />
                 </div>

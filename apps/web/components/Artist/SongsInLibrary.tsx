@@ -48,7 +48,7 @@ export default function FromYourLibrary() {
   }, [id]);
 
   return librarySongs.length > 0 && (
-    <ScrollButtons heading="In your Library">
+    <ScrollButtons heading="In your Library" id="InYourLibrary">
       <div className="flex flex-row justify-start items-start pb-20">
         {librarySongs.map((song, index) => (
           <div key={index} className="w-full sm:w-1/2 md:w-1/3 lg:w-1/4 p-8">

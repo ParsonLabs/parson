@@ -1,5 +1,7 @@
 "use client";
 
+import React, { useState, useEffect, useRef, useContext } from "react";
+import * as Tone from "tone";
 import getSession from "@/lib/Authentication/JWT/getSession";
 import getBaseURL from "@/lib/Server/getBaseURL";
 import {
@@ -8,11 +10,11 @@ import {
   SliderThumb,
   SliderTrack,
 } from "@music/ui/components/slider";
+import { Popover, PopoverContent, PopoverTrigger } from "@music/ui/components/popover";
 import { FastAverageColor } from "fast-average-color";
 import { AudioLines, BookAudioIcon, MicVocal, SkipBack, SkipForward, Volume2, VolumeX } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
-import { useContext, useEffect, useRef, useState } from "react";
 import { AIContext } from "../AI/AIOverlayContext";
 import ArrowPath from "../Icons/ArrowPath";
 import IconQueue from "../Icons/IconQueue";
@@ -24,10 +26,10 @@ import { useReverb } from "../Providers/SlowedReverbProvider";
 import { usePlayer } from "./Player/usePlayer";
 import VideoPlayerDialog from "./Player/VideoPlayerDialog";
 import { PanelContext } from "./Queue/QueuePanelContext";
+import { Input } from "@music/ui/components/input";
+import { Label } from "@radix-ui/react-label";
 
 export default function Player() {
-  const audioRef = useRef<HTMLAudioElement | null>(null);
-
   const [liked, setLiked] = useState(false);
   const { reverb, setReverb } = useReverb();
 
@@ -65,16 +67,18 @@ export default function Player() {
   const [isReverbClicked, setIsReverbClicked] = useState(false);
   const [isSpeakerHovered, setIsSpeakerHovered] = useState(false);
 
-  const formatTime = (time: number) => {
-    const minutes = Math.floor(time / 60);
-    const seconds = Math.floor(time % 60);
-    return `${minutes}:${seconds < 10 ? "0" : ""}${seconds}`;
-  };
+  const [slowed, setSlowed] = useState(1);
+  const [reverbEffectValue, setReverbEffectValue] = useState(0);
+  const [pitch, setPitch] = useState(0);
+  const player = useRef<Tone.Player | null>(null);
+  const reverbEffect = useRef<Tone.Reverb | null>(null);
+  const pitchShift = useRef<Tone.PitchShift | null>(null);
+  const [isLoaded, setIsLoaded] = useState(false);
 
   useEffect(() => {
-    if (isPlaying) document.title = `${song.name} | ParsonLabs Music`;
-    if (!isPlaying) document.title = `ParsonLabs Music`;
-  }, [song, artist, isPlaying]);
+    reverbEffect.current = new Tone.Reverb().toDestination();
+    pitchShift.current = new Tone.PitchShift().toDestination();
+  }, []);
 
   useEffect(() => {
     const session = getSession();
@@ -82,8 +86,87 @@ export default function Player() {
     if (reverb) {
       songURL += "&slowed_reverb=true";
     }
-    setAudioSource(songURL);
+
+    setAudioSource(songURL)    
+    // player.current = new Tone.Player({
+    //   url: songURL,
+    //   onload: () => {
+    //     player.current?.connect(pitchShift.current!);
+    //     pitchShift.current?.connect(reverbEffect.current!);
+    //     setIsLoaded(true);
+    //     console.log('Player loaded');
+    //   },
+    //   onerror: (error) => {
+    //     console.error('Error loading player:', error);
+    //   }
+    // }).toDestination();
   }, [reverb, song, setAudioSource]);
+
+  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      const url = URL.createObjectURL(file);
+      player.current = new Tone.Player({
+        url,
+        onload: () => {
+          setIsLoaded(true);
+          console.log('File loaded');
+        },
+        onerror: (error) => {
+          console.error('Error loading file:', error);
+        }
+      }).connect(pitchShift.current!);
+      pitchShift.current?.connect(reverbEffect.current!);
+    }
+  };
+
+  const handleSlowedChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const value = parseFloat(event.target.value);
+    setSlowed(value);
+    if (player.current) {
+      player.current.playbackRate = value;
+    }
+  };
+
+  const handleReverbChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const value = parseFloat(event.target.value);
+    setReverbEffectValue(value);
+    if (reverbEffect.current) {
+      reverbEffect.current.decay = value;
+    }
+  };
+
+  const handlePitchChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const value = parseFloat(event.target.value);
+    setPitch(value);
+    if (pitchShift.current) {
+      pitchShift.current.pitch = value;
+    }
+  };
+
+  const handleClick = () => {
+    console.log('handleClick called');
+    if (Tone.context.state !== 'running') {
+      Tone.context.resume();
+    }
+    if (player.current) {
+      console.log('Player is initialized');
+      if (isLoaded) {
+        console.log('Player is loaded');
+        if (player.current.state !== 'started') {
+          console.log('Starting player');
+          player.current.start();
+        } else {
+          console.log('Stopping player');
+          player.current.stop();
+        }
+      } else {
+        console.log('Player is not loaded yet');
+      }
+    } else {
+      console.log('Player is not initialized');
+    }
+  };
 
   const debounce = (func: Function, wait: number) => {
     let timeout: NodeJS.Timeout;
@@ -91,14 +174,22 @@ export default function Player() {
       clearTimeout(timeout);
       timeout = setTimeout(() => func(...args), wait);
     };
-  };
+  }
 
   const debouncedTogglePlayPause = debounce(togglePlayPause, 300);
+
+  const formatTime = (time: number) => {
+    const minutes = Math.floor(time / 60);
+    const seconds = Math.floor(time % 60);
+    return `${minutes}:${seconds < 10 ? "0" : ""}${seconds}`;
+  };
+
   return song.id && (
     <footer className="z-50 fixed bottom-0 border-t border-gray-800 px-3 py-3 flex flex-col md:flex-row items-center justify-between md:gap-4 w-full" 
       style={{ 
         backgroundColor: "#212121",
         transition: 'background-color 0.5s ease',
+        height: "100px"
       }}>
       <Image
         className="bg-cover bg-center blur-3xl"
@@ -142,7 +233,7 @@ export default function Player() {
         </div>
         <div className="flex items-center justify-between w-full">
           <div className="flex items-center gap-3">
-            <div className="w-24 h-12 md:w-20 md:h-20 bg-gray-500 rounded-md">
+            <div className="w-full h-12 md:w-20 md:h-20 bg-gray-500 rounded-md">
               <Image
                 alt={song.name + "Image"}
                 src={imageSrc}
@@ -151,15 +242,20 @@ export default function Player() {
                 className="w-full h-full object-fill rounded"
               />
             </div>
-            <div className="w-32 md:overflow-hidden">
+            <div className="w-80 md:overflow-hidden">
               <p
                 className={`${song.name.length > 30 && "whitespace-nowrap"} ${song.name.length > 30 ? "md:animate-marquee" : ""}`}
                 title={song.name.length > 30 ? song.name : ""}
               >
-                <Link href={`/album?id={album.id}`}>{song.name}</Link>
+                <Link href={`/album?id=${album.id}`}>{song.name}</Link>
               </p>
               <p className="text-xs text-gray-400">
-                <Link href={`/artist?id={artist.id}`}>{artist.name}</Link>
+                <Link href={`/artist?id=${artist.id}`}>{artist.name}</Link>
+                {song.contributing_artists.map((artist, index) => (
+                  <span key={index}>
+                    , <Link href={`/artist?id=${song.contributing_artist_ids[index]}`}>{artist}</Link>
+                  </span>
+                ))}
               </p>
             </div>
           </div>
@@ -228,7 +324,7 @@ export default function Player() {
           </button>
         )}
   
-                <button
+        <button
           onClick={() => {
             togglePanel();
             setIsQueueClicked(!isQueueClicked);
@@ -236,14 +332,69 @@ export default function Player() {
         >
           <IconQueue color={isQueueClicked ? 'white' : 'gray'} />
         </button>
-        <button
-          onClick={() => {
-            setReverb(!reverb);
-            setIsReverbClicked(!isReverbClicked);
-          }}
-        >
-          <AudioLines color={isReverbClicked ? 'white' : 'gray'} />
-        </button>
+        {/* <Popover> */}
+          {/* <PopoverTrigger asChild> */}
+            <button
+              onClick={() => {
+                setReverb(!reverb)
+                setIsReverbClicked(!isReverbClicked);
+              }}
+            >
+              <AudioLines color={isReverbClicked ? 'white' : 'gray'} />
+            </button>
+          {/* </PopoverTrigger> */}
+          {/* <PopoverContent className="w-80"> */}
+            {/* <div className="grid gap-4">
+              <div className="space-y-2">
+                <h4 className="font-medium leading-none">Audio Effects</h4>
+                <p className="text-sm text-muted-foreground">
+                  Adjust the audio effects for the current track.
+                </p>
+              </div>
+              <div className="grid gap-2">
+                <div className="grid grid-cols-3 items-center gap-4">
+                  <Label htmlFor="slowed">Slowed</Label>
+                  <Input
+                    id="slowed"
+                    type="range"
+                    min="0.5"
+                    max="2"
+                    step="0.1"
+                    value={slowed}
+                    onInput={handleSlowedChange}
+                    className="col-span-2 h-8"
+                  />
+                </div>
+                <div className="grid grid-cols-3 items-center gap-4">
+                  <Label htmlFor="reverb">Reverb</Label>
+                  <Input
+                    id="reverb"
+                    type="range"
+                    min="0"
+                    max="10"
+                    step="0.1"
+                    value={reverbEffectValue}
+                    onInput={handleReverbChange}
+                    className="col-span-2 h-8"
+                  />
+                </div>
+                <div className="grid grid-cols-3 items-center gap-4">
+                  <Label htmlFor="pitch">Pitch</Label>
+                  <Input
+                    id="pitch"
+                    type="range"
+                    min="-12"
+                    max="12"
+                    step="1"
+                    value={pitch}
+                    onInput={handlePitchChange}
+                    className="col-span-2 h-8"
+                  />
+                </div>
+              </div>
+            </div>
+          </PopoverContent>
+        </Popover> */}
         <div className="flex items-center gap-1">
           <button
             onClick={() => toggleMute()}
@@ -272,7 +423,6 @@ export default function Player() {
           </Slider>
         </div>
       </section>
-      <audio ref={audioRef} onTimeUpdate={() => handleTimeUpdate()} />
     </footer>
   );
 }

@@ -71,7 +71,7 @@ export default function FromYourLibrary({ genre }: FromYourLibraryProps) {
   if (!librarySongs || librarySongs.length === 0) return null;
 
   return (
-    <ScrollButtons heading="From Your Library">
+    <ScrollButtons heading="From Your Library" id="FromYourLibrary">
       <div className="flex flex-row pb-28">
         {librarySongs.map((song, index) => (
           <div className="mr-20" key={index}>

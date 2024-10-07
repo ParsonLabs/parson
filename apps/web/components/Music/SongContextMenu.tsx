@@ -31,6 +31,7 @@ import { useEffect, useState, useTransition } from "react";
 import Bars3Left from "../Icons/Bars3Left";
 import { usePlayer } from "./Player/usePlayer";
 import { LibrarySong } from "@music/sdk/types";
+import { useSession } from "../Providers/AuthProvider";
 
 type SongContextMenuProps = {
   children: React.ReactNode;
@@ -53,15 +54,15 @@ export default function SongContextMenu({
 }: SongContextMenuProps) {
   const [playlists, setPlaylists] = useState<PlaylistsResponse[] | null>(null);
   const [songInfo, setSongInfo] = useState<LibrarySong | null>(null);
+  const { session } = useSession()
 
   useEffect(() => {
     const getPlaylistsRequest = async () => {
-      const session = getSession();
       let playlists = await getPlaylists(Number(session?.sub) ?? 0);
       setPlaylists(playlists);
     };
     getPlaylistsRequest();
-  }, []);
+  }, [session?.sub]);
 
   const [isPending, startTransition] = useTransition();
 

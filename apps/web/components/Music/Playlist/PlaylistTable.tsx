@@ -16,6 +16,7 @@ import {
 } from "@music/ui/components/table";
 import Link from "next/link";
 import SongContextMenu from "../SongContextMenu";
+import { useSession } from "@/components/Providers/AuthProvider";
 
 type PlaylistTableProps = {
   songsWithMetadata: (LibrarySong & { date_added: string })[];
@@ -24,7 +25,7 @@ type PlaylistTableProps = {
 export default function PlaylistTable({ songsWithMetadata }: PlaylistTableProps) {
   const { setImageSrc, setSong, setArtist, setAudioSource, setAlbum } = usePlayer()
 
-  const session = getSession()
+  const { session } = useSession()
 
   const handlePlay = async (coverURL: string, song: LibrarySong, songURL: string, artist: Artist, album: Album) => {
     setImageSrc(`${getBaseURL()}/image/${encodeURIComponent(coverURL)}`)

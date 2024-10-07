@@ -19,6 +19,7 @@ import { Avatar, AvatarImage, AvatarFallback } from "@radix-ui/react-avatar"
 import { useState, useEffect } from "react"
 import { useForm } from "react-hook-form"
 import { z } from "zod"
+import { useSession } from "@/components/Providers/AuthProvider"
 
 const FormSchema = z.object({
   picture: z.instanceof(File).optional(),
@@ -36,10 +37,10 @@ export default function SettingsPage() {
   const [message, setMessage] = useState<string | null>(null)
   const [profilePicture, setProfilePicture] = useState<string | null>(null)
   const [username, setUsername] = useState<string>("")
+  const { session } = useSession()
 
   useEffect(() => {
     const fetchSessionAndProfilePicture = async () => {
-      const session = getSession()
       if (session) {
         setUsername(session.username)
         const profilePic = await getProfilePicture(Number(session.sub))
@@ -51,10 +52,9 @@ export default function SettingsPage() {
       }
     }
     fetchSessionAndProfilePicture()
-  }, [])
+  }, [session])
 
   async function onSubmit(data: z.infer<typeof FormSchema>) {
-    const session = getSession()
     const userId = Number(session?.sub)
 
     if (file) {

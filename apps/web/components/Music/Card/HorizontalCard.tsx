@@ -13,6 +13,7 @@ import { FastAverageColor } from "fast-average-color";
 import Image from "next/image";
 import Link from "next/link";
 import { usePlayer } from "../Player/usePlayer";
+import { useSession } from "@/components/Providers/AuthProvider";
 
 type HorizontalCardProps = {
   item: CombinedItem
@@ -21,7 +22,7 @@ type HorizontalCardProps = {
 export default function HorizontalCard({ item }: HorizontalCardProps) {
   const { item_type, name, artist_object, album_object, song_object } = item;
   const imagePath = album_object?.cover_url || artist_object?.icon_url || "";
-  const session = getSession();
+  const { session } = useSession()
 
   const {
     setImageSrc,

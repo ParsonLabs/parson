@@ -7,6 +7,7 @@ import { useEffect, useState } from "react";
 import AlbumCard from "../Music/Card/Album/AlbumCard";
 import ScrollButtons from "./ScrollButtons";
 import { LibrarySong } from "@music/sdk/types";
+import { useSession } from "../Providers/AuthProvider";
 
 async function getSongsFromYourLibrary(user_id: number, genre?: string) {
   const playlists = await getPlaylists(user_id);
@@ -41,9 +42,9 @@ interface RecommendedAlbumsProps {
 export default function RecommendedAlbums({ genre }: RecommendedAlbumsProps) {
   const [librarySongs, setLibrarySongs] = useState<LibrarySong[]>([]);
   const [loading, setLoading] = useState(true);
+  const { session } = useSession()
   
   useEffect(() => {
-    const session = getSession();
   
     async function fetchSongs() {
       const cacheKey = genre ? `recommendedAlbums_${genre}` : "recommendedAlbums";
@@ -65,7 +66,7 @@ export default function RecommendedAlbums({ genre }: RecommendedAlbumsProps) {
     }
   
     fetchSongs();
-  }, [genre]);
+  }, [genre, session]);
 
   if (loading) return null;
   if (!librarySongs || librarySongs.length === 0) return null;

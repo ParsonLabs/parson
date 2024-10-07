@@ -70,17 +70,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 RUN addgroup --system --gid 1001 nodejs
-RUN adduser --system --uid 1001 nextjs
+RUN adduser --system --uid 1001 --ingroup nodejs nextjs
 
 # Change ownership of the /app directory to the nextjs user
 RUN chown -R nextjs:nodejs /app
+
+RUN mkdir -p /ParsonLabsMusic /music && chown -R nextjs:nodejs /ParsonLabsMusic /music
 
 USER nextjs
 COPY --from=backend-builder --chown=nextjs:nodejs /usr/src/crates/backend/target/release/music-server /usr/local/bin/music-server
 COPY --from=backend-builder --chown=nextjs:nodejs /usr/src/crates/backend/music.db /usr/src/crates/backend/music.db
 COPY --from=installer --chown=nextjs:nodejs /app/apps/web/out ./apps/web/out
 
-# Set SSL_CERT_FILE environment variable
 ENV SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
 ENV RUNNING_IN_DOCKER=true
 

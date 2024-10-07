@@ -33,6 +33,7 @@ import { Inter as FontSans } from "next/font/google"
 import { useRouter } from "next/navigation"
 import { useEffect, useState } from "react"
 import { cn } from "@music/ui/lib/utils"
+import { useSession } from "../Providers/AuthProvider"
 
 const fontSans = FontSans({
   subsets: ["latin"],
@@ -42,10 +43,10 @@ const fontSans = FontSans({
 export default function NavbarProfilePicture() {
   const [username, setUsername] = useState("")
   const [profilePicture, setProfilePicture] = useState<string | null>(null)
+  const { session } = useSession()
 
   useEffect(() => {
     const fetchSessionAndProfilePicture = async () => {
-      const session = getSession()
       if (session) {
         setUsername(session.username)
         const profilePic = await getProfilePicture(Number(session.sub))
@@ -57,7 +58,7 @@ export default function NavbarProfilePicture() {
       }
     }
     fetchSessionAndProfilePicture()
-  }, [])
+  }, [session])
 
   const { push } = useRouter()
   function signOut() {

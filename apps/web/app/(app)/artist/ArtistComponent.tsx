@@ -7,7 +7,6 @@ import ScrollButtons from "@/components/Home/ScrollButtons";
 import PageGradient from "@/components/Layout/PageGradient";
 import AlbumCard from "@/components/Music/Card/Album/AlbumCard";
 import SongCard from "@/components/Music/Card/SongCard";
-import getSession from "@/lib/Authentication/JWT/getSession";
 import { getArtistInfo } from "@music/sdk";
 import { Album, Artist, LibrarySong } from "@music/sdk/types";
 import { useSearchParams } from "next/navigation";

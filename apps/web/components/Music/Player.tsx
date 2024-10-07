@@ -28,6 +28,7 @@ import VideoPlayerDialog from "./Player/VideoPlayerDialog";
 import { PanelContext } from "./Queue/QueuePanelContext";
 import { Input } from "@music/ui/components/input";
 import { Label } from "@radix-ui/react-label";
+import { useSession } from "../Providers/AuthProvider";
 
 export default function Player() {
   const [liked, setLiked] = useState(false);
@@ -74,6 +75,7 @@ export default function Player() {
   const reverbEffect = useRef<Tone.Reverb | null>(null);
   const pitchShift = useRef<Tone.PitchShift | null>(null);
   const [isLoaded, setIsLoaded] = useState(false);
+  const { session } = useSession()
 
   useEffect(() => {
     reverbEffect.current = new Tone.Reverb().toDestination();
@@ -81,7 +83,6 @@ export default function Player() {
   }, []);
 
   useEffect(() => {
-    const session = getSession();
     let songURL = `${getBaseURL()}/api/stream/${encodeURIComponent(song.path)}?bitrate=${session && session.bitrate || 0}`;
     if (reverb) {
       songURL += "&slowed_reverb=true";
@@ -100,7 +101,7 @@ export default function Player() {
     //     console.error('Error loading player:', error);
     //   }
     // }).toDestination();
-  }, [reverb, song, setAudioSource]);
+  }, [reverb, song, setAudioSource, session]);
 
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];

@@ -5,6 +5,7 @@ import pl from "@/assets/pl-tp.png"
 import { cn } from "@music/ui/lib/utils"
 import { Metadata } from "next"
 import Image from "next/image"
+import AuthProvider from "@/components/Providers/AuthProvider"
 
 const fontSans = FontSans({
   subsets: ["latin"],
@@ -34,7 +35,10 @@ export default function RootLayout({ children }: RootLayoutProps) {
               ParsonLabs Music
             </div>
           </div>
-        {children}
+
+        <AuthProvider>
+          {children}
+        </AuthProvider>
       </body>
     </html>
   )

@@ -9,6 +9,7 @@ import { FormItem, FormLabel, FormControl, FormMessage } from "@music/ui/compone
 import { Input } from "@music/ui/components/input";
 import { Form, useForm, FormProvider } from "react-hook-form";
 import { z } from "zod";
+import { useSession } from "../Providers/AuthProvider";
 
 const changePasswordSchema = z.object({
   password: z
@@ -21,7 +22,7 @@ const changePasswordSchema = z.object({
 
 export function ChangePassword() {
   const [isClient, setIsClient] = useState(false);
-  const session = getSession();
+  const { session } = useSession()
 
   useEffect(() => {
     setIsClient(true);

@@ -1,6 +1,7 @@
 "use client";
 
 import pl from "@/assets/pl-tp.png";
+import { useSession } from "@/components/Providers/AuthProvider";
 import ServerSelectIcon from "@/components/Setup/Server/ServerSelectIcon";
 import getSession from "@/lib/Authentication/JWT/getSession";
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -18,7 +19,7 @@ import {
 import { Input } from '@music/ui/components/input';
 import { Loader2Icon } from "lucide-react";
 import Image from "next/image";
-import { useRouter } from "next/navigation";
+import { useRouter, useSelectedLayoutSegment } from "next/navigation";
 import { useEffect, useState } from "react";
 import { SubmitHandler, useForm } from 'react-hook-form';
 import * as z from 'zod';
@@ -34,6 +35,7 @@ export default function MainPage() {
   const [showServerURLInput, setShowServerURLInput] = useState(false);
   const [showServerSelect, setShowServerSelect] = useState(false);
   const { push } = useRouter();
+  const { session } = useSession()
 
   useEffect(() => {
     const checkServerUrl = async () => {
@@ -46,7 +48,6 @@ export default function MainPage() {
         );
         let serverInfo: ServerInfo = await response.json();
 
-        const session = getSession();
         if (serverInfo.product_name && serverInfo.startup_wizard_completed) {
           localStorage.setItem("server", JSON.stringify(serverInfo));
 
@@ -76,7 +77,7 @@ export default function MainPage() {
     };
 
     checkServerUrl();
-  }, [push]);
+  }, [push, session]);
 
   const form = useForm<FormData>({
     resolver: zodResolver(schema),
@@ -91,7 +92,6 @@ export default function MainPage() {
       localStorage.setItem("server", JSON.stringify({ local_address: data.serverUrl }));
       let serverInfo = await getServerInfo();
 
-      const session = getSession();
       if (serverInfo.product_name && serverInfo.startup_wizard_completed) {
         localStorage.setItem("server", JSON.stringify(serverInfo));
 

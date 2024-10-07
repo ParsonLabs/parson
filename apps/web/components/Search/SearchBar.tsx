@@ -10,6 +10,7 @@ import { useRouter } from "next/navigation";
 import { FormEvent, useContext, useEffect, useState } from "react";
 import { LyricsContext } from "../Lyrics/LyricsOverlayContext";
 import { ScrollContext } from "../Providers/ScrollProvider";
+import { useSession } from "../Providers/AuthProvider";
 
 type SearchBarProps = {
   isSearchActive: boolean;
@@ -25,11 +26,11 @@ export default function SearchBar({
   const [isSearchBoxClicked, setIsSearchBoxClicked] = useState(false);
   const { onTopOfPage } = useContext(ScrollContext);
   const { areLyricsVisible } = useContext(LyricsContext)
+  const { session } = useSession()
 
   const router = useRouter();
   
   const handleSubmit = (event: FormEvent) => {
-    const session = getSession()
     event.preventDefault();
     session && addSearchHistory({ user_id: Number(session.sub), search: query })
     router.push(`/search?q=${query}`);
@@ -37,7 +38,6 @@ export default function SearchBar({
   };
   
   useEffect(() => {
-    const session = getSession()
     async function getLastSearchedQueriesFn() {
         if (session) {
             const queries = await getLastSearchedQueries({ user_id: Number(session.sub) });
@@ -49,7 +49,7 @@ export default function SearchBar({
     }
 
       getLastSearchedQueriesFn();
-  }, []);
+  }, [session]);
 
   return (
     <div className="flex flex-col relative">

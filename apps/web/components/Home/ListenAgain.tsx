@@ -9,6 +9,7 @@ import PageGradient from "../Layout/PageGradient";
 import AlbumCard from "../Music/Card/Album/AlbumCard";
 import SongCard from "../Music/Card/SongCard";
 import ScrollButtons from "./ScrollButtons";
+import { useSession } from "../Providers/AuthProvider";
 
 interface ListenAgainProps {
   genre?: string;
@@ -16,16 +17,16 @@ interface ListenAgainProps {
 
 export default function ListenAgain({ genre }: ListenAgainProps) {
   const [listenHistorySongs, setListenHistorySongs] = useState<SongInfo[]>([]);
-
+  const { session } = useSession()
+  
   useEffect(() => {
     const fetchListenHistory = async () => {
-      const session = getSession();
       const listenHistory = await getListenAgain(Number(session?.sub));
       setListenHistorySongs(listenHistory);
     };
 
     fetchListenHistory();
-  }, [genre]);
+  }, [genre, session?.sub]);
 
   if (!(listenHistorySongs[0]) || listenHistorySongs.length === 0) return null;
 

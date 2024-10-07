@@ -8,6 +8,7 @@ import PageGradient from "../Layout/PageGradient";
 import AlbumCard from "../Music/Card/Album/AlbumCard";
 import ScrollButtons from "./ScrollButtons";
 import { Skeleton } from "@music/ui/components/skeleton";
+import { useSession } from "../Providers/AuthProvider";
 
 function capitalizeWords(str: string): string {
   return str.replace(/\b\w/g, char => char.toUpperCase());
@@ -17,11 +18,11 @@ export default function SimilarTo() {
   const [similarAlbums, setSimilarAlbums] = useState<AlbumCardProps[]>([]);
   const [genre, setGenre] = useState<string | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
+  const { session } = useSession()
 
   useEffect(() => {
     const fetchSimilarAlbums = async () => {
       try {
-        const session = getSession();
         if (!session || !session.sub) {
           throw new Error("Invalid session");
         }
@@ -38,7 +39,7 @@ export default function SimilarTo() {
     };
 
     fetchSimilarAlbums();
-  }, []);
+  }, [session]);
 
   const albumCoverSrc = similarAlbums[0]?.album_cover?.length === 0
     ? "/snf.png"

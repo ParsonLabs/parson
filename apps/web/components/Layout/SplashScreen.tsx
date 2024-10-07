@@ -6,6 +6,7 @@ import { Loader2Icon } from 'lucide-react';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import React, { useEffect, useState } from 'react';
+import { useSession } from '../Providers/AuthProvider';
 
 interface SplashScreenProps {
   children: React.ReactNode;
@@ -37,6 +38,7 @@ const getItemWithExpiry = (key: string) => {
 const SplashScreen: React.FC<SplashScreenProps> = ({ children }) => {
   const [loading, setLoading] = useState(true);
   const { push } = useRouter();
+  const { session } = useSession()
 
   useEffect(() => {
     const checkServerUrl = async () => {
@@ -46,7 +48,6 @@ const SplashScreen: React.FC<SplashScreenProps> = ({ children }) => {
       );
   
       if (response.ok) {
-        const session = getSession();
         if (session) {
           const currentPath = window.location.pathname;
           const queryParams = window.location.search;
@@ -71,7 +72,7 @@ const SplashScreen: React.FC<SplashScreenProps> = ({ children }) => {
     };
   
     checkServerUrl();
-  }, [push]);
+  }, [push, session]);
 
   useEffect(() => {
     const storedLoading = getItemWithExpiry("loading");

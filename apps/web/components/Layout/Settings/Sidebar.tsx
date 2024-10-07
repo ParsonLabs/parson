@@ -1,12 +1,13 @@
 "use client"
 
+import { useSession } from "@/components/Providers/AuthProvider"
 import getSession from "@/lib/Authentication/JWT/getSession"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { useEffect, useState } from "react"
 
 export default function SettingsSidebar() {
-  const session = getSession()
+  const { session } = useSession()
   const isAdmin = session?.role === "admin"
 
   const pathname = usePathname()

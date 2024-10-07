@@ -19,6 +19,7 @@ import {
   setNowPlaying,
 } from "@music/sdk";
 import { Album, Artist, Genre, LibrarySong, Song } from "@music/sdk/types";
+import { useSession } from "@/components/Providers/AuthProvider";
 
 const isBrowser = typeof window !== "undefined";
 const audioElement = isBrowser ? new Audio() : null;
@@ -154,7 +155,7 @@ export function PlayerProvider({ children }: PlayerProviderProps) {
 
   let bitrate = 0;
 
-  const session = getSession();
+  const { session } = useSession()
 
   useEffect(() => {
     if (song.id && lastAddedSongIdRef.current != String(song.id)) {

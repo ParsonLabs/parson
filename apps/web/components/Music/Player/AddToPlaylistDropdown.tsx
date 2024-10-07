@@ -10,6 +10,7 @@ import { ScrollArea } from "@music/ui/components/scroll-area"
 import { CircleDashed } from "lucide-react"
 import { useEffect, useState } from "react"
 import { usePlayer } from "./usePlayer"
+import { useSession } from "@/components/Providers/AuthProvider"
 
 type AddToPlaylistDropdownProps = {
   children: React.ReactNode;
@@ -28,13 +29,13 @@ type PlaylistWithSongs = BasePlaylist & {
 
 export default function AddToPlaylistDropdown({ children }: AddToPlaylistDropdownProps) {
   const { song, isPlaying } = usePlayer();
+  const { session: sessionData } = useSession();
   
   const [playlists, setPlaylists] = useState<PlaylistWithSongs[]>([]);
   const [playlistAddedNow, setPlaylistAddedNow] = useState("");
 
   useEffect(() => {
     const getPlaylistsRequest = async () => {
-      const sessionData = getSession();
       if (sessionData) {
         const playlistsResponse = await getPlaylists(Number(sessionData.sub));
         const detailedPlaylistsPromises = playlistsResponse.map(playlist => getPlaylist(playlist.id));
@@ -63,7 +64,7 @@ export default function AddToPlaylistDropdown({ children }: AddToPlaylistDropdow
     if (isPlaying) {
       getPlaylistsRequest();
     }
-  }, [isPlaying]);
+  }, [isPlaying, sessionData]);
 
   return (
     <DropdownMenu>

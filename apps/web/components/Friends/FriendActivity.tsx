@@ -8,6 +8,7 @@ import { Disc3Icon } from 'lucide-react';
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { getProfilePicture } from "@music/sdk";
+import { useSession } from "../Providers/AuthProvider";
 
 type Friend = User & {
   nowPlaying: {
@@ -20,9 +21,9 @@ type Friend = User & {
 
 export default function FriendActivity() {
   const [friends, setFriends] = useState<Friend[]>([])
+  const { session } = useSession()
 
   useEffect(() => {
-    const session = getSession();
     async function getActivity() {
       if (session) {
         const followingIDs = await getFollowing(Number(session?.sub) ?? "");
@@ -63,7 +64,7 @@ export default function FriendActivity() {
     return () => {
       clearInterval(intervalId);
     };
-  }, []);
+  }, [session]);
 
   return friends && (
     <>

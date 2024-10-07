@@ -6,6 +6,7 @@ import PageGradient from "@/components/Layout/PageGradient";
 import ArtistCard from "@/components/Music/Artist/ArtistCard";
 import AlbumCard from "@/components/Music/Card/Album/AlbumCard";
 import SongCard from "@/components/Music/Card/SongCard";
+import { useSession } from "@/components/Providers/AuthProvider";
 import getSession from "@/lib/Authentication/JWT/getSession";
 import { getCache } from "@/lib/Caching/cache";
 import { getListenHistory, getProfilePicture, getSongInfo, getUserInfo, LibraryAlbum } from "@music/sdk";
@@ -23,8 +24,8 @@ export default function UsernameComponent() {
   const [topAlbums, setTopAlbums] = useState<(LibraryAlbum & { count: number, artist: Artist })[]>([]);
   const [topSongs, setTopSongs] = useState<(LibrarySong & { count: number })[]>([]);
   const [profilePicture, setProfilePicture] = useState<string | null>(null);
+  const { session } = useSession();
 
-  const session = getSession();
   useEffect(() => {
     async function fetchData() {
       const userCacheKey = `userInfo_${username}`;

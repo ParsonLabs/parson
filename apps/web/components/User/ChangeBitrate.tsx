@@ -24,6 +24,7 @@ import {
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { useState } from "react";
+import { useSession } from "../Providers/AuthProvider";
 
 const FormSchema = z.object({
   bitrate: z.string({
@@ -33,6 +34,7 @@ const FormSchema = z.object({
 });
 
 export default function ChangeBitrate() {
+  const { session } = useSession()
   const [message, setMessage] = useState<string | null>(null);
 
   const bitrateMapping: { [key: string]: number } = {
@@ -68,7 +70,6 @@ export default function ChangeBitrate() {
       data.bitrate === "custom" ? Number(data.customBitrate) : bitrateMapping[data.bitrate];
 
     if (newBitrate !== undefined) {
-      const session = getSession();
       setBitrate(Number(session?.sub), newBitrate);
       setMessage("Bitrate changed successfully!");
     } else {

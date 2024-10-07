@@ -9,9 +9,10 @@ import FollowButton from "@/components/Friends/FollowButton";
 import ArtistCard from "@/components/Music/Artist/ArtistCard";
 import { User } from "@music/sdk/types";
 import UserCard from "@/components/Music/Card/User/UserCard";
+import { useSession } from "@/components/Providers/AuthProvider";
 
 export default function SocialPage() {
-  const session = getSession();
+  const { session } = useSession()
   const id = session?.sub;
 
   const [followers, setFollowers] = useState<User[]>([]);

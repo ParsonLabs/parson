@@ -9,6 +9,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import CreatePlaylistDialog from "../Music/Playlist/CreatePlaylistDialog";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@music/ui/components/accordion"
+import { useSession } from "../Providers/AuthProvider";
 
 interface Playlist extends OriginalPlaylist {
   users: string[];
@@ -16,10 +17,10 @@ interface Playlist extends OriginalPlaylist {
 
 export default function Playlists() {
   const [playlists, setPlaylists] = useState<Playlist[] | null>(null);
+  const { session } = useSession()
 
   useEffect(() => {
     async function fetchData() {
-      const session = getSession();
       const playlistsData = await getPlaylists((Number(session?.sub)) ?? 0);
 
       const transformedPlaylists: Playlist[] = await Promise.all(
@@ -43,7 +44,7 @@ export default function Playlists() {
       setPlaylists(transformedPlaylists);
     }
     fetchData();
-  }, []);
+  }, [session?.sub]);
 
   return (
     <div>

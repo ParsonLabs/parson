@@ -4,6 +4,7 @@ import { Metadata, Viewport } from "next";
 import MainLayout from "./main-layout";
 import SplashScreen from "@/components/Layout/SplashScreen";
 import { cn } from "@music/ui/lib/utils";
+import AuthProvider from "@/components/Providers/AuthProvider";
 
 export const metadata: Metadata = {
   applicationName: "ParsonLabs Music",
@@ -48,9 +49,13 @@ export default async function RootLayout({ children }: any) {
           "min-h-screen bg-background font-sans antialiased bg-gray-900 texxt-white",
           fontSans.variable
         )}>
-        <SplashScreen>
-          <MainLayout>{children}</MainLayout>
-        </SplashScreen>
+        <AuthProvider>
+          <SplashScreen>
+            <MainLayout>
+              {children}
+            </MainLayout>
+          </SplashScreen>
+        </AuthProvider>
       </body>
     </html>
   );

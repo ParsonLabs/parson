@@ -8,6 +8,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import Image from 'next/image';
 import { Popover, PopoverContent, PopoverTrigger } from '@music/ui/components/popover';
 import { useLayoutConfig } from '../Providers/LayoutConfigContext';
+import { useSession } from '../Providers/AuthProvider';
 
 type ScrollButtonsProps = {
   id?: string;
@@ -36,9 +37,10 @@ export default function ScrollButtons({ id, children, heading, showUser, topText
     }
   }, []);
 
+  const { session } = useSession()
+
   useEffect(() => {
     const fetchUserData = async () => {
-      const session = getSession();
       const profilePictureBlob = await getProfilePicture(Number(session?.sub));
       const profilePictureUrl = URL.createObjectURL(profilePictureBlob);
       setProfilePicture(profilePictureUrl);
@@ -59,7 +61,7 @@ export default function ScrollButtons({ id, children, heading, showUser, topText
         currentScrollRef.removeEventListener('scroll', checkScrollPosition);
       }
     };
-  }, [checkScrollPosition, showUser]);
+  }, [checkScrollPosition, showUser, session?.username, session?.sub]);
 
   const scrollLeft = useCallback(() => {
     if (scrollRef.current) {

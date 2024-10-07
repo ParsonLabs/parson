@@ -10,6 +10,7 @@ import ArtistCard from "../Music/Artist/ArtistCard";
 import AlbumCard from "../Music/Card/Album/AlbumCard";
 import SongCard from "../Music/Card/SongCard";
 import { useGradientHover } from "../Providers/GradientHoverProvider";
+import { useSession } from "../Providers/AuthProvider";
 
 function capitalizeWords(str: string): string {
   return str.replace(/\b\w/g, char => char.toUpperCase());
@@ -31,6 +32,8 @@ export default function LibraryButtons() {
   const { setGradient } = useGradientHover();
   setGradient("#000000");
 
+  const { session } = useSession()
+
   useEffect(() => {
     const fetchListenHistory = async () => {
       const cacheKey = "listenAgain";
@@ -41,7 +44,6 @@ export default function LibraryButtons() {
         return;
       }
 
-      const session = getSession();
       if (session && session.sub) {
         const userId = Number(session.sub);
         if (!isNaN(userId) && userId > 0) {
@@ -57,7 +59,7 @@ export default function LibraryButtons() {
     };
 
     fetchListenHistory();
-  }, []);
+  }, [session]);
 
   useEffect(() => {
     const albumsMap = listenHistorySongs.reduce((acc: { [key: string]: LibrarySong[] }, song: LibrarySong) => {

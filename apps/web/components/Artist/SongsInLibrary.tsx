@@ -5,6 +5,7 @@ import { useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import ScrollButtons from "../Home/ScrollButtons";
 import SongCard from "../Music/Card/SongCard";
+import { useSession } from "../Providers/AuthProvider";
 
 async function getSongsFromYourLibrary(user_id: number, artist_id: string) {
   const playlists = await getPlaylists(user_id);
@@ -32,9 +33,9 @@ export default function FromYourLibrary() {
 
   const searchParams = useSearchParams();
   const id = searchParams?.get("id");
+  const { session } = useSession()
 
   useEffect(() => {
-    const session = getSession();
 
     async function fetchSongs() {
       if (session && id) {
@@ -45,7 +46,7 @@ export default function FromYourLibrary() {
     }
 
     fetchSongs();
-  }, [id]);
+  }, [id, session]);
 
   return librarySongs.length > 0 && (
     <ScrollButtons heading="In your Library" id="InYourLibrary">

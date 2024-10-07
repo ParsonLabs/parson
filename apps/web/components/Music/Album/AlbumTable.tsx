@@ -9,6 +9,7 @@ import PlaylistCard from '../Playlist/PlaylistCard';
 import SongContextMenu from "../SongContextMenu";
 import { getArtistInfo } from "@music/sdk";
 import Link from "next/link";
+import { useSession } from "@/components/Providers/AuthProvider";
 
 type PlaylistTableProps = {
   songs: LibrarySong[]
@@ -34,7 +35,7 @@ export default function AlbumTable({ songs, album, artist }: PlaylistTableProps)
   const [orderedSongs, setOrderedSongs] = useState<LibrarySong[]>([]);
   const [contributingArtists, setContributingArtists] = useState<{ [key: string]: Artist[] }>({});
 
-  const session = getSession();
+  const { session } = useSession()
   const bitrate = session?.bitrate ?? 0;
 
   useEffect(() => {

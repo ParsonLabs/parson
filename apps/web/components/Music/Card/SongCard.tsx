@@ -9,6 +9,7 @@ import Link from "next/link";
 import { usePlayer } from "../Player/usePlayer";
 import SongContextMenu from "../SongContextMenu";
 import { getSongInfo } from "@music/sdk";
+import { useSession } from "@/components/Providers/AuthProvider";
 
 type SongCardProps = {
   song_name: string;
@@ -40,7 +41,7 @@ export default function SongCard({
     setPlayedFromAlbum,
   } = usePlayer();
 
-  const session = getSession();
+  const { session } = useSession()
 
   const artist = { id: artist_id, name: artist_name };
   const album = { id: album_id, name: album_name, cover_url: album_cover };

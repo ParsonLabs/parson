@@ -2,6 +2,7 @@
 
 
 import SongCard from "@/components/Music/Card/SongCard";
+import { useSession } from "@/components/Providers/AuthProvider";
 import getSession from "@/lib/Authentication/JWT/getSession";
 import { getListenHistory, getSongInfo } from "@music/sdk";
 import { LibrarySong } from "@music/sdk/types";
@@ -11,9 +12,10 @@ import { useEffect, useState } from "react";
 export default function HistoryPage() {
   const [listenHistorySongs, setListenHistorySongs] = useState<LibrarySong[]>([]);
 
+  const { session } = useSession()
+
   useEffect(() => {
     const fetchListenHistory = async () => {
-      const session = getSession()
 
       if (session) {
         const listenHistoryItems = await getListenHistory(Number(session.sub));
@@ -25,7 +27,7 @@ export default function HistoryPage() {
     };
   
     fetchListenHistory();
-  }, []);
+  }, [session]);
 
   return (
     <>

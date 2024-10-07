@@ -11,6 +11,7 @@ import Image from "next/image"
 import { usePathname, useRouter } from "next/navigation"
 import { useEffect } from "react"
 import getSession from "@/lib/Authentication/JWT/getSession"
+import { useSession } from "@/components/Providers/AuthProvider"
 
 const fontSans = FontSans({
   subsets: ["latin"],
@@ -22,7 +23,7 @@ type RootLayoutProps = {
 }
 
 export default function RootLayout({ children }: RootLayoutProps) {
-  const session = getSession()
+  const { session } = useSession()
   const isAdmin = session?.role === "admin"
   const pathname = usePathname()
   const router = useRouter()

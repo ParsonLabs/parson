@@ -10,8 +10,8 @@ import Link from "next/link"
 import Image from "next/image"
 import { usePathname, useRouter } from "next/navigation"
 import { useEffect } from "react"
-import getSession from "@/lib/Authentication/JWT/getSession"
-import { useSession } from "@/components/Providers/AuthProvider"
+import AuthProvider, { useSession } from "@/components/Providers/AuthProvider"
+import SettingsAuth from "@/components/Layout/Settings/SettingsAuth"
 
 const fontSans = FontSans({
   subsets: ["latin"],
@@ -23,20 +23,6 @@ type RootLayoutProps = {
 }
 
 export default function RootLayout({ children }: RootLayoutProps) {
-  const { session } = useSession()
-  const isAdmin = session?.role === "admin"
-  const pathname = usePathname()
-  const router = useRouter()
-
-  
-  useEffect(() => {
-    const adminPaths = ["/settings/users/", "/settings/server/", "/settings/library/"]
-
-    if (adminPaths.includes(pathname) && !isAdmin) {
-      router.push("/settings")
-    }
-  }, [pathname, isAdmin, router])
-
   return (
     <html lang="en" suppressHydrationWarning>
       <head />
@@ -53,10 +39,15 @@ export default function RootLayout({ children }: RootLayoutProps) {
             </div>
           </div>
           </Link>
-          <div className="fixed left-0 top-0 h-full w-1/4 flex items-center justify-center">
-            <SettingsSidebar />
-          </div>
-          {children}
+          <AuthProvider>
+            <SettingsAuth />
+
+            <div className="fixed left-0 top-0 h-full w-1/4 flex items-center justify-center">
+              <SettingsSidebar />
+            </div>
+
+            {children}
+          </AuthProvider>
       </body>
     </html>
   )

@@ -1,5 +1,6 @@
 "use client"
 
+import { useSession } from "@/components/Providers/AuthProvider"
 import getSession from "@/lib/Authentication/JWT/getSession"
 import { createPlaylist } from "@music/sdk"
 import { Button } from "@music/ui/components/button"
@@ -25,8 +26,8 @@ export default function CreatePlaylistDialog({ children }: CreatePlaylistDialog)
   const [playlistName, setPlaylistName] = useState("")
   const [openDialog, setOpenDialog] = useState(false)
   const [isPending, startTransition] = useTransition()
+  const { session } = useSession()
 
-  const session = getSession()
   const username = session?.username
 
   const open = () => setOpenDialog(true)

@@ -7,6 +7,7 @@ import { LibrarySong } from "@music/sdk/types";
 import { useEffect, useState } from "react";
 import SongCard from "../Music/Card/SongCard";
 import ScrollButtons from "./ScrollButtons";
+import { useSession } from "../Providers/AuthProvider";
 
 async function getSongsFromYourLibrary(user_id: number, genre?: string) {
   const playlists = await getPlaylists(user_id);
@@ -41,9 +42,9 @@ interface FromYourLibraryProps {
 export default function FromYourLibrary({ genre }: FromYourLibraryProps) {
   const [librarySongs, setLibrarySongs] = useState<LibrarySong[]>([]);
   const [loading, setLoading] = useState(true);
+  const { session } = useSession()
   
   useEffect(() => {
-    const session = getSession();
   
     async function fetchSongs() {
       const cacheKey = "fromYourLibrary";
@@ -65,11 +66,11 @@ export default function FromYourLibrary({ genre }: FromYourLibraryProps) {
     }
   
     fetchSongs();
-  }, [genre]);
+  }, [genre, session]);
 
   if (loading) return null;
   if (!librarySongs || librarySongs.length === 0) return null;
-
+``
   return (
     <ScrollButtons heading="From Your Library" id="FromYourLibrary">
       <div className="flex flex-row pb-28">

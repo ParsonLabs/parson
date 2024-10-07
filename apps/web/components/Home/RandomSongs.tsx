@@ -1,6 +1,5 @@
 "use client"
 
-import getSession from "@/lib/Authentication/JWT/getSession";
 import setCache, { getCache } from "@/lib/Caching/cache";
 import { getRandomSong } from "@music/sdk";
 import { LibrarySong } from "@music/sdk/types";

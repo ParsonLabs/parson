@@ -16,9 +16,10 @@ import {
   FormLabel,
   FormMessage,
 } from "@music/ui/components/form"
+import { useSession } from "../Providers/AuthProvider"
 
 export default function Username() {
-  const session = getSession()
+  const { session } = useSession()
   const username = session?.username
 
   const FormSchema = z.object({

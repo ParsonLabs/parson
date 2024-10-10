@@ -9,9 +9,10 @@ use serde::Deserialize;
 use tokio::io::{AsyncReadExt, AsyncSeekExt};
 use tokio::process::Command;
 use tokio_util::io::ReaderStream;
-use tracing::{info, warn};
+use tracing::{error, info, warn};
 use walkdir::WalkDir;
 
+use crate::routes::search::populate_search_data;
 use crate::structures::structures::Artist;
 use crate::utils::compare::compare;
 use crate::utils::config::{get_config, save_config};
@@ -130,7 +131,7 @@ pub async fn process_library(path_to_library: web::Path<String>) -> impl Respond
         }
     }
 
-    //https://musicbrainz.org/ws/2/release/cbaf43b4-0d8f-4b58-9173-9fe7298e04e9?inc=aliases+artist-credits+labels+discids+recordings+release-groups+media+discids+recordings+artist-credits+isrcs+artist-rels+release-rels+url-rels+recording-rels+work-rels+label-rels+place-rels+event-rels+area-rels+instrument-rels+series-rels+work-rels&fmt=json
+    // https://musicbrainz.org/ws/2/release/cbaf43b4-0d8f-4b58-9173-9fe7298e04e9?inc=aliases+artist-credits+labels+discids+recordings+release-groups+media+discids+recordings+artist-credits+isrcs+artist-rels+release-rels+url-rels+recording-rels+work-rels+label-rels+place-rels+event-rels+area-rels+instrument-rels+series-rels+work-rels&fmt=json
 
     let library_guard = library.lock().unwrap();
     let elapsed = now.elapsed().as_secs();
@@ -148,6 +149,13 @@ pub async fn process_library(path_to_library: web::Path<String>) -> impl Respond
     let json = serde_json::to_string(data_to_serialize).unwrap();
 
     save_config(&json).await.unwrap();
+    match populate_search_data().await {
+        Ok(_) => {},
+        Err(e) => {
+            error!("Failed to populate search data: {:?}", e);
+        }
+    }
+
     HttpResponse::Ok()
         .content_type("application/json; charset=utf-8")
         .body(json)

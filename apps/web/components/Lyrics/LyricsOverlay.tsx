@@ -112,18 +112,36 @@ export default function LyricsOverlay({ children }: QueuePanelProps) {
 
     const fetchLyrics = async () => {
       if (song.id) {
+        const sanitizedSongName = song.name.replace(/\s*\(.*?\)\s*/g, '');
+        const capitalizeFirstLetter = (str: string) => str.charAt(0).toUpperCase() + str.slice(1).toLowerCase();
+        const capitalizedArtistName = capitalizeFirstLetter(song.artist);
+    
         const response = await fetch(
-          `https://lrclib.net/api/search?q=${encodeURIComponent(`${song.name} ${song.artist}`)}`
+          `https://lrclib.net/api/search?q=${encodeURIComponent(`${sanitizedSongName} ${capitalizedArtistName}`)}`
         );
         const data: LyricsObjectResponse[] = await response.json();
-        setCurrentLyrics(data[0]?.plainLyrics ?? "")
-        const slowdownFactor = reverb ?  1/0.7 : 1;
-        if (data[0]?.syncedLyrics) {
-          setLyrics(parseLyrics(data[0].syncedLyrics, slowdownFactor));
-          setIsSyncedLyrics(true);
-        } else if (data[0]?.plainLyrics) {
-          setLyrics(parseLyrics(data[0].plainLyrics, slowdownFactor));
-          setIsSyncedLyrics(false);
+        setCurrentLyrics(data[0]?.plainLyrics ?? "");
+    
+        const slowdownFactor = reverb ? 1 / 0.7 : 1;
+        let foundSyncedLyrics = false;
+    
+        for (let i = 0; i < Math.min(data.length, 5); i++) {
+          if (data[i]?.syncedLyrics) {
+            setLyrics(parseLyrics(data[i]?.syncedLyrics ?? "", slowdownFactor));
+            setIsSyncedLyrics(true);
+            foundSyncedLyrics = true;
+            break;
+          }
+        }
+    
+        if (!foundSyncedLyrics) {
+          for (let i = 0; i < Math.min(data.length, 5); i++) {
+            if (data[i]?.plainLyrics) {
+              setLyrics(parseLyrics(data[i]?.plainLyrics ?? "", slowdownFactor));
+              setIsSyncedLyrics(false);
+              break;
+            }
+          }
         }
       }
     };

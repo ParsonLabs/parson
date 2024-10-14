@@ -116,7 +116,8 @@ pub async fn login(form: web::Json<AuthData>) -> impl Responder {
                 if let Err(_) = response.add_cookie(
                     &Cookie::build("plm_refreshToken", generated_refresh_token)
                         .http_only(true)
-                        .same_site(SameSite::Lax)
+                        .same_site(SameSite::None)
+                        .secure(true)
                         .path("/")
                         .finish(),
                 ) {
@@ -127,10 +128,11 @@ pub async fn login(form: web::Json<AuthData>) -> impl Responder {
                         message: Some(String::from("Failed to set refresh token cookie")),
                     });
                 }
-
+                
                 if let Err(_) = response.add_cookie(
                     &Cookie::build("plm_accessToken", generated_access_token)
-                        .same_site(SameSite::Lax)
+                        .same_site(SameSite::None)
+                        .secure(true)
                         .path("/")
                         .finish(),
                 ) {

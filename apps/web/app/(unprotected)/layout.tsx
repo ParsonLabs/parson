@@ -5,16 +5,11 @@ import pl from "@/assets/pl-tp.png"
 import { cn } from "@music/ui/lib/utils"
 import { Metadata } from "next"
 import Image from "next/image"
-import AuthProvider from "@/components/Providers/AuthProvider"
 
 const fontSans = FontSans({
   subsets: ["latin"],
   variable: "--font-sans",
 })
-
-export const metadata: Metadata = {
-  title: "ParsonLabs Music"
-}
 
 type RootLayoutProps = {
   children: React.ReactNode
@@ -36,9 +31,7 @@ export default function RootLayout({ children }: RootLayoutProps) {
             </div>
           </div>
 
-        <AuthProvider>
-          {children}
-        </AuthProvider>
+        {children}
       </body>
     </html>
   )

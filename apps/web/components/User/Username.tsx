@@ -6,7 +6,6 @@ import { zodResolver } from "@hookform/resolvers/zod"
 import { useForm } from "react-hook-form"
 import { z } from "zod"
 
-import getSession from "@/lib/Authentication/JWT/getSession"
 import { Button } from "@music/ui/components/button"
 import {
   Form,
@@ -40,7 +39,7 @@ export default function Username() {
   })
 
   function onSubmit(data: z.infer<typeof FormSchema>) {
-    console.log(data.username)
+  //   console.log(data.username)
   }
 
   return (

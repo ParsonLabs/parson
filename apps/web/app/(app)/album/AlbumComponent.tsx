@@ -87,7 +87,7 @@ export default function AlbumComponent() {
   );
 
   return (
-    <div className="flex h-full">
+    <div className="flex flex-col md:flex-row h-full">
       <Image
         className="bg-cover bg-center blur-3xl w-full h-full"
         src={albumCoverURL}
@@ -100,14 +100,14 @@ export default function AlbumComponent() {
           left: 0,
           width: "100%",
           height: "100%",
-          filter: "blur(24px) brightness(50%)",
+          filter: "blur(80px) brightness(60%)",
           objectFit: "cover",
           objectPosition: "center",
         }}
       />
       <div className="flex-1 h-full overflow-hidden relative">
         <PageGradient imageSrc={albumCoverURL} />
-        <div className="flex flex-row items-start my-8">
+        <div className="flex flex-col md:flex-row items-start my-8">
           <ScrollArea className="flex flex-col items-center w-full md:w-1/4 h-full">
             <div className="flex-shrink-0 w-72 h-72 mx-auto">
               <Image
@@ -121,8 +121,7 @@ export default function AlbumComponent() {
             <div className="md:pl-4 flex-grow text-center mt-4">
               <h1 className="text-4xl">{album.name}</h1>
               {album.release_group_album?.rating.value !== 0 && renderStars(album.release_group_album?.rating.value || 0)}
-            
-              <div className="flex flex-row gap-2 justify-center items-center mt-4 pb-4">
+              <div className="flex flex-col gap-2 justify-center items-center mt-4 pb-4">
                 <Link href={`/artist?id=${artist.id}`} className="flex items-center">
                   <Image
                     src={artist.icon_url.length === 0 ? "/snf.png" : `${getBaseURL()}/image/${encodeURIComponent(artist.icon_url)}`}
@@ -140,13 +139,14 @@ export default function AlbumComponent() {
                     ))}
                   </p>
                 </Link>
-                <p className="text-xs text-gray-500">•</p>
-                <p className="text-xs text-gray-500">{releaseDate}</p>
-                <p className="text-xs text-gray-500">•</p>
-                <p className="text-xs text-gray-500">{album.songs.length} Songs</p>
-                <p className="text-xs text-gray-500">•</p>
-                <p className="text-xs text-gray-500">{formatDuration(totalDuration)}</p>
-            </div>
+                <div className="flex flex-row gap-2 justify-center items-center">
+                  <p className="text-xs text-gray-400">{releaseDate}</p>
+                  <p className="text-xs text-gray-400">•</p>
+                  <p className="text-xs text-gray-400">{album.songs.length} Songs</p>
+                  <p className="text-xs text-gray-400">•</p>
+                  <p className="text-xs text-gray-400">{formatDuration(totalDuration)}</p>
+                </div>
+              </div>
               <p>
                 {album.release_group_album?.genres.map((tag) => (
                   <Badge
@@ -209,13 +209,13 @@ export default function AlbumComponent() {
                               ? WikipediaLogo
                             : relationship.url.includes("allmusic")
                               ? AllmusicLogo
-                              : relationship.url.includes("rateyourmusic")
-                                ? RateyourmusicLogo
-                                : relationship.url.includes("pitchfork")
-                                  ? PitchforkLogo
-                                  : relationship.url.includes("bbc")
-                                    ? BBCLogo
-                                    : MusicbrainzLogo
+                            : relationship.url.includes("rateyourmusic")
+                              ? RateyourmusicLogo
+                              : relationship.url.includes("pitchfork")
+                                ? PitchforkLogo
+                                : relationship.url.includes("bbc")
+                                  ? BBCLogo
+                                  : MusicbrainzLogo
                       }
                       alt={
                         relationship.url.includes("discogs")
@@ -264,11 +264,11 @@ export default function AlbumComponent() {
                               ? AllmusicLogo
                             : relationship.url.includes("rateyourmusic")
                               ? RateyourmusicLogo
-                              : relationship.url.includes("pitchfork")
-                                ? PitchforkLogo
-                                : relationship.url.includes("bbc")
-                                  ? BBCLogo
-                                  : MusicbrainzLogo
+                            : relationship.url.includes("pitchfork")
+                              ? PitchforkLogo
+                            : relationship.url.includes("bbc")
+                              ? BBCLogo
+                            : MusicbrainzLogo
                       }
                       alt={
                         relationship.url.includes("discogs")

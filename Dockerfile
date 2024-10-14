@@ -31,7 +31,7 @@ FROM rust:1.81 AS backend-builder
 WORKDIR /usr/src
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    sqlite3 libsqlite3-dev wget make build-essential pkg-config libssl-dev \
+    sqlite3 libsqlite3-dev wget make build-essential pkg-config libssl-dev ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
 RUN wget https://www.nasm.us/pub/nasm/releasebuilds/2.16/nasm-2.16.tar.gz \
@@ -67,6 +67,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libsqlite3-dev \
     wget \
     ca-certificates \
+    ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
 # Change ownership of the /app directory to the root user

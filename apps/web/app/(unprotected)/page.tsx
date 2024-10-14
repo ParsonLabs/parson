@@ -87,10 +87,16 @@ export default function MainPage() {
 
   const onSubmit: SubmitHandler<FormData> = async (data) => {
     setLoading(true);
-
+    
     try {
-      localStorage.setItem("server", JSON.stringify({ local_address: data.serverUrl }));
-      let serverInfo = await getServerInfo();
+      const response = await fetch(`${data.serverUrl}/api/s/server/info`, {
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include'
+      });
+
+      const serverInfo = await response.json()
 
       if (serverInfo.product_name && serverInfo.startup_wizard_completed) {
         localStorage.setItem("server", JSON.stringify(serverInfo));
@@ -101,6 +107,7 @@ export default function MainPage() {
           push("/login");
         }
       } else {
+        localStorage.setItem("server", JSON.stringify({ local_address: data.serverUrl }));
         if (!serverInfo.startup_wizard_completed && session) {
           push("/setup/library");
         } else {

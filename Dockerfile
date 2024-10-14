@@ -75,7 +75,10 @@ RUN adduser --system --uid 1001 --ingroup nodejs nextjs
 # Change ownership of the /app directory to the nextjs user
 RUN chown -R nextjs:nodejs /app
 
-RUN mkdir -p /ParsonLabsMusic /music && chown -R nextjs:nodejs /ParsonLabsMusic /music
+# Create and set permissions for the directories
+RUN mkdir -p /ParsonLabsMusic /music && \
+    chown -R nextjs:nodejs /ParsonLabsMusic /music && \
+    chmod -R 755 /ParsonLabsMusic /music
 
 USER nextjs
 COPY --from=backend-builder --chown=nextjs:nodejs /usr/src/crates/backend/target/release/music-server /usr/local/bin/music-server

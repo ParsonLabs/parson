@@ -1,36 +1,9 @@
-import "@music/ui/globals.css";
-import { Inter as FontSans } from "next/font/google";
-import { Metadata, Viewport } from "next";
-import MainLayout from "./main-layout";
 import SplashScreen from "@/components/Layout/SplashScreen";
+import "@music/ui/globals.css";
 import { cn } from "@music/ui/lib/utils";
-import AuthProvider from "@/components/Providers/AuthProvider";
-
-export const metadata: Metadata = {
-  applicationName: "ParsonLabs Music",
-  title: {
-    default: "ParsonLabs Music",
-    template: "%s | ParsonLabs Music",
-  },
-  description: "Own your music.",
-  manifest: "/manifest.json",
-  appleWebApp: {
-    capable: true,
-    statusBarStyle: "default",
-    title: "ParsonLabs Music",
-  },
-  formatDetection: {
-    telephone: false,
-  },
-  openGraph: {
-    type: "website",
-    title: {
-      default: "ParsonLabs Music",
-      template: "%s | ParsonLabs Music",
-    },
-    description: "Own your music.",
-  },
-};
+import { Metadata, Viewport } from "next";
+import { Inter as FontSans } from "next/font/google";
+import MainLayout from "./main-layout";
 
 const fontSans = FontSans({
   subsets: ["latin"],
@@ -49,13 +22,9 @@ export default async function RootLayout({ children }: any) {
           "min-h-screen bg-background font-sans antialiased bg-gray-900 texxt-white",
           fontSans.variable
         )}>
-        <AuthProvider>
-          <SplashScreen>
-            <MainLayout>
-              {children}
-            </MainLayout>
-          </SplashScreen>
-        </AuthProvider>
+        <MainLayout>
+          {children}
+        </MainLayout>
       </body>
     </html>
   );

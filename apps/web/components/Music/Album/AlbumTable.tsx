@@ -133,9 +133,9 @@ export default function AlbumTable({ songs, album, artist }: PlaylistTableProps)
               <TableRow id={sanitizeSongName(song.name)} onClick={() => handlePlay(album.cover_url, song, `${getBaseURL()}/api/stream/${encodeURIComponent(song.path)}?bitrate=${bitrate}`, artist)}>
                 <TableCell className="font-medium">{song.track_number}</TableCell>
                 <TableCell>
-                  <div className="w-[300px] overflow-hidden whitespace-nowrap text-overflow">
+                  <div className="overflow-hidden whitespace-nowrap text-overflow">
                     <PlaylistCard song={song} coverURL={album.cover_url} artist={artist} album={album} showCover={false} showArtist={false} />
-                    <div className="text-gray-500">
+                    <div className="text-gray-400">
                       <Link href={`/artist?id=${artist.id}`}>
                         {artist.name}
                       </Link>

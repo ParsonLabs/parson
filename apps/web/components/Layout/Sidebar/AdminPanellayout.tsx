@@ -1,6 +1,5 @@
 "use client";
 
-import AuthProvider from "@/components/Providers/AuthProvider";
 import { cn } from "@music/ui/lib/utils";
 import Sidebar from "./Sidebar";
 
@@ -19,16 +18,14 @@ export default function AdminPanelLayout({
   return (
     <>
       <Sidebar />
-      <AuthProvider>
-        <main
-          className={cn(
-            "min-h-[calc(100vh_-_56px)] bg-zinc-50 dark:bg-zinc-900 transition-[margin-left] ease-in-out duration-300",
-            sidebar?.isOpen === false ? "lg:ml-[90px]" : "lg:ml-72"
-          )}
-          >
-          {children}
-        </main>
-      </AuthProvider>
+      <main
+        className={cn(
+          "min-h-[calc(100vh_-_56px)] bg-zinc-50 dark:bg-zinc-900 transition-[margin-left] ease-in-out duration-300",
+          sidebar?.isOpen === false ? "lg:ml-[90px]" : "lg:ml-72"
+        )}
+        >
+        {children}
+      </main>
     </>
   );
 }

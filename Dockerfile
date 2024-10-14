@@ -31,7 +31,7 @@ FROM rust:1.81 AS backend-builder
 WORKDIR /usr/src
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    sqlite3 libsqlite3-dev wget make build-essential pkg-config libssl-dev \
+    sqlite3 libsqlite3-dev wget make build-essential pkg-config libssl-dev ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
 RUN wget https://www.nasm.us/pub/nasm/releasebuilds/2.16/nasm-2.16.tar.gz \
@@ -67,23 +67,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libsqlite3-dev \
     wget \
     ca-certificates \
+    ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
-RUN addgroup --system --gid 1001 nodejs
-RUN adduser --system --uid 1001 --ingroup nodejs nextjs
+# Change ownership of the /app directory to the root user
+# RUN chown -R root:root /app
 
-# Change ownership of the /app directory to the nextjs user
-RUN chown -R nextjs:nodejs /app
-
-# Create and set permissions for the directories
-RUN mkdir -p /ParsonLabsMusic /music && \
-    chown -R nextjs:nodejs /ParsonLabsMusic /music && \
-    chmod -R 755 /ParsonLabsMusic /music
-
-USER nextjs
-COPY --from=backend-builder --chown=nextjs:nodejs /usr/src/crates/backend/target/release/music-server /usr/local/bin/music-server
-COPY --from=backend-builder --chown=nextjs:nodejs /usr/src/crates/backend/music.db /usr/src/crates/backend/music.db
-COPY --from=installer --chown=nextjs:nodejs /app/apps/web/out ./apps/web/out
+# Copy files as root
+COPY --from=backend-builder /usr/src/crates/backend/target/release/music-server /usr/local/bin/music-server
+COPY --from=backend-builder /usr/src/crates/backend/music.db /usr/src/crates/backend/music.db
+COPY --from=installer /app/apps/web/out ./apps/web/out
 
 ENV SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
 ENV RUNNING_IN_DOCKER=true

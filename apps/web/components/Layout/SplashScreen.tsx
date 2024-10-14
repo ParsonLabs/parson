@@ -1,7 +1,6 @@
 "use client"
 
 import pl from '@/assets/pl-tp.png';
-import getSession from '@/lib/Authentication/JWT/getSession';
 import { Loader2Icon } from 'lucide-react';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
@@ -11,29 +10,6 @@ import { useSession } from '../Providers/AuthProvider';
 interface SplashScreenProps {
   children: React.ReactNode;
 }
-
-const setItemWithExpiry = (key: string, value: string, ttl: number) => {
-  const now = new Date();
-  const item = {
-    value: value,
-    expiry: now.getTime() + ttl,
-  };
-  localStorage.setItem(key, JSON.stringify(item));
-};
-
-const getItemWithExpiry = (key: string) => {
-  const itemStr = localStorage.getItem(key);
-  if (!itemStr) {
-    return null;
-  }
-  const item = JSON.parse(itemStr);
-  const now = new Date();
-  if (now.getTime() > item.expiry) {
-    localStorage.removeItem(key);
-    return null;
-  }
-  return item.value;
-};
 
 const SplashScreen: React.FC<SplashScreenProps> = ({ children }) => {
   const [loading, setLoading] = useState(true);
@@ -48,40 +24,28 @@ const SplashScreen: React.FC<SplashScreenProps> = ({ children }) => {
       );
   
       if (response.ok) {
-        if (session) {
+        if (session?.username) {
           const currentPath = window.location.pathname;
           const queryParams = window.location.search;
-          if (currentPath === "/") {
+          if (currentPath === "/" || currentPath === "/login" || currentPath === "/login/") {
             push("/home");
           } else {
             push(`${currentPath}${queryParams}`);
           }
 
           setLoading(false);
-          setItemWithExpiry("loading", "false", 3600000);
         } else {
           push("/login");
           setLoading(false);
-          setItemWithExpiry("loading", "false", 3600000);
         }
       } else {
         push("/")
         setLoading(false);
-        setItemWithExpiry("loading", "false", 3600000);
       }
     };
   
     checkServerUrl();
   }, [push, session]);
-
-  useEffect(() => {
-    const storedLoading = getItemWithExpiry("loading");
-    if (storedLoading === "false") {
-      setLoading(false);
-      return;
-    }
-    
-  }, [push]);
 
   if (loading) {
     return (

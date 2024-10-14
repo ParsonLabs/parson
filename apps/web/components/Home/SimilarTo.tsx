@@ -27,8 +27,6 @@ export default function SimilarTo() {
           throw new Error("Invalid session");
         }
         const similarTo = await getSimilarTo(Number(session.sub));
-        console.log("Fetched similar albums:", similarTo[0]);
-        console.log("Fetched genre:", similarTo[1]);
         setGenre(similarTo[1]);
         setSimilarAlbums(similarTo[0]);
       } catch (err: any) {

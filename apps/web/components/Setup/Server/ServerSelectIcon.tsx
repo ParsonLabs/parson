@@ -44,7 +44,7 @@ export default function ServerSelectIcon() {
   const handleDelete = () => {
     localStorage.removeItem("server");
     deleteCookie("server");
-    router.push("/");
+    router.refresh()
   };
 
   return (

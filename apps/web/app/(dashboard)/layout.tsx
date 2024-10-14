@@ -4,14 +4,11 @@ import "@music/ui/globals.css"
 import { Inter as FontSans } from "next/font/google"
 
 import pl from "@/assets/pl-tp.png"
+import SettingsAuth from "@/components/Layout/Settings/SettingsAuth"
 import SettingsSidebar from "@/components/Layout/Settings/Sidebar"
 import { cn } from "@music/ui/lib/utils"
-import Link from "next/link"
 import Image from "next/image"
-import { usePathname, useRouter } from "next/navigation"
-import { useEffect } from "react"
-import AuthProvider, { useSession } from "@/components/Providers/AuthProvider"
-import SettingsAuth from "@/components/Layout/Settings/SettingsAuth"
+import Link from "next/link"
 
 const fontSans = FontSans({
   subsets: ["latin"],
@@ -39,7 +36,6 @@ export default function RootLayout({ children }: RootLayoutProps) {
             </div>
           </div>
           </Link>
-          <AuthProvider>
             <SettingsAuth />
 
             <div className="fixed left-0 top-0 h-full w-1/4 flex items-center justify-center">
@@ -47,7 +43,6 @@ export default function RootLayout({ children }: RootLayoutProps) {
             </div>
 
             {children}
-          </AuthProvider>
       </body>
     </html>
   )

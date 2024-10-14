@@ -1,4 +1,4 @@
-"use client"
+"use client";
 
 import getBaseURL from "@/lib/Server/getBaseURL";
 import setCache, { getCache } from "@/lib/Caching/cache";
@@ -9,7 +9,7 @@ import { Skeleton } from "@music/ui/components/skeleton";
 import { Play } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState } from "react";
 import { FastAverageColor } from 'fast-average-color';
 
 async function getRandomAlbumAndSongs(): Promise<{ album: Album & { artist_object: Artist }, songs: LibrarySong[] }> {
@@ -62,7 +62,7 @@ export function LandingCarouselSkeleton() {
         />
       </div>
     </div>
-  )
+  );
 }
 
 export default function LandingCarousel() {
@@ -73,7 +73,7 @@ export default function LandingCarousel() {
   useEffect(() => {
     async function fetchAlbumAndSongs() {
       const cachedData = getCache("landingCarousel");
-  
+
       if (cachedData) {
         setAlbum(cachedData.album);
         setSongs(cachedData.songs);
@@ -84,27 +84,29 @@ export default function LandingCarousel() {
         setCache("landingCarousel", { album, songs }, 86400000);
       }
     }
-  
+
     fetchAlbumAndSongs();
   }, []);
 
   useEffect(() => {
     async function getButtonColour() {
-      const albumCoverURL = `${getBaseURL()}/image/${encodeURIComponent(album?.cover_url || "")}?raw=true`
+      const albumCoverURL = `${getBaseURL()}/image/${encodeURIComponent(album?.cover_url || "")}?raw=true`;
       const fac = new FastAverageColor();
-      const color = await fac.getColorAsync(albumCoverURL)
+      const color = await fac.getColorAsync(albumCoverURL);
       setButtonColor(color.hex);
     }
 
-    getButtonColour()
-  })
+    if (album) {
+      getButtonColour();
+    }
+  }, [album]);
 
   if (!album) return null;
 
   const albumCoverURL = `${getBaseURL()}/image/${encodeURIComponent(album.cover_url)}?raw=true`;
 
   return (
-    <div className="relative p-5 flex items-center" style={{ height: '300px' }}>
+    <div className="relative p-5 flex items-center hidden md:flex" style={{ height: '300px' }}>
       <Image
         className="absolute top-0 left-0 w-full h-full bg-cover bg-center blur-2xl brightness-50"
         alt={`${album.name} Album Background Image`}

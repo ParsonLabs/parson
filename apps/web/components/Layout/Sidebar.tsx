@@ -16,7 +16,7 @@ type SidebarProps = {
 
 
 export default function Sidebar({ children, sidebarContent }: SidebarProps) {
-  const { isOpen } = useSidebar();
+  const { isOpen, closeSidebar, openSidebar } = useSidebar();
   const { onTopOfPage } = useContext(ScrollContext);
   const { areLyricsVisible } = useContext(LyricsContext);
   const pathname = usePathname();
@@ -25,6 +25,24 @@ export default function Sidebar({ children, sidebarContent }: SidebarProps) {
   useEffect(() => {
     setCurrentPath(pathname);
   }, [pathname]);
+
+  useEffect(() => {
+    const handleResize = () => {
+      if (window.innerWidth < 768) {
+        closeSidebar();
+      } else {
+        openSidebar();
+      }
+    };
+
+    window.addEventListener('resize', handleResize);
+
+    handleResize();
+
+    return () => {
+      window.removeEventListener('resize', handleResize);
+    };
+  }, [closeSidebar, openSidebar]);
 
   if (currentPath === null) {
     return null;

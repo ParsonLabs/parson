@@ -1,5 +1,6 @@
 "use client";
 
+import { useSession } from "@/components/Providers/AuthProvider";
 import getBaseURL from "@/lib/Server/getBaseURL";
 import { zodResolver } from '@hookform/resolvers/zod';
 import { getServerInfo } from "@music/sdk";
@@ -13,7 +14,6 @@ import {
   FormMessage,
 } from "@music/ui/components/form";
 import { Input } from '@music/ui/components/input';
-import { setCookie } from 'cookies-next';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { SubmitHandler, useForm } from 'react-hook-form';
@@ -27,12 +27,20 @@ const schema = z.object({
 type FormData = z.infer<typeof schema>;
 
 export default function Login() {
-  const router = useRouter();
+  const { push } = useRouter();
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [serverInfo, setServerInfo] = useState<{ login_disclaimer?: string } | null>(null);
   const form = useForm<FormData>({
     resolver: zodResolver(schema),
   });
+
+  const { session } = useSession()
+
+  useEffect(() => {
+    if (session && session?.username) {
+      push("/home")
+    }
+  }, [session?.username, session, push])
 
   useEffect(() => {
     async function fetchServerInfo() {
@@ -44,8 +52,12 @@ export default function Login() {
       }
     };
 
+    if (session && session?.username) {
+      push("/home")
+    }
+
     fetchServerInfo();
-  }, []);
+  }, [session, push]);
 
   const { handleSubmit } = form;
 
@@ -59,15 +71,15 @@ export default function Login() {
         body: JSON.stringify(data),
         credentials: 'include'
       });
-
-      if (response.ok) {
-        router.push("/");
+  
+      const result = await response.json();
+  
+      if (response.ok && result.status) {
+        push("/home");
       } else {
-        const errorMessage = await response.text();
-        setErrorMessage(errorMessage || 'Authentication failed');
+        setErrorMessage(result.message || 'Authentication failed');
       }
     } catch (error) {
-      console.error('Login error:', error);
       setErrorMessage('An error occurred during login');
     }
   };

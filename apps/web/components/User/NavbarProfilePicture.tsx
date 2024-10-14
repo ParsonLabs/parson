@@ -18,21 +18,18 @@ import {
 } from "@music/ui/components/dropdown-menu"
 
 import {
-  Dialog,
-  DialogTrigger,
+  Dialog
 } from "@music/ui/components/dialog"
  
 import { Avatar, AvatarFallback, AvatarImage } from "@music/ui/components/avatar"
 import Link from "next/link"
 import SettingsDialog from "./SettingsDialog"
 
-import getSession from "@/lib/Authentication/JWT/getSession"
 import { getProfilePicture } from "@music/sdk"
 import { deleteCookie } from "cookies-next"
 import { Inter as FontSans } from "next/font/google"
 import { useRouter } from "next/navigation"
 import { useEffect, useState } from "react"
-import { cn } from "@music/ui/lib/utils"
 import { useSession } from "../Providers/AuthProvider"
 
 const fontSans = FontSans({
@@ -62,7 +59,9 @@ export default function NavbarProfilePicture() {
 
   const { push } = useRouter()
   function signOut() {
-    deleteCookie("music_jwt")
+    deleteCookie("plm_accessToken")
+    deleteCookie("plm_refreshToken")
+
     push("/login")
   }
   

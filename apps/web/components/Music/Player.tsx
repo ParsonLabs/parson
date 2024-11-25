@@ -1,8 +1,5 @@
 "use client";
 
-import React, { useState, useEffect, useRef, useContext } from "react";
-import * as Tone from "tone";
-import getSession from "@/lib/Authentication/JWT/getSession";
 import getBaseURL from "@/lib/Server/getBaseURL";
 import {
   Slider,
@@ -10,25 +7,23 @@ import {
   SliderThumb,
   SliderTrack,
 } from "@music/ui/components/slider";
-import { Popover, PopoverContent, PopoverTrigger } from "@music/ui/components/popover";
-import { FastAverageColor } from "fast-average-color";
 import { AudioLines, BookAudioIcon, MicVocal, SkipBack, SkipForward, Volume2, VolumeX } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
+import React, { useContext, useEffect, useRef, useState } from "react";
+import * as Tone from "tone";
 import { AIContext } from "../AI/AIOverlayContext";
 import ArrowPath from "../Icons/ArrowPath";
 import IconQueue from "../Icons/IconQueue";
 import IconPause from "../Icons/Pause";
 import IconPlay from "../Icons/Play";
 import { LyricsContext } from "../Lyrics/LyricsOverlayContext";
+import { useSession } from "../Providers/AuthProvider";
 import { useGradientHover } from "../Providers/GradientHoverProvider";
 import { useReverb } from "../Providers/SlowedReverbProvider";
 import { usePlayer } from "./Player/usePlayer";
 import VideoPlayerDialog from "./Player/VideoPlayerDialog";
 import { PanelContext } from "./Queue/QueuePanelContext";
-import { Input } from "@music/ui/components/input";
-import { Label } from "@radix-ui/react-label";
-import { useSession } from "../Providers/AuthProvider";
 
 export default function Player() {
   const [liked, setLiked] = useState(false);
@@ -241,7 +236,7 @@ export default function Player() {
                 height={400}
                 width={400}
                 className="w-full h-full object-fill rounded"
-              />
+                />
             </div>
             <div className="w-80 md:overflow-hidden">
               <p

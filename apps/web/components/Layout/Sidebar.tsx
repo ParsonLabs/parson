@@ -30,8 +30,6 @@ export default function Sidebar({ children, sidebarContent }: SidebarProps) {
     const handleResize = () => {
       if (window.innerWidth < 768) {
         closeSidebar();
-      } else {
-        openSidebar();
       }
     };
 

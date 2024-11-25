@@ -119,7 +119,7 @@ export default function SongCard({
             width={512}
             loading="lazy"
             className={`rounded cursor-pointer transition-filter duration-300 object-fill w-full h-full ${
-              isHovered ? "brightness-50" : ""
+              isHovered || song_id == song.id ? "brightness-50" : ""
             }`}
             onClick={handlePlay}
           />
@@ -162,8 +162,13 @@ export default function SongCard({
         >
           <Link href={`/album?id=${album_id}`}>{song_name}</Link>
         </p>
-        <p className="text-gray-400">
-          Song • <Link href={`/artist?id=${artist_id ?? "0"}`}>{artist_name}</Link>
+        <p className="text-gray-400 flex items-center whitespace-nowrap">
+          Song • 
+          <Link href={`/artist?id=${artist_id ?? "0"}`} className="ml-1 overflow-hidden text-ellipsis min-w-0" style={{ minWidth: '50px', maxWidth: '200px'}}>
+            <span className="block truncate">
+              {artist_name}
+            </span>
+          </Link>
         </p>
       </div>
     </div>

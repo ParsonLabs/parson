@@ -7,7 +7,7 @@ use actix_web::{get, HttpResponse, Responder};
 use dotenvy::dotenv;
 use rand::distributions::Alphanumeric;
 use rand::Rng;
-use serde_json::{from_str, json, Value};
+use serde_json::{from_str, json, to_string, Value};
 use tokio::fs::File;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use lazy_static::lazy_static;
@@ -71,7 +71,7 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
 }
 
 lazy_static! {
-    static ref LIBRARY_CACHE: RwLock<Option<Arc<Vec<Artist>>>> = RwLock::new(None);
+    pub static ref LIBRARY_CACHE: RwLock<Option<Arc<Vec<Artist>>>> = RwLock::new(None);
 }
 
 pub async fn get_config() -> Result<String, Box<dyn Error>> {
@@ -95,6 +95,21 @@ pub async fn fetch_library() -> Result<Arc<Vec<Artist>>, Box<dyn Error>> {
     let library = Arc::new(library);
     *cache = Some(library.clone());
     Ok(library)
+}
+
+pub async fn save_library(library: &Arc<Vec<Artist>>) -> Result<(), Box<dyn Error>> {
+    let config = to_string(&**library)?;
+    save_config(&config, false).await?;
+    refresh_cache().await?;
+    Ok(())
+}
+
+pub async fn refresh_cache() -> Result<(), Box<dyn std::error::Error>> {
+    let mut cache = LIBRARY_CACHE.write().await;
+    *cache = None;
+    drop(cache);
+    fetch_library().await?;
+    Ok(())
 }
 
 pub fn get_config_path() -> PathBuf {
@@ -130,28 +145,30 @@ async fn has_config() -> impl Responder {
     }
 }
 
-pub async fn save_config(indexed_json: &String) -> std::io::Result<()> {
-  let config_path = get_config_path();
-  let config_dir = config_path.parent().unwrap();
-  let config_filename = config_path.file_stem().unwrap().to_str().unwrap();
-  let config_extension = config_path.extension().unwrap().to_str().unwrap();
+pub async fn save_config(indexed_json: &String, create_backup: bool) -> std::io::Result<()> {
+    let config_path = get_config_path();
+    let config_dir = config_path.parent().unwrap();
+    let config_filename = config_path.file_stem().unwrap().to_str().unwrap();
+    let config_extension = config_path.extension().unwrap().to_str().unwrap();
 
-  let mut backup_number = 1;
-  let mut backup_path = config_dir.join(format!("{}_{} (Backup).{}", config_filename, backup_number, config_extension));
+    if create_backup {
+        let mut backup_number = 1;
+        let mut backup_path = config_dir.join(format!("{}_{} (Backup).{}", config_filename, backup_number, config_extension));
 
-  while backup_path.exists() {
-    backup_number += 1;
-    backup_path = config_dir.join(format!("{}_{} (Backup).{}", config_filename, backup_number, config_extension));
-  }
+        while backup_path.exists() {
+            backup_number += 1;
+            backup_path = config_dir.join(format!("{}_{} (Backup).{}", config_filename, backup_number, config_extension));
+        }
 
-  if config_path.exists() {
-    fs::rename(&config_path, &backup_path)?;
-  }
+        if config_path.exists() {
+            fs::rename(&config_path, &backup_path)?;
+        }
+    }
 
-  let mut file = File::create(&config_path).await?;
-  file.write_all(indexed_json.as_bytes()).await?;
+    let mut file = File::create(&config_path).await?;
+    file.write_all(indexed_json.as_bytes()).await?;
 
-  Ok(())
+    Ok(())
 }
 
 pub fn get_icon_art_path() -> PathBuf {

@@ -48,7 +48,7 @@ export default function RandomSongs({ genre }: RandomSongsProps) {
 
   return (
     <ScrollButtons heading="Random Selection" id="RandomSongs">
-      <div className="flex flex-row pb-28">
+      <div className="flex flex-row pb-14">
         {randomSongs.map((song, index) => (
           <div className="mr-20" key={index}>
             <SongCard album_cover={song.album_object.cover_url} album_id={song.album_object.id} album_name={song.album_object.name} artist_id={song.artist_object.id} artist_name={song.artist} path={song.path} song_id={song.id} song_name={song.name} />

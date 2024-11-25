@@ -1,3 +1,5 @@
+use std::env;
+
 use actix_web::{cookie::{Cookie, SameSite}, dev::ServiceRequest, http::header, post, web, HttpRequest, HttpResponse, Responder};
 use actix_web_httpauth::extractors::bearer::BearerAuth;
 use argon2::{
@@ -319,6 +321,10 @@ pub fn validator(
     credentials: Option<BearerAuth>
 ) -> Ready<Result<ServiceRequest, (actix_web::Error, ServiceRequest)>> {
     dotenv().ok();
+
+    if env::var("LOCAL_APP").is_ok() {
+        return ready(Ok(req));
+    }
 
     let token = if let Some(cookie_header) = req.headers().get(header::COOKIE) {
         if let Ok(cookie_str) = cookie_header.to_str() {

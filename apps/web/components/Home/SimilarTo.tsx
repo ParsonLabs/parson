@@ -1,14 +1,12 @@
 "use client";
 
-import getSession from "@/lib/Authentication/JWT/getSession";
 import getBaseURL from "@/lib/Server/getBaseURL";
-import { getSimilarTo, AlbumCardProps } from "@music/sdk";
+import { AlbumCardProps, getSimilarTo } from "@music/sdk";
 import { useEffect, useState } from "react";
 import PageGradient from "../Layout/PageGradient";
 import AlbumCard from "../Music/Card/Album/AlbumCard";
-import ScrollButtons from "./ScrollButtons";
-import { Skeleton } from "@music/ui/components/skeleton";
 import { useSession } from "../Providers/AuthProvider";
+import ScrollButtons from "./ScrollButtons";
 
 function capitalizeWords(str: string): string {
   return str.replace(/\b\w/g, char => char.toUpperCase());
@@ -48,9 +46,9 @@ export default function SimilarTo() {
       <PageGradient imageSrc={albumCoverSrc} />
       <ScrollButtons heading={capitalizeWords(genre ?? "")} topText="SIMILAR TO" imageUrl={albumCoverSrc} id="SimilarTo">
         <div className="w-full h-full">
-          <div className="grid grid-flow-col grid-rows-2 gap-2 w-full h-full">
+          <div className="grid grid-flow-col grid-rows-2 gap-2 w-full h-full pb-8">
             {similarAlbums.map((album, index) => (
-              <div className="w-48 h-full pb-28 scale-90" key={index}>
+              <div className="w-48 h-full pb-14 scale-90" key={index}>
                 <AlbumCard
                   artist_id={album.artist_id}
                   artist_name={album.artist_name}

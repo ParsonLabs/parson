@@ -148,7 +148,8 @@ pub async fn process_library(path_to_library: web::Path<String>) -> impl Respond
 
     let json = serde_json::to_string(data_to_serialize).unwrap();
 
-    save_config(&json).await.unwrap();
+    save_config(&json, true).await.unwrap();
+
     match populate_search_data().await {
         Ok(_) => {},
         Err(e) => {
@@ -174,7 +175,7 @@ async fn stream_song(
 ) -> impl Responder {
     let song = path.into_inner();
     let bitrate = query.bitrate;
-    let slowed_reverb = query.slowed_reverb.unwrap_or(false);
+    let slowed_reverb: bool = query.slowed_reverb.unwrap_or(false);
 
     let file = tokio::fs::metadata(&song).await.unwrap();
     let song_file_size = file.len();
@@ -223,7 +224,7 @@ async fn stream_song(
             .append_header((header::CONTENT_RANGE, content_range))
             .body(Bytes::from(buffer))
     } else {
-        let mut command = Command::new("ffmpeg");
+        let mut command: Command = Command::new("ffmpeg");
 
         if slowed_reverb {
             command.args(&[
@@ -268,8 +269,9 @@ async fn stream_song(
 #[get("/format/{artist}")]
 async fn format_contributing_artists_route(artist: web::Path<String>) -> impl Responder {
     let artists = vec![artist.to_string()];
-    let formatted_artists = format_contributing_artists(artists);
+    let formatted_artists: Vec<(String, Vec<String>)> = Into::<Vec<(String, Vec<String>)>>::into(&*&mut *format_contributing_artists(artists));
     let json = serde_json::to_string(&formatted_artists).unwrap();
+
     HttpResponse::Ok()
         .content_type("application/json; charset=utf-8")
         .body(json)

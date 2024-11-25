@@ -50,7 +50,7 @@ export default function LibraryButtons() {
           const listenHistoryItems = await getListenHistory(userId);
           const uniqueListenHistoryItems = Array.from(new Set(listenHistoryItems.map(item => item.song_id)));
           const songDetailsPromises = uniqueListenHistoryItems.reverse().slice(0, 30).map(song_id => getSongInfo(song_id));
-          const songDetails = await Promise.all(songDetailsPromises);
+          const songDetails = await Promise.all(songDetailsPromises) as unknown as LibrarySong[];
 
           setListenHistorySongs(songDetails);
           setCache(cacheKey, songDetails, 3600000);

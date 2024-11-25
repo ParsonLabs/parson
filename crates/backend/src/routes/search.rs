@@ -349,12 +349,12 @@ async fn search_fn(query: web::Query<SearchQuery>) -> HttpResponse {
                 let acronym = retrieved_doc.get_first(schema.get_field("acronym").unwrap()).unwrap().as_str().unwrap().to_string();
 
                 let song_object = if item_type == "song" {
-                    fetch_song_info(id.clone(), None).await.ok()
+                    fetch_song_info(id.clone(), None, None).await.ok()
                 } else {
                     None
                 };
                 let album_object = if item_type == "album" {
-                    fetch_album_info(id.clone()).await.ok()
+                    fetch_album_info(id.clone(), None).await.ok()
                 } else {
                     None
                 };
@@ -370,54 +370,65 @@ async fn search_fn(query: web::Query<SearchQuery>) -> HttpResponse {
                     id,
                     description,
                     acronym,
-                    artist_object: if item_type == "song" {
-                        song_object.as_ref().map(|song| ArtistInfo {
-                            id: song.artist_object.id.clone(),
-                            name: song.artist_object.name.clone(),
-                            icon_url: song.artist_object.icon_url.clone(),
-                            followers: song.artist_object.followers,
-                            description: song.artist_object.description.clone(),
-                        })
-                    } else if item_type == "album" {
-                        album_object.as_ref().map(|album| ArtistInfo {
-                            id: album.artist_object.id.clone(),
-                            name: album.artist_object.name.clone(),
-                            icon_url: album.artist_object.icon_url.clone(),
-                            followers: album.artist_object.followers,
-                            description: album.artist_object.description.clone(),
-                        })
-                    } else if item_type == "artist" {
-                        artist_object.as_ref().map(|artist| ArtistInfo {
+                    artist_object: match item_type.as_str() {
+                        "song" => song_object.as_ref().and_then(|song| match song {
+                            super::song::SongInfo::Full(song) => Some(ArtistInfo {
+                                id: song.artist_object.id.clone(),
+                                name: song.artist_object.name.clone(),
+                                icon_url: song.artist_object.icon_url.clone(),
+                                followers: song.artist_object.followers,
+                                description: song.artist_object.description.clone(),
+                            }),
+                            _ => None,
+                        }),
+                        "album" => album_object.as_ref().and_then(|album| match album {
+                            super::album::AlbumInfo::Full(album) => Some(ArtistInfo {
+                                id: album.artist_object.id.clone(),
+                                name: album.artist_object.name.clone(),
+                                icon_url: album.artist_object.icon_url.clone(),
+                                followers: album.artist_object.followers,
+                                description: album.artist_object.description.clone(),
+                            }),
+                            _ => None,
+                        }),
+                        "artist" => artist_object.as_ref().map(|artist| ArtistInfo {
                             id: artist.id.clone(),
                             name: artist.name.clone(),
                             icon_url: artist.icon_url.clone(),
                             followers: artist.followers,
                             description: artist.description.clone(),
-                        })
-                    } else {
-                        None
+                        }),
+                        _ => None,
                     },
-                    album_object: if item_type == "song" {
-                        song_object.as_ref().map(|song| AlbumInfo {
-                            id: song.album_object.id.clone(),
-                            name: song.album_object.name.clone(),
-                            cover_url: song.album_object.cover_url.clone(),
-                            first_release_date: song.album_object.first_release_date.clone(),
-                            description: song.album_object.description.clone(),
-                        })
-                    } else {
-                        album_object.as_ref().map(|album| AlbumInfo {
-                            id: album.id.clone(),
-                            name: album.name.clone(),
-                            cover_url: album.cover_url.clone(),
-                            first_release_date: album.first_release_date.clone(),
-                            description: album.description.clone(),
-                        })
+                    album_object: match item_type.as_str() {
+                        "song" => song_object.as_ref().and_then(|song| match song {
+                            super::song::SongInfo::Full(song) => Some(AlbumInfo {
+                                id: song.album_object.id.clone(),
+                                name: song.album_object.name.clone(),
+                                cover_url: song.album_object.cover_url.clone(),
+                                first_release_date: song.album_object.first_release_date.clone(),
+                                description: song.album_object.description.clone(),
+                            }),
+                            _ => None,
+                        }),
+                        _ => album_object.as_ref().and_then(|album| match album {
+                            super::album::AlbumInfo::Full(album) => Some(AlbumInfo {
+                                id: album.id.clone(),
+                                name: album.name.clone(),
+                                cover_url: album.cover_url.clone(),
+                                first_release_date: album.first_release_date.clone(),
+                                description: album.description.clone(),
+                            }),
+                            _ => None,
+                        }),
                     },
-                    song_object: song_object.as_ref().map(|song| SongInfo {
-                        id: song.id.clone(),
-                        name: song.name.clone(),
-                        duration: song.duration,
+                    song_object: song_object.as_ref().and_then(|song| match song {
+                        super::song::SongInfo::Full(song) => Some(SongInfo {
+                            id: song.id.clone(),
+                            name: song.name.clone(),
+                            duration: song.duration,
+                        }),
+                        _ => None,
                     }),
                 }
             })

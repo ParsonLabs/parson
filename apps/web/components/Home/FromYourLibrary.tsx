@@ -1,13 +1,12 @@
 "use client"
 
-import getSession from "@/lib/Authentication/JWT/getSession";
 import setCache, { getCache } from "@/lib/Caching/cache";
 import { getPlaylist, getPlaylists, getSongInfo } from "@music/sdk";
 import { LibrarySong } from "@music/sdk/types";
 import { useEffect, useState } from "react";
 import SongCard from "../Music/Card/SongCard";
-import ScrollButtons from "./ScrollButtons";
 import { useSession } from "../Providers/AuthProvider";
+import ScrollButtons from "./ScrollButtons";
 
 async function getSongsFromYourLibrary(user_id: number, genre?: string) {
   const playlists = await getPlaylists(user_id);
@@ -22,7 +21,7 @@ async function getSongsFromYourLibrary(user_id: number, genre?: string) {
 
   const songsDetailsPromises = playlistSongIDs.map((songID) => getSongInfo(String(songID)));
 
-  const songsDetails = await Promise.all(songsDetailsPromises);
+  const songsDetails = await Promise.all(songsDetailsPromises) as LibrarySong[];
 
   if (genre) {
     return songsDetails.filter(song => {
@@ -73,7 +72,7 @@ export default function FromYourLibrary({ genre }: FromYourLibraryProps) {
 ``
   return (
     <ScrollButtons heading="From Your Library" id="FromYourLibrary">
-      <div className="flex flex-row pb-28">
+      <div className="flex flex-row pb-14">
         {librarySongs.map((song, index) => (
           <div className="mr-20" key={index}>
             <SongCard album_cover={song.album_object.cover_url} album_id={song.album_object.id} album_name={song.album_object.name} artist_id={song.artist_object.id} artist_name={song.artist} path={song.path} song_id={song.id} song_name={song.name} />

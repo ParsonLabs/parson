@@ -8,7 +8,7 @@ import formatDuration from "@/lib/Formatting/formatDuration";
 import formatFollowers from "@/lib/Formatting/formatFollowers";
 import formatReleaseDate from "@/lib/Formatting/formatReleaseDate";
 import { getSongInfo } from "@music/sdk";
-import { AlbumInfo, ArtistInfo, CombinedItem } from "@music/sdk/types";
+import { AlbumInfo, ArtistInfo, CombinedItem, LibrarySong } from "@music/sdk/types";
 import { FastAverageColor } from "fast-average-color";
 import Image from "next/image";
 import Link from "next/link";
@@ -47,7 +47,7 @@ export default function HorizontalCard({ item }: HorizontalCardProps) {
   async function handlePlay() {
     setImageSrc(imageUrl);
 
-    const song = await getSongInfo(item.id ?? "")
+    const song = await getSongInfo(item.id ?? "") as LibrarySong
 
     setArtist(song.artist_object);
     setAlbum(song.album_object);

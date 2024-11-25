@@ -13,7 +13,9 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
-  DialogTrigger
+  DialogTrigger,
+  DialogClose,
+  DialogFooter
 } from "@music/ui/components/dialog";
 import {
   Table,
@@ -23,15 +25,16 @@ import {
   TableRow
 } from "@music/ui/components/table";
 
-import getSession from "@/lib/Authentication/JWT/getSession";
 import { addSongToPlaylist, getPlaylists, PlaylistsResponse, getSongInfo } from "@music/sdk";
 import { CircleArrowUp, CirclePlus, ExternalLink, ListEnd, Plus, UserRoundSearch } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import Bars3Left from "../Icons/Bars3Left";
 import { usePlayer } from "./Player/usePlayer";
-import { LibrarySong } from "@music/sdk/types";
+import { LibrarySong, BareSong } from "@music/sdk/types";
 import { useSession } from "../Providers/AuthProvider";
+import { Button } from "@music/ui/components/button";
+import EditSongDialog from "./EditSongDialog";
 
 type SongContextMenuProps = {
   children: React.ReactNode;
@@ -53,28 +56,80 @@ export default function SongContextMenu({
   album_name,
 }: SongContextMenuProps) {
   const [playlists, setPlaylists] = useState<PlaylistsResponse[] | null>(null);
-  const [songInfo, setSongInfo] = useState<LibrarySong | null>(null);
-  const { session } = useSession()
+  const [songInfo, setSongInfo] = useState<LibrarySong | BareSong | null>(null);
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const { session } = useSession();
+  const isMounted = useRef(true);
+  const dialogCleanupTimeout = useRef<NodeJS.Timeout>();
+
+  // Cleanup function
+  useEffect(() => {
+    return () => {
+      isMounted.current = false;
+      if (dialogCleanupTimeout.current) {
+        clearTimeout(dialogCleanupTimeout.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     const getPlaylistsRequest = async () => {
-      let playlists = await getPlaylists(Number(session?.sub) ?? 0);
-      setPlaylists(playlists);
+      try {
+        if (!session?.sub) return;
+        const playlists = await getPlaylists(Number(session.sub));
+        if (isMounted.current) {
+          setPlaylists(playlists);
+        }
+      } catch (error) {
+        console.error("Failed to fetch playlists:", error);
+      }
     };
     getPlaylistsRequest();
   }, [session?.sub]);
 
-  const [isPending, startTransition] = useTransition();
-
+  
   const { addToQueue } = usePlayer();
+  
+  const handleViewProperties = useCallback(async () => {
+    if (!isMounted.current) return;
+    try {
+      const info = await getSongInfo(song_id, true);
+      if (isMounted.current) {
+        setSongInfo(info as BareSong);
+      }
+    } catch (error) {
+      console.error("Failed to fetch song info:", error);
+    }
+  }, [song_id]);
+  const handleOpenChange = useCallback((open: boolean) => {
+  if (open) {
+    handleViewProperties();
+  } else {
+    setSongInfo(null);
+  }
+  setIsDialogOpen(open);
+}, [handleViewProperties]);
+  
+  const handleDialogOpenChange = useCallback((open: boolean) => {
+    if (!isMounted.current) return;
+    
+    if (open) {
+      setIsDialogOpen(true);
+      handleViewProperties();
+    } else {
+      // Delay cleanup to prevent state updates during unmount
+      dialogCleanupTimeout.current = setTimeout(() => {
+        if (isMounted.current) {
+          setSongInfo(null);
+          setIsDialogOpen(false);
+        }
+      }, 100);
+    }
+  }, [handleViewProperties]);
 
-  const handleViewProperties = async () => {
-    const songInfo = await getSongInfo(song_id);
-    setSongInfo(songInfo);
-  };
 
   return (
-    <Dialog>
+    <>
       <ContextMenu>
         <ContextMenuTrigger asChild>{children}</ContextMenuTrigger>
 
@@ -138,17 +193,20 @@ export default function SongContextMenu({
             </ContextMenuSubContent>
           </ContextMenuSub>
 
-          <DialogTrigger asChild>
-            <ContextMenuItem onClick={handleViewProperties}>
-              <CirclePlus className="size-5" />
-              <p className="pl-3">View Properties</p>
-            </ContextMenuItem>
-          </DialogTrigger>
+          <ContextMenuItem onClick={() => setIsDialogOpen(true)}>
+            <CirclePlus className="size-5" />
+            <p className="pl-3">View Properties</p>
+          </ContextMenuItem>
+
+          <EditSongDialog song_id={song_id} />
         </ContextMenuContent>
       </ContextMenu>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle className="text-black">Song Information</DialogTitle>
+
+      <Dialog open={isDialogOpen} onOpenChange={handleOpenChange}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="text-black">Song Information</DialogTitle>
+          </DialogHeader>
           <Table className="text-black">
             <TableHeader></TableHeader>
             <TableBody>
@@ -180,8 +238,15 @@ export default function SongContextMenu({
               </TableRow>
             </TableBody>
           </Table>
-        </DialogHeader>
-      </DialogContent>
-    </Dialog>
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button type="button" variant="secondary">
+                Close
+              </Button>
+            </DialogClose>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }

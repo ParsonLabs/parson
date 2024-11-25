@@ -38,6 +38,8 @@ export default function MainPage() {
   const { session } = useSession()
 
   useEffect(() => {
+    if (process.env.LOCAL_APP) push("/home")
+
     const checkServerUrl = async () => {
       setLoading(true);
 

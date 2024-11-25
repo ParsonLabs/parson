@@ -3,7 +3,7 @@
 import getSession from "@/lib/Authentication/JWT/getSession";
 import setCache, { getCache } from "@/lib/Caching/cache";
 import getBaseURL from "@/lib/Server/getBaseURL";
-import { getListenAgain, SongInfo } from "@music/sdk";
+import { getListenAgain, ListenAgainSong, SongInfo } from "@music/sdk";
 import { useEffect, useState } from "react";
 import PageGradient from "../Layout/PageGradient";
 import AlbumCard from "../Music/Card/Album/AlbumCard";
@@ -16,12 +16,12 @@ interface ListenAgainProps {
 }
 
 export default function ListenAgain({ genre }: ListenAgainProps) {
-  const [listenHistorySongs, setListenHistorySongs] = useState<SongInfo[]>([]);
+  const [listenHistorySongs, setListenHistorySongs] = useState<ListenAgainSong[]>([]);
   const { session } = useSession()
   
   useEffect(() => {
     const fetchListenHistory = async () => {
-      const listenHistory = await getListenAgain(Number(session?.sub));
+      const listenHistory = await getListenAgain(Number(session?.sub)) as ListenAgainSong[];
       setListenHistorySongs(listenHistory);
     };
 
@@ -38,7 +38,7 @@ export default function ListenAgain({ genre }: ListenAgainProps) {
     <>
       <PageGradient imageSrc={albumCoverSrc} />
       <ScrollButtons heading="Listen Again" showUser id="ListenAgain">
-        <div className="flex flex-row pb-28">
+        <div className="flex flex-row pb-14">
           {listenHistorySongs.map((item, index) => {
             if (item.item_type === "album") {
               return (

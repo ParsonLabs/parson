@@ -20,7 +20,7 @@ async function getSongsFromYourLibrary(user_id: number, artist_id: string) {
 
   const songsDetailsPromises = playlistSongIDs.map((songID) => getSongInfo(String(songID)));
 
-  const songsDetails = await Promise.all(songsDetailsPromises);
+  const songsDetails = await Promise.all(songsDetailsPromises) as LibrarySong[];
 
   const filteredSongsDetails = songsDetails.filter(song => String(song.artist_object.id) === artist_id);
 

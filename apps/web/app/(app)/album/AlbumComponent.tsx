@@ -14,6 +14,7 @@ import WikidataLogo from "@/public/wikidata_logo.png";
 import WikipediaLogo from "@/public/wikipedia_logo.png";
 import { getAlbumInfo, getArtistInfo, LibraryAlbum } from "@music/sdk";
 import { Artist } from "@music/sdk/types";
+import { AspectRatio } from "@music/ui/components/aspect-ratio";
 import { Badge } from "@music/ui/components/badge";
 import { Button } from "@music/ui/components/button";
 import { ScrollArea, ScrollBar } from "@music/ui/components/scroll-area";
@@ -34,20 +35,26 @@ export default function AlbumComponent() {
     if (!id || typeof id !== "string") return;
   
     const fetchAlbumInfo = async () => {
-      const album = await getAlbumInfo(id);
+      const album = await getAlbumInfo(id) as LibraryAlbum;
   
       const artistData = album.artist_object;
       const contributingArtistIds = album.contributing_artists_ids;
-  
-      const contributingArtistsPromises = contributingArtistIds.map((artistId) =>
-        getArtistInfo(artistId)
-      );
-  
-      const contributingArtistsData = await Promise.all(contributingArtistsPromises);
 
+      if (contributingArtistIds) {
+        const contributingArtistsPromises = contributingArtistIds.map((artistId) =>
+          getArtistInfo(artistId)
+        );
+    
+        const contributingArtistsData = await Promise.all(contributingArtistsPromises);
+        setContributingArtists(contributingArtistsData);
+      } else {
+        setContributingArtists([])
+      }
+  
       setAlbum(album);
       setArtist(artistData);
-      setContributingArtists(contributingArtistsData);
+
+      // setContributingArtists(contributingArtistsData);
     };
   
     fetchAlbumInfo();
@@ -109,14 +116,15 @@ export default function AlbumComponent() {
         <PageGradient imageSrc={albumCoverURL} />
         <div className="flex flex-col md:flex-row items-start my-8">
           <ScrollArea className="flex flex-col items-center w-full md:w-1/4 h-full">
-            <div className="flex-shrink-0 w-72 h-72 mx-auto">
-              <Image
-                src={albumCoverURL}
-                alt={`${album.name} Image`}
-                height={400}
-                width={400}
-                className="w-full h-full object-fill rounded"
-              />
+            <div className="flex-shrink-0 w-full max-w-xs mx-auto">
+              <div className="relative" style={{ paddingBottom: '100%' }}>
+                <Image
+                  src={albumCoverURL}
+                  alt={`${album.name} Image`}
+                  layout="fill"
+                  className="absolute top-0 left-0 w-full h-full object-cover rounded"
+                />
+              </div>
             </div>
             <div className="md:pl-4 flex-grow text-center mt-4">
               <h1 className="text-4xl">{album.name}</h1>
@@ -129,7 +137,7 @@ export default function AlbumComponent() {
                     height={20}
                     alt={`${artist.name} Profile Picture`}
                     className="rounded-full"
-                  />
+                    />
                   <p className="text-xs text-gray-200 ml-2">
                     {album.release_group_album?.artist_credit.map((artist) => (
                       <span key={artist.musicbrainz_id}>{artist.name}</span>
@@ -298,7 +306,7 @@ export default function AlbumComponent() {
             <Description description={album.description}/>
             <div className="grid grid-cols-1 gap-4 mt-4">
               {contributingArtists.map(artist => (
-                <Link href={`/artist/${artist.id}`} key={artist.id}>
+                <Link href={`/artist/?id=${artist.id}`} key={artist.id}>
                   <div key={artist.id} className="flex items-center">
                     <Image
                       src={artist.icon_url.length === 0 ? "/snf.png" : `${getBaseURL()}/image/${encodeURIComponent(artist.icon_url)}`}

@@ -1,13 +1,12 @@
 "use client"
 
-import getSession from "@/lib/Authentication/JWT/getSession";
 import setCache, { getCache } from "@/lib/Caching/cache";
 import { getPlaylist, getPlaylists, getSongInfo } from "@music/sdk";
+import { LibrarySong } from "@music/sdk/types";
 import { useEffect, useState } from "react";
 import AlbumCard from "../Music/Card/Album/AlbumCard";
-import ScrollButtons from "./ScrollButtons";
-import { LibrarySong } from "@music/sdk/types";
 import { useSession } from "../Providers/AuthProvider";
+import ScrollButtons from "./ScrollButtons";
 
 async function getSongsFromYourLibrary(user_id: number, genre?: string) {
   const playlists = await getPlaylists(user_id);
@@ -73,7 +72,7 @@ export default function RecommendedAlbums({ genre }: RecommendedAlbumsProps) {
 
   return (
     <ScrollButtons heading="Recommended Albums" id="RecommendedAlbums">
-      <div className="flex flex-row pb-28">
+      <div className="flex flex-row pb-14">
         {librarySongs.map((song, index) => (
           <div className="mr-20" key={index}>
             <AlbumCard 

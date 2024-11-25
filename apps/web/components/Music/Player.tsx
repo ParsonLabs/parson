@@ -247,7 +247,7 @@ export default function Player() {
               </p>
               <p className="text-xs text-gray-400">
                 <Link href={`/artist?id=${artist.id}`}>{artist.name}</Link>
-                {song.contributing_artists.map((artist, index) => (
+                {song.contributing_artist_ids && song.contributing_artists.map((artist, index) => (
                   <span key={index}>
                     , <Link href={`/artist?id=${song.contributing_artist_ids[index]}`}>{artist}</Link>
                   </span>

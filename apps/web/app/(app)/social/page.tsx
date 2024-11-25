@@ -10,6 +10,7 @@ import ArtistCard from "@/components/Music/Artist/ArtistCard";
 import { User } from "@music/sdk/types";
 import UserCard from "@/components/Music/Card/User/UserCard";
 import { useSession } from "@/components/Providers/AuthProvider";
+import ProfilePicture from "@/components/User/ProfilePicture";
 
 export default function SocialPage() {
   const { session } = useSession()
@@ -58,11 +59,7 @@ export default function SocialPage() {
         {userInfo.image ? (
           <Image src={userInfo.image} alt="" className="w-32 h-32 rounded-full" />
         ) : (
-          <Avatar className="w-32 h-32">
-            <AvatarFallback className="text-4xl">
-              {userInfo.username.substring(0, 2).toUpperCase()}
-            </AvatarFallback>
-          </Avatar>
+          <ProfilePicture />
         )}
         <div className="flex flex-col">
           <p className="text-lg">@{userInfo.username}</p>

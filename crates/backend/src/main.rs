@@ -10,13 +10,12 @@ use actix_cors::Cors;
 use actix_web::HttpResponse;
 use actix_web::{middleware, web, App, HttpServer};
 use actix_web_httpauth::middleware::HttpAuthentication;
-use routes::authentication::admin_guard;
-use routes::authentication::refresh;
+use routes::authentication::{admin_guard, refresh};
 use tokio::task;
 use tracing::{info, Level};
 use tracing_subscriber::FmtSubscriber;
 
-use routes::{album, database, genres};
+use routes::{album, database, genres, music};
 use routes::artist;
 use routes::authentication::{login, register, validator};
 use routes::filesystem;
@@ -131,7 +130,6 @@ async fn main() -> std::io::Result<()> {
         }
     }
 
-
     info!("Starting server on port {}", port); 
 
     task::spawn(async move {
@@ -154,10 +152,10 @@ async fn main() -> std::io::Result<()> {
     
         let protected = web::scope("/api")
             .wrap(authentication)
-            .service(songs_list)
-            .service(test)
-            .service(stream_song)
-            .service(format_contributing_artists_route)
+            .service(music::songs_list)
+            .service(music::test)
+            .service(music::stream_song)
+            .service(music::format_contributing_artists_route)
             .configure(artist::configure)
             .configure(album::configure)
             .configure(song::configure)

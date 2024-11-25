@@ -11,6 +11,7 @@ import { getArtistInfo } from "@music/sdk";
 import Link from "next/link";
 import { useSession } from "@/components/Providers/AuthProvider";
 import { Pause, Play, Volume2 } from "lucide-react";
+import { cn } from "@music/ui/lib/utils";
 
 type PlaylistTableProps = {
   songs: LibrarySong[]
@@ -126,40 +127,50 @@ export default function AlbumTable({ songs, album, artist }: PlaylistTableProps)
             album_name={album.name}
             key={song.id}
           >            
-            <TableBody key={song.id} >
+            <TableBody key={song.id}>
               <TableRow
                 id={sanitizeSongName(song.name)}
                 onClick={() => handlePlay(album.cover_url, song, `${getBaseURL()}/api/stream/${encodeURIComponent(song.path)}?bitrate=${bitrate}`, artist)}
                 onMouseEnter={() => setIsHovered(song.id)}
                 onMouseLeave={() => setIsHovered(null)}
+                className={cn(
+                  "mx-2 rounded-lg",
+                  playingSongID === song.id ? "bg-[#1e1e1d] bg-gray-600/50" : ""
+                )}
               >
                 <TableCell className="font-medium text-gray-300 relative">
                   {isHovered === song.id || playingSongID === song.id ? (
                     <div
-                      className="absolute inset-0 flex items-start justify-"
+                      className="absolute inset-0 flex items-center justify-start pl-3"
                       onClick={(e) => {
                         e.stopPropagation();
-                        togglePlayPause();
+                        if (playingSongID === song.id) {
+                          togglePlayPause();
+                        } else {
+                          handlePlay(album.cover_url, song, `${getBaseURL()}/api/stream/${encodeURIComponent(song.path)}?bitrate=${bitrate}`, artist);
+                        }
                       }}
                     >
                       {volume < 1 ? (
                         isVolumeHovered ? (
-                          isPlaying ? (
-                            <Pause className="w-5 h-5 mr-9 text-white" fill="white" strokeWidth={0} />
+                          playingSongID === song.id && isPlaying ? (
+                            <Pause className="w-5 h-5 text-white" fill="white" strokeWidth={0} />
                           ) : (
-                            <Play className="w-5 h-5 mr-9 text-white" fill="white" strokeWidth={0} />
+                            <Play className="w-5 h-5 text-white" fill="white" strokeWidth={0} />
                           )
                         ) : (
                           <Volume2
-                            className="w-5 h-5 mr-9 text-white"
+                            className="w-5 h-5 text-white"
                             onMouseEnter={() => setIsVolumeHovered(true)}
                             onMouseLeave={() => setIsVolumeHovered(false)}
                           />
                         )
-                      ) : isPlaying ? (
-                        <Pause className="w-5 h-5 mr-9 text-white" fill="white" strokeWidth={0} />
                       ) : (
-                        <Play className="w-5 h-5 mr-9 text-white" fill="white" strokeWidth={0} />
+                        playingSongID === song.id && isPlaying ? (
+                          <Pause className="w-5 h-5 text-white" fill="white" strokeWidth={0} />
+                        ) : (
+                          <Play className="w-5 h-5 text-white" fill="white" strokeWidth={0} />
+                        )
                       )}
                     </div>
                   ) : (
@@ -191,6 +202,6 @@ export default function AlbumTable({ songs, album, artist }: PlaylistTableProps)
           </SongContextMenu>
         ))}
       </Table>
-    </div>
+      </div>
   )
 }

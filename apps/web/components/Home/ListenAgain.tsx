@@ -38,7 +38,7 @@ export default function ListenAgain({ genre }: ListenAgainProps) {
     <>
       <PageGradient imageSrc={albumCoverSrc} />
       <ScrollButtons heading="Listen Again" showUser id="ListenAgain">
-        <div className="flex flex-row pb-28">
+        <div className="flex flex-row pb-14">
           {listenHistorySongs.map((item, index) => {
             if (item.item_type === "album") {
               return (

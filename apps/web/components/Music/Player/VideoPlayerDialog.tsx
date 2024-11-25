@@ -53,7 +53,7 @@ export default function VideoPlayerDialog({ url }: VideoPlayerDialogProps) {
   const handleProgress = ({ playedSeconds }: { playedSeconds: number }) => {
     videoTimeRef.current = playedSeconds;
   };
-
+  
   return (
     <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
       <DialogTrigger asChild>
@@ -73,7 +73,7 @@ export default function VideoPlayerDialog({ url }: VideoPlayerDialogProps) {
             ref={playerRef}
             controls
             width="100%"
-            height={400}
+            height="70vh"
             pip={true}
             playing={isDialogOpen}
             onReady={handleReady}

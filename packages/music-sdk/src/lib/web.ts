@@ -1,6 +1,6 @@
 import axios from './axios';
 
-export interface SongInfo {
+export interface ListenAgainSong {
   song_name: string;
   song_id: string;
   song_path: string;
@@ -29,7 +29,7 @@ export interface AlbumCardProps {
  * @param {number} userId - The user ID.
  * @returns {Promise<SongInfo[]>} - A promise that resolves to the list of songs or albums.
  */
-export async function getListenAgain(userId: number): Promise<SongInfo[]> {
+export async function getListenAgain(userId: number): Promise<ListenAgainSong[]> {
   const response = await axios.get(`/web/listen_again/${userId}`);
   return response.data;
 }

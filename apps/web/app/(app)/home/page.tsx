@@ -39,7 +39,9 @@ export default function Home() {
   useEffect(() => {
     const savedConfig = localStorage.getItem("layoutConfig");
     if (savedConfig) {
-      setComponents(JSON.parse(savedConfig));
+      const parsedConfig = JSON.parse(savedConfig);
+      setComponents(parsedConfig);
+    } else {
     }
   }, [setComponents]);
 
@@ -56,6 +58,12 @@ export default function Home() {
       window.removeEventListener('resize', handleResize);
     };
   }, []);
+
+  useEffect(() => {
+    if (components && components.length > 0) {
+      localStorage.setItem("layoutConfig", JSON.stringify(components));
+    }
+  }, [components]);
 
   type ComponentConfig = {
     id: string;

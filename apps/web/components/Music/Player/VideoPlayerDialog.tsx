@@ -19,41 +19,67 @@ export default function VideoPlayerDialog({ url }: VideoPlayerDialogProps) {
   const { isPlaying, togglePlayPause, song, currentTime, handleTimeChange } = usePlayer();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
-  const videoTimeRef = useRef(currentTime);
+  const videoTimeRef = useRef<number>(currentTime);
+  const wasPlayingRef = useRef(false);
   const playerRef = useRef<ReactPlayer>(null);
-  const hasUpdatedTimeRef = useRef(false);
+  const lastKnownTimeRef = useRef<number>(currentTime);
+
+  const validateTime = (time: number, duration: number): number => {
+    if (isNaN(time) || time < 0) return 0;
+    if (duration && time > duration) return duration;
+    return time;
+  };
 
   useEffect(() => {
-    if (isPlaying && isDialogOpen) {
+    if (isDialogOpen && isPlaying) {
+      wasPlayingRef.current = true;
       togglePlayPause();
     }
-  }, [isPlaying, isDialogOpen, togglePlayPause]);
+  }, [isDialogOpen, isPlaying, togglePlayPause]);
 
   useEffect(() => {
-    if (isDialogOpen && playerRef.current) {
-      playerRef.current.seekTo(currentTime, 'seconds');
-      hasUpdatedTimeRef.current = true;
+    if (!isDialogOpen) {
+      if (videoTimeRef.current !== undefined) {
+        const duration = playerRef.current?.getDuration() ?? 0;
+        const validTime = validateTime(videoTimeRef.current, duration);
+        handleTimeChange(validTime.toString());
+        videoTimeRef.current = 0;
+        
+        if (wasPlayingRef.current) {
+          setTimeout(() => {
+            togglePlayPause();
+            wasPlayingRef.current = false;
+          }, 100);
+        }
+      }
     }
-  }, [isDialogOpen, currentTime]);
-
-  useEffect(() => {
-    if (!isDialogOpen && hasUpdatedTimeRef.current) {
-      handleTimeChange(videoTimeRef.current.toString());
-      hasUpdatedTimeRef.current = false;
-    }
-  }, [isDialogOpen, handleTimeChange]);
+  }, [isDialogOpen, handleTimeChange, togglePlayPause]);
 
   const handleReady = () => {
-    if (playerRef.current) {
-      playerRef.current.seekTo(videoTimeRef.current, 'seconds');
-      playerRef.current.getInternalPlayer().playVideo();
+    if (playerRef.current && isDialogOpen) {
+      const player = playerRef.current;
+      const duration = player.getDuration();
+      const validTime = validateTime(currentTime, duration);
+      player.seekTo(validTime, 'seconds');
+      if (isPlaying) {
+        player.getInternalPlayer().playVideo();
+      }
     }
   };
 
   const handleProgress = ({ playedSeconds }: { playedSeconds: number }) => {
-    videoTimeRef.current = playedSeconds;
+    if (!isNaN(playedSeconds) && isDialogOpen) {
+      videoTimeRef.current = playedSeconds;
+      lastKnownTimeRef.current = playedSeconds;
+    }
   };
-  
+
+  const handlePause = () => {
+    if (playerRef.current) {
+      videoTimeRef.current = playerRef.current.getCurrentTime();
+    }
+  };
+
   return (
     <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
       <DialogTrigger asChild>
@@ -78,6 +104,7 @@ export default function VideoPlayerDialog({ url }: VideoPlayerDialogProps) {
             playing={isDialogOpen}
             onReady={handleReady}
             onProgress={handleProgress}
+            onPause={handlePause}
             url={url}
           />
         </div>

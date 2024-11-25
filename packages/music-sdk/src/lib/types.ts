@@ -135,6 +135,18 @@ export interface LibrarySong {
     music_video?: MusicVideo;
 }
 
+export interface BareSong {
+    id: string;
+    name: string;
+    artist: string;
+    contributing_artists: string[];
+    contributing_artist_ids: string[];
+    track_number: number;
+    path: string;
+    duration: number;
+    music_video?: MusicVideo;
+}
+
 export interface MusicVideo {
     url: string;
     thumbnail_url?: string;

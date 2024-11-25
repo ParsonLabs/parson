@@ -1,4 +1,4 @@
-"use client"
+"use client";
 
 import React, { createContext, useContext, useState, useEffect } from 'react';
 
@@ -17,15 +17,7 @@ type LayoutConfigContextType = {
 const LayoutConfigContext = createContext<LayoutConfigContextType | undefined>(undefined);
 
 export const LayoutConfigProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [components, setComponents] = useState<ComponentConfig[]>([
-    { id: "LandingCarousel", name: "Landing Carousel", visible: true, pinned: false },
-    { id: "ListenAgain", name: "Listen Again", visible: true, pinned: false },
-    { id: "SimilarTo", name: "Similar To", visible: true, pinned: false },
-    { id: "RecommendedAlbums", name: "Recommended Albums", visible: true, pinned: false },
-    { id: "RandomSongs", name: "Random Songs", visible: true, pinned: false },
-    { id: "FromYourLibrary", name: "From Your Library", visible: true, pinned: false },
-    { id: "MusicVideos", name: "Music Videos", visible: true, pinned: false },
-  ]);
+  const [components, setComponents] = useState<ComponentConfig[]>([]);
 
   useEffect(() => {
     const savedConfig = localStorage.getItem("layoutConfig");
@@ -45,7 +37,9 @@ export const LayoutConfigProvider: React.FC<{ children: React.ReactNode }> = ({ 
   }, []);
 
   useEffect(() => {
-    localStorage.setItem("layoutConfig", JSON.stringify(components));
+    if (components.length > 0) {
+      localStorage.setItem("layoutConfig", JSON.stringify(components));
+    }
   }, [components]);
 
   return (

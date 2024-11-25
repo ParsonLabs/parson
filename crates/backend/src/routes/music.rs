@@ -269,12 +269,12 @@ async fn stream_song(
 #[get("/format/{artist}")]
 async fn format_contributing_artists_route(artist: web::Path<String>) -> impl Responder {
     let artists = vec![artist.to_string()];
-    // let formatted_artists: Vec<(String, Vec<String>)> = (Into::<Vec<(String, Vec<String>)>>::into(*format_contributing_artists(artists)));
-    // let json = serde_json::to_string(&formatted_artists).unwrap();
+    let formatted_artists: Vec<(String, Vec<String>)> = Into::<Vec<(String, Vec<String>)>>::into(&*&mut *format_contributing_artists(artists));
+    let json = serde_json::to_string(&formatted_artists).unwrap();
 
     HttpResponse::Ok()
-        // .content_type("application/json; charset=utf-8")
-        // .body(json)
+        .content_type("application/json; charset=utf-8")
+        .body(json)
 }
 
 #[get("/index/quick/{path}")]

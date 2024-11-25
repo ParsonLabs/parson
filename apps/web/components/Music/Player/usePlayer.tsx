@@ -270,7 +270,7 @@ export function PlayerProvider({ children }: PlayerProviderProps) {
   
           for (let shuffledSong of shuffledRecommendedSongs) {
             if (shuffledSong.name !== song.name) {
-              recommendedSong = await getSongInfo(shuffledSong.id);
+              recommendedSong = await getSongInfo(shuffledSong.id) as LibrarySong;
               break;
             }
           }

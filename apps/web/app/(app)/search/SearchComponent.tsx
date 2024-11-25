@@ -28,7 +28,7 @@ export default function SearchComponent() {
   }, [query]);
 
   return (
-    <div className="flex items-center justify-start overflow-y-hidden h-full min-h-screen pt-32 pl-20 pb-20">
+    <div className="flex items-center justify-center overflow-y-hidden h-full min-h-screen pt-32 pl-20 pb-20 scale-110">
     <div className="transform scale-110 pt-20 pb-20">
       {suggestion && suggestion.toLowerCase() !== query.toLowerCase() && (
         <p className="text-sm text-white mt-6">

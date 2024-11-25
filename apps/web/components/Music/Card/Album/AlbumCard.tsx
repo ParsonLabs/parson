@@ -59,13 +59,13 @@ export default function AlbumCard({
         <Image src={albumCoverURL} alt={`${album_name} Image`} height={256} width={256} className="rounded cursor-pointer transition-filter duration-300 group-hover:brightness-50 object-fill w-full h-40" style={{ height: "167px" }}/>
         <div className="mt-3 font-bold text-white flex justify-between overflow-hidden">
           <p className="overflow-hidden text-ellipsis whitespace-nowrap" title={album_name}>{album_name}</p>
-          <p className="ml-2 font-light text-gray-400 whitespace-nowrap">{album_songs_count}</p>
-        </div>
+          <p className="ml-2 font-light text-gray-400 whitespace-nowrap" style={dominantColor ? { color: `${dominantColor}` } : undefined}>{album_songs_count}</p>        
+          </div>
       </Link>
   
       <Link href={`/artist?id=${artist_id}`}>
         <p className="text-gray-400">
-          {artist_name} • {releaseDate}
+          {artist_name} {releaseDate == "Invalid Date" ? "" : "• " + releaseDate}
         </p>
       </Link>
     </div>

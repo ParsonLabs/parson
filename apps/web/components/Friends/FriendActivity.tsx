@@ -2,7 +2,7 @@
 
 import getSession from "@/lib/Authentication/JWT/getSession";
 import { getFollowing, getNowPlaying, getSongInfo, getUserInfoById } from "@music/sdk";
-import { Album, Artist, LibrarySong as Song, User } from "@music/sdk/types";
+import { Album, Artist, LibrarySong, LibrarySong as Song, User } from "@music/sdk/types";
 import { Avatar, AvatarFallback, AvatarImage } from "@music/ui/components/avatar";
 import { Disc3Icon } from 'lucide-react';
 import Link from "next/link";
@@ -34,7 +34,7 @@ export default function FriendActivity() {
           const profilePicture = profilePicBlob ? URL.createObjectURL(profilePicBlob) : null;
           
           if (nowPlayingSongID) {
-            const songResponse = await getSongInfo(String(nowPlayingSongID.now_playing) ?? 0);
+            const songResponse = await getSongInfo(String(nowPlayingSongID.now_playing) ?? 0) as LibrarySong;
             return {
               ...friend,
               nowPlaying: {

@@ -106,7 +106,7 @@ export default function LandingCarousel() {
   const albumCoverURL = `${getBaseURL()}/image/${encodeURIComponent(album.cover_url)}?raw=true`;
 
   return (
-    <div className="relative p-5 flex items-center hidden md:flex" style={{ height: '300px' }}>
+    <div className="relative p-5 flex items-center md:flex" style={{ height: '300px' }}>
       <Image
         className="absolute top-0 left-0 w-full h-full bg-cover bg-center blur-2xl brightness-50"
         alt={`${album.name} Album Background Image`}

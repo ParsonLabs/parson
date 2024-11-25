@@ -5,7 +5,7 @@
   "main": "electron/main.js",
   "author": "ParsonLabs",
   "scripts": {
-    "dev": "next dev",
+    "dev": "next dev --turbo",
     "electron": "concurrently -n \"NEXT,ELECTRON\" -c \"yellow,blue\" --kill-others \"next dev\" \"electron .\"",
     "electron-build": "next build && electron-builder",
     "tauri": "tauri dev",

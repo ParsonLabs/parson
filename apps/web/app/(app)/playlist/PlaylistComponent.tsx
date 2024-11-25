@@ -15,12 +15,14 @@ interface Playlist extends OriginalPlaylist {
   updatedAt: Date;
 }
 
+type LibrarySongWithDate = LibrarySong & { date_added: string  }
+
 export default function PlaylistComponent() {
   const searchParams = useSearchParams();
   const id = searchParams?.get("id");
 
   const [playlist, setPlaylist] = useState<Playlist | null>(null);
-  const [songsWithMetadata, setSongsWithMetadata] = useState<(LibrarySong & { date_added: string })[]>([]);
+  const [songsWithMetadata, setSongsWithMetadata] = useState<(LibrarySongWithDate)[]>([]);
   const [totalDuration, setTotalDuration] = useState<number>(0);
 
   useEffect(() => {
@@ -45,7 +47,7 @@ export default function PlaylistComponent() {
           return { ...songData, date_added: songInfo.date_added };
         });
 
-        const songsWithMetadataData = await Promise.all(songsWithMetadataPromises);
+        const songsWithMetadataData = await Promise.all(songsWithMetadataPromises) as unknown as LibrarySongWithDate[];
         setSongsWithMetadata(songsWithMetadataData);
 
         const totalDuration = songsWithMetadataData.reduce((total: number, song: LibrarySong & { date_added: string }) => total + song.duration, 0);

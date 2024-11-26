@@ -1,11 +1,11 @@
-"use client"
+"use client";
 
-import pl from '@/assets/pl-tp.png';
-import { Loader2Icon } from 'lucide-react';
-import Image from 'next/image';
-import { useRouter } from 'next/navigation';
-import React, { useEffect, useState } from 'react';
-import { useSession } from '../Providers/AuthProvider';
+import pl from "@/assets/pl-tp.png";
+import { Loader2Icon } from "lucide-react";
+import Image from "next/image";
+import { useRouter } from "next/navigation";
+import React, { useEffect, useState } from "react";
+import { useSession } from "../Providers/AuthProvider";
 
 interface SplashScreenProps {
   children: React.ReactNode;
@@ -14,44 +14,81 @@ interface SplashScreenProps {
 const SplashScreen: React.FC<SplashScreenProps> = ({ children }) => {
   const [loading, setLoading] = useState(true);
   const { push } = useRouter();
-  const { session } = useSession()
+  const { session, isLoading } = useSession();
 
   useEffect(() => {
     const checkServerUrl = async () => {
-      const storedServer = localStorage.getItem("server");
-      const response = await fetch(
-        `${storedServer && JSON.parse(storedServer).local_address || window.location.origin}/api/s/server/info`
-      );
-  
-      if (response.ok) {
-        if (session?.username) {
-          const currentPath = window.location.pathname;
-          const queryParams = window.location.search;
-          if (currentPath === "/" || currentPath === "/login" || currentPath === "/login/") {
-            push("/home");
-          } else {
-            push(`${currentPath}${queryParams}`);
-          }
+      if (isLoading) return;
 
-          setLoading(false);
-        } else {
-          push("/login");
-          setLoading(false);
+      const currentPath = window.location.pathname;
+      if (
+        session?.username &&
+        currentPath !== "/" &&
+        currentPath !== "/login" &&
+        currentPath !== "/login/" &&
+        currentPath.startsWith("/home")
+      ) {
+        setLoading(false);
+        return;
+      }
+
+      try {
+        setLoading(true);
+
+        const storedServer = localStorage.getItem("server");
+        const serverUrl = storedServer
+          ? JSON.parse(storedServer).local_address
+          : window.location.origin;
+
+        const response = await fetch(`${serverUrl}/api/s/server/info`);
+
+        if (!response.ok) {
+          push("/");
+          return;
         }
-      } else {
-        push("/")
+
+        const serverInfo = await response.json();
+        if (!serverInfo.startup_wizard_completed) {
+          push("/setup");
+          return;
+        }
+
+        if (session?.username) {
+          if (
+            currentPath === "/" ||
+            currentPath === "/login" ||
+            currentPath === "/login/"
+          ) {
+            push("/home");
+          }
+          return;
+        }
+
+        if (currentPath !== "/login" && currentPath !== "/login/") {
+          push("/login");
+        }
+      } catch (error) {
+        console.error("Server check failed:", error);
+        push("/");
+      } finally {
         setLoading(false);
       }
     };
-  
+
     checkServerUrl();
-  }, [push, session]);
+  }, [push, session, isLoading]);
 
   if (loading) {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen bg-gray-900 text-white">
         <div className="flex items-center mb-4">
-          <Image src={pl} alt="ParsonLabs Logo" width={64} height={64} className="mr-4" />
+          <Image
+            src={pl}
+            alt="ParsonLabs Logo"
+            width={64}
+            height={64}
+            className="mr-4"
+          />
           <p className="text-6xl font-bold">ParsonLabs Music</p>
         </div>
         <Loader2Icon className="animate-spin w-12 h-12 mt-4" stroke="#4338ca" />

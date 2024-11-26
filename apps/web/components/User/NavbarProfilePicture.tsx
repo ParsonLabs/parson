@@ -58,6 +58,7 @@ export default function NavbarProfilePicture() {
   }, [session])
 
   const { push } = useRouter()
+
   function signOut() {
     deleteCookie("plm_accessToken")
     deleteCookie("plm_refreshToken")

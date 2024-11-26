@@ -35,51 +35,67 @@ export default function MainPage() {
   const [showServerURLInput, setShowServerURLInput] = useState(false);
   const [showServerSelect, setShowServerSelect] = useState(false);
   const { push } = useRouter();
-  const { session } = useSession()
+  const { session, isLoading } = useSession()
 
   useEffect(() => {
-    if (process.env.LOCAL_APP) push("/home")
-
-    const checkServerUrl = async () => {
-      setLoading(true);
-
-      try {
-        const storedServer = localStorage.getItem("server");
-        const response = await fetch(
-          `${(storedServer && JSON.parse(storedServer).local_address) || window.location.origin}/api/s/server/info`
-        );
-        let serverInfo: ServerInfo = await response.json();
-
-        if (serverInfo.product_name && serverInfo.startup_wizard_completed) {
-          localStorage.setItem("server", JSON.stringify(serverInfo));
-
-          if (session) {
-            push("/home");
-          } else {
-            push("/login");
-          }
-        } else {
-          if (!serverInfo.startup_wizard_completed && session) {
-            push("/setup/library");
-          } else {
-            push("/setup");
-          }
-        }
-      } catch (error) {
-        console.error("Error checking server URL:", error);
-        const storedServer = localStorage.getItem("server");
-        if (storedServer) {
-          setShowServerSelect(true);
-        } else {
-          setShowServerURLInput(true);
-        }
-      } finally {
-        setLoading(false);
+      if (process.env.LOCAL_APP) {
+          push("/home");
+          return;
       }
-    };
-
-    checkServerUrl();
-  }, [push, session]);
+  
+      const checkServerUrl = async () => {
+          if (isLoading) return;
+          
+          setLoading(true);
+  
+          try {
+              if (session) {
+                  const storedServer = localStorage.getItem("server");
+                  if (storedServer) {
+                      const serverInfo = JSON.parse(storedServer);
+                      if (serverInfo.startup_wizard_completed) {
+                          push("/home");
+                          return;
+                      }
+                  }
+              }
+  
+              const storedServer = localStorage.getItem("server");
+              const response = await fetch(
+                  `${(storedServer && JSON.parse(storedServer).local_address) || window.location.origin}/api/s/server/info`
+              );
+              let serverInfo: ServerInfo = await response.json();
+  
+              localStorage.setItem("server", JSON.stringify(serverInfo));
+  
+              if (!isLoading) {
+                  if (serverInfo.product_name && serverInfo.startup_wizard_completed) {
+                      if (session) {
+                          push("/home");
+                      } else {
+                          push("/login");
+                      }
+                  } else if (!serverInfo.startup_wizard_completed && session) {
+                      push("/setup/library");
+                  } else {
+                      push("/setup");
+                  }
+              }
+          } catch (error) {
+              console.error("Error checking server URL:", error);
+              const storedServer = localStorage.getItem("server");
+              if (storedServer) {
+                  setShowServerSelect(true);
+              } else {
+                  setShowServerURLInput(true);
+              }
+          } finally {
+              setLoading(false);
+          }
+      };
+  
+      checkServerUrl();
+  }, [push, session, isLoading]);
 
   const form = useForm<FormData>({
     resolver: zodResolver(schema),

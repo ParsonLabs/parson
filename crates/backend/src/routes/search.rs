@@ -1,3 +1,4 @@
+use std::env;
 use std::error::Error;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -10,7 +11,7 @@ use dirs;
 use lazy_static::lazy_static;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
-use serde_json::{self, from_str};
+use serde_json::{self, from_str, json};
 use tantivy::collector::TopDocs;
 use tantivy::query::{FuzzyTermQuery, QueryParser};
 use tantivy::schema::{*, Term};
@@ -514,6 +515,180 @@ async fn get_last_searched_queries(query: web::Query<GetLastSearchedQueriesReque
     Ok(HttpResponse::Ok().json(response))
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SearchRequest {
+    q: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct Channel {
+    name: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct YouTubeVideoResponse {
+    id: String,
+    title: String,
+    thumbnail: String,
+    channel: Channel,
+    url: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct InvidiousVideo {
+    #[serde(rename = "videoId")]
+    video_id: String,
+    title: String,
+    author: String,
+}
+
+#[get("/youtube")]
+async fn search_youtube(query: web::Query<SearchRequest>) -> Result<impl Responder, Box<dyn Error>> {
+    let client = reqwest::Client::new();
+    let search_query = &query.q;
+    
+    let response = match env::var("INVIDIOUS_URL") {
+        Ok(invidious_url) => {
+            client
+                .get(format!(
+                    "{}/api/v1/search?q={}&type=video&page=1",
+                    invidious_url.trim_end_matches('/'),
+                    search_query
+                ))
+                .header("Accept", "application/json")
+                .send()
+                .await?
+                .json::<Vec<InvidiousVideo>>()
+                .await?
+        },
+        Err(_) => { Vec::new() }
+    };
+
+    let limited_results = response.into_iter()
+        .take(10)
+        .map(|video| YouTubeVideoResponse {
+            id: video.video_id.clone(),
+            title: video.title,
+            thumbnail: format!("https://i.ytimg.com/vi/{}/mqdefault.jpg", video.video_id),
+            channel: Channel { 
+                name: video.author 
+            },
+            url: format!("https://youtube.com/watch?v={}", video.video_id),
+        })
+        .collect::<Vec<_>>();
+
+    Ok(HttpResponse::Ok().json(limited_results))
+}
+
+#[derive(Deserialize)]
+struct CommentsRequest {
+    video_id: String,
+}
+
+#[derive(Default, Debug, Serialize, Deserialize)]
+struct CommentInfo {
+    #[serde(rename = "commentCount")]
+    comment_count: i64,
+    #[serde(rename = "videoId")]
+    video_id: String,
+    comments: Vec<InvidiousComment>,
+    continuation: Option<String>,
+}
+
+#[derive(Default, Debug, Serialize, Deserialize)]
+struct InvidiousComment {
+    #[serde(rename = "authorId")]
+    author_id: String,
+    #[serde(rename = "authorUrl")]
+    author_url: String,
+    author: String,
+    verified: bool,
+    #[serde(rename = "authorThumbnails")]
+    author_thumbnails: Vec<AuthorThumbnail>,
+    #[serde(rename = "authorIsChannelOwner")]
+    author_is_channel_owner: bool,
+    #[serde(rename = "isSponsor")]
+    is_sponsor: bool,
+    #[serde(rename = "likeCount")]
+    likes: i64,
+    #[serde(rename = "isPinned")]
+    is_pinned: bool,
+    #[serde(rename = "commentId")]
+    comment_id: String,
+    content: String,
+    #[serde(rename = "contentHtml")]
+    content_html: String,
+    #[serde(rename = "isEdited")]
+    is_edited: bool,
+    published: i64,
+    #[serde(rename = "publishedText")]
+    published_text: String,
+    replies: Option<Replies>,
+}
+
+#[derive(Default, Debug, Serialize, Deserialize)]
+struct AuthorThumbnail {
+    url: String,
+    width: i32,
+    height: i32,
+}
+
+#[derive(Default, Serialize, Debug)]
+struct CommentResponse {
+    author: String,
+    author_thumbnails: Vec<AuthorThumbnail>,
+    content: String,
+    likes: i64,
+    published: String,
+    published_text: String,
+    is_pinned: bool,
+    replies: Option<Replies>,
+}
+
+#[derive(Default, Debug, Serialize, Deserialize)]
+struct Replies {
+    #[serde(rename = "replyCount")]
+    reply_count: i32,
+    continuation: Option<String>,
+}
+
+#[get("/youtube/comments")]
+async fn get_youtube_comments(query: web::Query<CommentsRequest>) -> Result<impl Responder, Box<dyn Error>> {
+    let client = reqwest::Client::new();
+    let video_id = &query.video_id;
+    
+    let comments = match env::var("INVIDIOUS_URL") {
+        Ok(invidious_url) => {
+            let response = client
+                .get(format!(
+                    "{}/api/v1/comments/{}",
+                    invidious_url.trim_end_matches('/'),
+                    video_id
+                ))
+                .header("Accept", "application/json")
+                .send()
+                .await?;
+
+            if !response.status().is_success() {
+                return Ok(HttpResponse::InternalServerError().json(json!({
+                    "error": "Failed to fetch comments"
+                })));
+            }
+
+            let root = response.json::<CommentInfo>().await?;
+            root
+        },
+        Err(_) => CommentInfo::default()
+    };
+
+    Ok(HttpResponse::Ok().json(comments))
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct YouTubeApiResponse {
+    items: Vec<InvidiousVideo>,
+}
+
 pub fn configure(cfg: &mut web::ServiceConfig) {
     cfg.service(
         web::scope("/search")
@@ -522,5 +697,7 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
             .service(delete_item_from_search_history)
             .service(get_last_searched_queries)
             .service(populate_search)
+            .service(search_youtube)
+            .service(get_youtube_comments)
     );
 }

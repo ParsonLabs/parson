@@ -24,6 +24,7 @@ import { useReverb } from "../Providers/SlowedReverbProvider";
 import { usePlayer } from "./Player/usePlayer";
 import VideoPlayerDialog from "./Player/VideoPlayerDialog";
 import { PanelContext } from "./Queue/QueuePanelContext";
+import ViewCommentsModal from "./Player/ViewComments";
 
 export default function Player() {
   const [liked, setLiked] = useState(false);
@@ -172,7 +173,7 @@ export default function Player() {
     };
   }
 
-  const debouncedTogglePlayPause = debounce(togglePlayPause, 300);
+  const debouncedTogglePlayPause = debounce(togglePlayPause, 150);
 
   const formatTime = (time: number) => {
     const minutes = Math.floor(time / 60);
@@ -189,7 +190,7 @@ export default function Player() {
       }}>
       <Image
         className="bg-cover bg-center blur-3xl"
-        src={isPlaying ? imageSrc : ""}
+        src={isPlaying ? imageSrc : "/snf.png"}
         alt="Background Image"
         height={1000}
         width={1000}
@@ -298,6 +299,7 @@ export default function Player() {
       </section>
   
       <section className="hidden md:flex items-center gap-2">
+        <ViewCommentsModal />
         <button
           onClick={() => {
             toggleLyrics();

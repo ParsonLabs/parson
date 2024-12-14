@@ -106,3 +106,71 @@ export async function searchLibrary(query: string): Promise<CombinedItem[]> {
   });
   return response.data;
 }
+
+interface YouTubeVideoResponse {
+  id: string;
+  title: string;
+  author: string;
+}
+
+/**
+ * Search YouTube videos via Invidious API.
+ * @param {string} query - The search query string.
+ * @returns {Promise<YouTubeVideoResponse[]>} - A promise that resolves to an array of YouTube videos.
+ */
+export async function searchYouTube(query: string): Promise<YouTubeVideoResponse[]> {
+  const response = await axios.get('/search/youtube', {
+    params: { q: query },
+  });
+  return response.data;
+}
+
+export interface CommentInfo {
+  commentCount: number
+  videoId: string
+  comments: Comment[]
+  continuation: string
+}
+
+export interface Comment {
+  authorId: string
+  authorUrl: string
+  author: string
+  verified: boolean
+  authorThumbnails: AuthorThumbnail[]
+  authorIsChannelOwner: boolean
+  isSponsor: boolean
+  likeCount: number
+  isPinned: boolean
+  commentId: string
+  content: string
+  contentHtml: string
+  isEdited: boolean
+  published: number
+  publishedText: string
+  replies?: Replies
+}
+
+export interface AuthorThumbnail {
+  url: string
+  width: number
+  height: number
+}
+
+export interface Replies {
+  replyCount: number
+  continuation: string
+}
+
+/**
+ * Get comments for a YouTube video.
+ * @param {string} videoId - The YouTube video ID.
+ * @returns {Promise<YouTubeComment[]>} - A promise that resolves to an array of comments.
+ * @throws {Error} If the request fails or returns an error.
+ */
+export async function getYouTubeComments(videoId: string): Promise<CommentInfo> {
+  const response = await axios.get<CommentInfo>('/search/youtube/comments', {
+    params: { video_id: videoId },
+  });
+  return response.data;
+}

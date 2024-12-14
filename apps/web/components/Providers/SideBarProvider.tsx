@@ -1,6 +1,6 @@
 "use client"
 
-import { createContext, useState, useContext, ReactNode } from 'react';
+import { createContext, useState, useContext, ReactNode, useEffect } from 'react';
 
 type SidebarContextType = {
   isOpen: boolean;
@@ -16,11 +16,18 @@ type SidebarProviderProps = {
 }
 
 export default function SidebarProvider({ children }: SidebarProviderProps) {
-  const [isOpen, setIsOpen] = useState(true);
+  const [isOpen, setIsOpen] = useState(() => {
+      const stored = localStorage.getItem('sidebarOpen');
+      return stored ? JSON.parse(stored) : true;
+  });
+
+  useEffect(() => {
+    localStorage.setItem('sidebarOpen', JSON.stringify(isOpen));
+  }, [isOpen]);
 
   const openSidebar = () => setIsOpen(true);
   const closeSidebar = () => setIsOpen(false);
-  const toggleSidebar = () => setIsOpen(prevIsOpen => !prevIsOpen);
+  const toggleSidebar = () => setIsOpen((prevIsOpen: boolean) => !prevIsOpen);
 
   return (
     <SidebarContext.Provider value={{ isOpen, openSidebar, closeSidebar, toggleSidebar }}>

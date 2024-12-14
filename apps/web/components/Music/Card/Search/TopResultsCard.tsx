@@ -103,7 +103,7 @@ export default function TopResultsCard({ result }: ResultCardProps) {
 
   if (result.item_type === 'song' && song) {
     return (
-      <div key={result.id} className="relative flex items-center p-12" style={{ height: 400, width: 600 }}>
+      <div key={result.id} className="relative flex items-center p-8" style={{ height: 200, width: '100%' }}>
         <div className="relative z-10 flex items-center p-5 bg-white bg-opacity-30 backdrop-blur-md rounded-lg" style={{ height: '100%', width: '100%' }}>
           <div
             className="absolute inset-0 bg-cover bg-center"
@@ -153,14 +153,18 @@ export default function TopResultsCard({ result }: ResultCardProps) {
               </div>
             )}
           </div>
-          <div className="ml-5 flex flex-col justify-evenly items-start h-28">
-            <h2 className="text-2 xl font-bold">{song.name}</h2>
-            <p className="text-md text-gray-400">
-              Song • <Link href={`/artist/?id=${song.artist_object.id}`} className="text-gray-400 hover:underline">{song.artist}</Link> • <Link href={`/album/?id=${song.album_object.id}`} className="text-gray-400 hover:underline">{song.album_object.name}</Link> • {formatDuration(song.duration)}
-            </p>
-            <button className="flex items-center px-3 py-1 bg-white text-black rounded-full" onClick={handlePlay}>
-              <Play className="mr-2" size={14} fill="black" strokeWidth={0} /> <p className="text-sm">Play</p>
-            </button>
+          <div className="ml-5 flex justify-between items-center h-28 w-full">
+            <div className="flex flex-col justify-start items-start text-left">
+              <h2 className="text-2xl font-bold">{song.name}</h2>
+              <p className="text-md text-gray-400">
+                Song • <Link href={`/artist/?id=${song.artist_object.id}`} className="text-gray-400 hover:underline">{song.artist}</Link> • <Link href={`/album/?id=${song.album_object.id}`} className="text-gray-400 hover:underline">{song.album_object.name}</Link> • {formatDuration(song.duration)}
+              </p>
+            </div>
+            <div className="flex items-center justify-center h-full pr-8">
+              <button className="flex items-center px-16 py-2 bg-white text-black rounded-full" onClick={handlePlay}>
+                <Play className="mr-2" size={24} fill="black" strokeWidth={0} /> <p className="text-lg">Play</p>
+              </button>
+            </div>
           </div>
         </div>
       </div>

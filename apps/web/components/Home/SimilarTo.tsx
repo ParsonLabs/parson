@@ -46,21 +46,39 @@ export default function SimilarTo() {
       <PageGradient imageSrc={albumCoverSrc} />
       <ScrollButtons heading={capitalizeWords(genre ?? "")} topText="SIMILAR TO" imageUrl={albumCoverSrc} id="SimilarTo">
         <div className="w-full h-full">
-          <div className="grid grid-flow-col grid-rows-2 gap-2 w-full h-full pb-8">
-            {similarAlbums.map((album, index) => (
-              <div className="w-48 h-full pb-14 scale-90" key={index}>
-                <AlbumCard
-                  artist_id={album.artist_id}
-                  artist_name={album.artist_name}
-                  album_id={album.album_id}
-                  album_name={album.album_name}
-                  album_cover={album.album_cover}
-                  album_songs_count={album.album_songs_count}
-                  first_release_date={album.first_release_date}
-                />
-              </div>
-            ))}
-          </div>
+          {similarAlbums.length > 4 ? (
+            <div className="grid grid-flow-col grid-rows-2 gap-2 w-full h-full pb-8">
+              {similarAlbums.map((album, index) => (
+                <div className="w-48 h-full pb-14 scale-90" key={index}>
+                  <AlbumCard
+                    artist_id={album.artist_id}
+                    artist_name={album.artist_name}
+                    album_id={album.album_id}
+                    album_name={album.album_name}
+                    album_cover={album.album_cover}
+                    album_songs_count={album.album_songs_count}
+                    first_release_date={album.first_release_date}
+                  />
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="flex gap-2 w-full h-full pb-8">
+              {similarAlbums.map((album, index) => (
+                <div className="w-48 h-full pb-14 scale-90" key={index}>
+                  <AlbumCard
+                    artist_id={album.artist_id}
+                    artist_name={album.artist_name}
+                    album_id={album.album_id}
+                    album_name={album.album_name}
+                    album_cover={album.album_cover}
+                    album_songs_count={album.album_songs_count}
+                    first_release_date={album.first_release_date}
+                  />
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </ScrollButtons>
     </>

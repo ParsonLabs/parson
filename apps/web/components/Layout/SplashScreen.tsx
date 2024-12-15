@@ -6,6 +6,8 @@ import Image from "next/image";
 import { useRouter } from "next/navigation";
 import React, { useEffect, useState } from "react";
 import { useSession } from "../Providers/AuthProvider";
+import { isValid } from "@music/sdk";
+import { deleteCookie } from "cookies-next";
 
 interface SplashScreenProps {
   children: React.ReactNode;
@@ -20,20 +22,17 @@ const SplashScreen: React.FC<SplashScreenProps> = ({ children }) => {
     const checkServerUrl = async () => {
       if (isLoading) return;
 
-      const currentPath = window.location.pathname;
-      if (
-        session?.username &&
-        currentPath !== "/" &&
-        currentPath !== "/login" &&
-        currentPath !== "/login/" &&
-        currentPath.startsWith("/home")
-      ) {
-        setLoading(false);
-        return;
-      }
-
       try {
         setLoading(true);
+
+        const validationResult = await isValid();
+        
+        if (!validationResult.status) {
+          deleteCookie('plm_accessToken');
+          deleteCookie('plm_refreshToken');
+          push('/login');
+          return;
+        }
 
         const storedServer = localStorage.getItem("server");
         const serverUrl = storedServer
@@ -54,6 +53,7 @@ const SplashScreen: React.FC<SplashScreenProps> = ({ children }) => {
         }
 
         if (session?.username) {
+          const currentPath = window.location.pathname;
           if (
             currentPath === "/" ||
             currentPath === "/login" ||
@@ -64,9 +64,11 @@ const SplashScreen: React.FC<SplashScreenProps> = ({ children }) => {
           return;
         }
 
+        const currentPath = window.location.pathname;
         if (currentPath !== "/login" && currentPath !== "/login/") {
           push("/login");
         }
+
       } catch (error) {
         console.error("Server check failed:", error);
         push("/");

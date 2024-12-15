@@ -1,6 +1,6 @@
-use std::env;
+use std::{env, time::{SystemTime, UNIX_EPOCH}};
 
-use actix_web::{cookie::{Cookie, SameSite}, dev::ServiceRequest, http::header, post, web, HttpRequest, HttpResponse, Responder};
+use actix_web::{cookie::{Cookie, SameSite}, dev::ServiceRequest, get, http::header, post, web, HttpRequest, HttpResponse, Responder};
 use actix_web_httpauth::extractors::bearer::BearerAuth;
 use argon2::{
     password_hash::{rand_core::OsRng, PasswordHash, PasswordHasher, PasswordVerifier, SaltString},
@@ -12,6 +12,7 @@ use dotenvy::dotenv;
 use futures::future::{ready, Ready};
 use jsonwebtoken::{decode, encode, Algorithm, DecodingKey, EncodingKey, Header, Validation};
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 
 use crate::utils::{config::get_jwt_secret, database::{database::establish_connection, models::NewUser}};
 
@@ -78,6 +79,62 @@ fn generate_refresh_token(user_id: i32, username: &str, role: &String) -> String
     header.alg = jsonwebtoken::Algorithm::HS256;
 
     encode(&header, &claims, &EncodingKey::from_secret(secret.as_ref())).expect("Token encoding failed")
+}
+
+#[get("/is-valid")]
+pub async fn is_valid(req: HttpRequest) -> impl Responder {
+    let token = if let Some(cookie_header) = req.headers().get(header::COOKIE) {
+        if let Ok(cookie_str) = cookie_header.to_str() {
+            cookie_str.split(';')
+                .filter_map(|cookie| Cookie::parse_encoded(cookie.trim()).ok())
+                .find(|cookie| cookie.name() == "plm_accessToken")
+                .map(|cookie| cookie.value().to_string())
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
+    let token = match token {
+        Some(t) => t,
+        None => return HttpResponse::Unauthorized().json(json!({
+            "status": false,
+            "message": "No token found in cookies"
+        }))
+    };
+
+    let secret = get_jwt_secret();
+    let mut validation = Validation::new(Algorithm::HS256);
+    validation.leeway = 60;
+    validation.validate_exp = true;
+
+    match decode::<Claims>(&token, &DecodingKey::from_secret(secret.as_ref()), &validation) {
+        Ok(token_data) => {
+            let current_time = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_secs() as usize;
+
+            if token_data.claims.exp < current_time {
+                return HttpResponse::Unauthorized().json(json!({
+                    "status": false,
+                    "message": "Token expired",
+                    "token_type": token_data.claims.token_type
+                }));
+            }
+
+            HttpResponse::Ok().json(json!({
+                "status": true,
+                "token_type": token_data.claims.token_type,
+                "claims": token_data.claims
+            }))
+        },
+        Err(e) => HttpResponse::Unauthorized().json(json!({
+            "status": false,
+            "message": format!("Invalid token: {}", e)
+        }))
+    }
 }
 
 #[post("/login")]

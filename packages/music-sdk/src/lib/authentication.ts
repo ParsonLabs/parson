@@ -32,6 +32,29 @@ export async function register(data: AuthData): Promise<ResponseAuthData> {
   return response.data;
 }
 
+interface TokenValidationResponse {
+  status: boolean;
+  token_type?: string;
+  claims?: {
+    sub: string;
+    exp: number;
+    username: string;
+    bitrate: number;
+    token_type: string;
+    role: string;
+  };
+  message?: string;
+}
+
+/**
+ * Check if the current token is valid.
+ * @returns {Promise<TokenValidationResponse>} - A promise that resolves to the validation response.
+ */
+export async function isValid(): Promise<TokenValidationResponse> {
+  const response = await axios.get('/auth/is-valid');
+  return response.data;
+}
+
 /**
  * Login a user.
  * @param {AuthData} data - The login data.

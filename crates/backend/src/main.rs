@@ -10,7 +10,7 @@ use actix_cors::Cors;
 use actix_web::HttpResponse;
 use actix_web::{middleware, web, App, HttpServer};
 use actix_web_httpauth::middleware::HttpAuthentication;
-use routes::authentication::{admin_guard, refresh};
+use routes::authentication::{admin_guard, is_valid, refresh};
 use tokio::task;
 use tracing::{info, Level};
 use tracing_subscriber::FmtSubscriber;
@@ -21,8 +21,7 @@ use routes::authentication::{login, register, validator};
 use routes::filesystem;
 use routes::image::image;
 use routes::music::{
-    format_contributing_artists_route, index_library_no_cover_url, process_library, songs_list,
-    stream_song, test,
+    index_library_no_cover_url, process_library,
 };
 use routes::playlist;
 use routes::search::{self, populate_search_data};
@@ -188,6 +187,7 @@ async fn main() -> std::io::Result<()> {
                 .service(login)
                 .service(register)
                 .service(refresh)
+                .service(is_valid)
             )
             .service(image)
             .route("/ws", web::get().to(ws))

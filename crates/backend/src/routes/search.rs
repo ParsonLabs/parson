@@ -9,6 +9,7 @@ use chrono::NaiveDateTime;
 use diesel::{ExpressionMethods, QueryDsl, RunQueryDsl};
 use dirs;
 use lazy_static::lazy_static;
+use rand::seq::SliceRandom;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use serde_json::{self, from_str, json};
@@ -17,7 +18,7 @@ use tantivy::query::{FuzzyTermQuery, QueryParser};
 use tantivy::schema::{*, Term};
 use tantivy::{doc, Index, IndexWriter, ReloadPolicy};
 use tokio::task;
-use tracing::error;
+use tracing::{error, info};
 
 use crate::routes::album::fetch_album_info;
 use crate::routes::artist::fetch_artist_info;
@@ -547,22 +548,20 @@ async fn search_youtube(query: web::Query<SearchRequest>) -> Result<impl Respond
     let client = reqwest::Client::new();
     let search_query = &query.q;
     
-    let response = match env::var("INVIDIOUS_URL") {
-        Ok(invidious_url) => {
-            client
-                .get(format!(
-                    "{}/api/v1/search?q={}&type=video&page=1",
-                    invidious_url.trim_end_matches('/'),
-                    search_query
-                ))
-                .header("Accept", "application/json")
-                .send()
-                .await?
-                .json::<Vec<InvidiousVideo>>()
-                .await?
-        },
-        Err(_) => { Vec::new() }
-    };
+    let invidious_url = env::var("INVIDIOUS_URL")
+        .unwrap_or_else(|_| get_random_invidious_instance());
+
+    let response = client
+        .get(format!(
+            "{}/api/v1/search?q={}&type=video&page=1",
+            invidious_url.trim_end_matches('/'),
+            search_query
+        ))
+        .header("Accept", "application/json")
+        .send()
+        .await?
+        .json::<Vec<InvidiousVideo>>()
+        .await?;
 
     let limited_results = response.into_iter()
         .take(10)
@@ -652,35 +651,45 @@ struct Replies {
     continuation: Option<String>,
 }
 
+fn get_random_invidious_instance() -> String {
+    let instances = vec![
+        "https://invidious.nerdvpn.de",
+        "https://inv.nadeko.net",
+        "https://invidious.jing.rocks"
+    ];
+    instances.choose(&mut rand::thread_rng())
+        .unwrap_or(&"https://invidious.snopyta.org")
+        .to_string()
+}
+
 #[get("/youtube/comments")]
 async fn get_youtube_comments(query: web::Query<CommentsRequest>) -> Result<impl Responder, Box<dyn Error>> {
     let client = reqwest::Client::new();
     let video_id = &query.video_id;
     
-    let comments = match env::var("INVIDIOUS_URL") {
-        Ok(invidious_url) => {
-            let response = client
-                .get(format!(
-                    "{}/api/v1/comments/{}",
-                    invidious_url.trim_end_matches('/'),
-                    video_id
-                ))
-                .header("Accept", "application/json")
-                .send()
-                .await?;
+    let invidious_url = env::var("INVIDIOUS_URL")
+        .unwrap_or_else(|_| get_random_invidious_instance());
 
-            if !response.status().is_success() {
-                return Ok(HttpResponse::InternalServerError().json(json!({
-                    "error": "Failed to fetch comments"
-                })));
-            }
+    info!("Using Invidious instance: {}", invidious_url);
+    
+    let response = client
+        .get(format!(
+            "{}/api/v1/comments/{}",
+            invidious_url.trim_end_matches('/'),
+            video_id
+        ))
+        .header("Accept", "application/json")
+        .send()
+        .await?;
 
-            let root = response.json::<CommentInfo>().await?;
-            root
-        },
-        Err(_) => CommentInfo::default()
-    };
+    if !response.status().is_success() {
+        error!("Failed to fetch comments: {}", response.status());
+        return Ok(HttpResponse::InternalServerError().json(json!({
+            "error": "Failed to fetch comments"
+        })));
+    }
 
+    let comments = response.json::<CommentInfo>().await?;
     Ok(HttpResponse::Ok().json(comments))
 }
 

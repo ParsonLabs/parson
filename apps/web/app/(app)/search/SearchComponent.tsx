@@ -12,6 +12,7 @@ import { DialogTrigger, DialogContent } from "@radix-ui/react-dialog";
 import ReactPlayer from "react-player";
 import Image from "next/image";
 import { YoutubeIcon } from "lucide-react";
+import PageGradient from "@/components/Layout/PageGradient";
 
 interface YouTubeVideo {
   id: string;
@@ -119,7 +120,7 @@ export default function SearchComponent() {
               <TopResultCardSkeleton />
             </div>
           ) : (
-            results && results[0] && <TopResultsCard result={results[0]} />
+            results && results[0] && <><TopResultsCard result={results[0]} /> <PageGradient imageSrc={results[0].album_object.cover_url}/></>
           )}
         </div>
       </div>

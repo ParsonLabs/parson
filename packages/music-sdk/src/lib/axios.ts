@@ -1,5 +1,5 @@
 import axios, { AxiosError, AxiosHeaders, AxiosInstance, AxiosRequestConfig, AxiosResponse, InternalAxiosRequestConfig } from 'axios';
-import { deleteCookie, getCookie } from 'cookies-next';
+import { deleteCookie, getCookie, setCookie } from 'cookies-next';
 import { refreshToken } from './authentication';
 
 let localAddress = '';
@@ -15,8 +15,12 @@ const axiosInstance = axios.create({
 
 interface CustomAxiosRequestConfig extends AxiosRequestConfig {
   _retry?: boolean;
-  _retryCount?: number;
+  _retryAttempt?: number;
+  _retryDelay?: number;
 }
+
+const MAX_RETRY_ATTEMPTS = 3;
+const INITIAL_RETRY_DELAY = 1000;
 
 const setupInterceptors = (instance: AxiosInstance): void => {
   instance.interceptors.request.use((config: InternalAxiosRequestConfig): InternalAxiosRequestConfig => {
@@ -35,30 +39,36 @@ const setupInterceptors = (instance: AxiosInstance): void => {
     async (error: AxiosError): Promise<any> => {
       const originalRequest = error.config as CustomAxiosRequestConfig;
 
-      if (error.response && error.response.status === 401 && originalRequest) {
-        if (!originalRequest._retry) {
-          originalRequest._retry = true;
-          originalRequest._retryCount = 0;
-        }
+      if (error.response?.status === 401 && originalRequest && !originalRequest._retry) {
+        originalRequest._retry = true;
+        originalRequest._retryAttempt = 0;
+        originalRequest._retryDelay = INITIAL_RETRY_DELAY;
 
-        if (originalRequest._retryCount! < 10) {
-          originalRequest._retryCount! += 1;
-
-          try {
-            const response = await refreshToken();
-
+        try {
+          const response = await refreshToken();
+          
+          if (response?.token) {
+            setCookie('plm_accessToken', response.token);
             if (originalRequest.headers) {
               originalRequest.headers.Authorization = `Bearer ${response.token}`;
             }
-
             return axiosInstance(originalRequest);
-          } catch (refreshError) {
-            deleteCookie("plm_accessToken");
-            return Promise.reject(refreshError);
           }
-        } else {
-          deleteCookie("plm_accessToken");
-          return Promise.reject(error);
+          
+          throw new Error('No token received from refresh attempt');
+        } catch (refreshError) {
+          console.error('Token refresh failed:', refreshError);
+          deleteCookie('plm_accessToken');
+          
+          if (originalRequest._retryAttempt! < MAX_RETRY_ATTEMPTS) {
+            originalRequest._retryAttempt! += 1;
+            const delay = originalRequest._retryDelay! * Math.pow(2, originalRequest._retryAttempt!);
+            
+            await new Promise(resolve => setTimeout(resolve, delay));
+            return axiosInstance(originalRequest);
+          }
+          
+          throw error;
         }
       }
 

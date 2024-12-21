@@ -1,3 +1,4 @@
+use std::fs;
 use std::process::Stdio;
 use std::time::Instant;
 
@@ -5,17 +6,17 @@ use actix_web::http::header;
 use actix_web::web::Bytes;
 use actix_web::{get, web, HttpRequest, HttpResponse, Responder};
 use futures::Stream;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use tokio::io::{AsyncReadExt, AsyncSeekExt};
 use tokio::process::Command;
 use tokio_util::io::ReaderStream;
-use tracing::{error, info, warn};
+use tracing::{error, info};
 use walkdir::WalkDir;
 
 use crate::routes::search::populate_search_data;
 use crate::structures::structures::Artist;
 use crate::utils::compare::compare;
-use crate::utils::config::{get_config, save_config};
+use crate::utils::config::{get_config, get_libraries_config_path, refresh_cache, save_config};
 use crate::utils::format::format_contributing_artists;
 use crate::utils::library::index_library;
 use crate::utils::metadata::{get_access_token, process_album, process_albums, process_artist, process_artists, refresh_audio_db_info};
@@ -41,104 +42,70 @@ pub async fn songs_list(path: web::Path<String>) -> impl Responder {
     HttpResponse::Ok().body(message)
 }
 
-#[get("/index/{pathToLibrary}")]
-pub async fn process_library(path_to_library: web::Path<String>) -> impl Responder {
-    info!("Indexing library...");
-    log_to_ws("Indexing library...".to_string()).await;
-
+async fn process_music_library(path: &str) -> Result<String, Box<dyn std::error::Error>> {
     let now = Instant::now();
-    let library = index_library(path_to_library.as_str()).await.unwrap();
+    let library = index_library(path).await?;
 
     let client = reqwest::Client::builder()
         .user_agent("ParsonLabsMusic/0.1 (will@parsonlabs.com)")
-        .build()
-        .unwrap();
-
-        let config_data = get_config().await.unwrap_or("".to_string());
+        .build()?;
+    let config_data = get_config().await.unwrap_or_default();
     let mut current_library: Vec<Artist> = if config_data.is_empty() {
         Vec::new()
     } else {
         serde_json::from_str(&config_data).unwrap_or_else(|_| Vec::new())
     };
-    
+
     if current_library.is_empty() {
         let mut library_guard = library.lock().unwrap();
         process_artists(&client, &mut *library_guard).await;
         process_albums(&client, &mut *library_guard).await;
     }
-    
-    if let Ok((mut new_artist_entries, mut new_album_entries, _new_song_entries)) =
-        compare(&library).await
-    {
+
+    if let Ok((mut new_artist_entries, mut new_album_entries, _new_song_entries)) = compare(&library).await {
         if !new_artist_entries.is_empty() {
             let artists_without_icon_count = new_artist_entries
                 .iter()
                 .filter(|artist| artist.icon_url.is_empty())
                 .count();
-            let log = format!(
-                "Searching icon art for {} artists...",
-                artists_without_icon_count
-            );
+            let log = format!("Searching icon art for {} artists...", artists_without_icon_count);
             info!(log);
             log_to_ws(log).await;
-    
-            match get_access_token().await {
-                Ok(access_token) => {
-                    for artist in new_artist_entries.iter_mut() {
-                        process_artist(&client, artist, access_token.clone()).await;
-                        current_library.push(artist.clone());
-                    }
+
+            if let Ok(access_token) = get_access_token().await {
+                for artist in new_artist_entries.iter_mut() {
+                    process_artist(&client, artist, access_token.clone()).await;
+                    current_library.push(artist.clone());
                 }
-                Err(e) => warn!("Failed to get access token. Error: {}", e),
             }
         }
-    
+
         if !new_album_entries.is_empty() {
             let albums_without_cover_count = new_album_entries
                 .iter()
                 .filter(|modified_album| modified_album.album.cover_url.is_empty())
                 .count();
-            let log = format!(
-                "Searching cover art for {} albums...",
-                albums_without_cover_count
-            );
+            let log = format!("Searching cover art for {} albums...", albums_without_cover_count);
             info!(log);
             log_to_ws(log).await;
-    
+
             for modified_album in new_album_entries.iter_mut() {
-                process_album(
-                    &client,
-                    modified_album.artist_name.clone(),
-                    &mut modified_album.album,
-                )
-                .await;
-                if let Some(artist) = current_library
-                    .iter_mut()
-                    .find(|a| a.id == modified_album.artist_id)
-                {
-                    match artist
-                        .albums
-                        .iter_mut()
-                        .find(|a| a.id == modified_album.album.id)
-                    {
+                process_album(&client, modified_album.artist_name.clone(), &mut modified_album.album).await;
+                if let Some(artist) = current_library.iter_mut().find(|a| a.id == modified_album.artist_id) {
+                    match artist.albums.iter_mut().find(|a| a.id == modified_album.album.id) {
                         Some(existing_album) => *existing_album = modified_album.album.clone(),
                         None => artist.albums.push(modified_album.album.clone()),
                     }
-
                     refresh_audio_db_info(artist);
                 }
             }
         }
     }
 
-    // https://musicbrainz.org/ws/2/release/cbaf43b4-0d8f-4b58-9173-9fe7298e04e9?inc=aliases+artist-credits+labels+discids+recordings+release-groups+media+discids+recordings+artist-credits+isrcs+artist-rels+release-rels+url-rels+recording-rels+work-rels+label-rels+place-rels+event-rels+area-rels+instrument-rels+series-rels+work-rels&fmt=json
-
     let library_guard = library.lock().unwrap();
     let elapsed = now.elapsed().as_secs();
-
-    let log = format!("Finished Indexing Library in {} seconds", elapsed);
-    info!(log);
-    log_to_ws(log).await;
+    info!("Finished Indexing Library in {} seconds", elapsed);
+    log_to_ws(format!("Finished Indexing Library in {} seconds", elapsed)).await;
 
     let data_to_serialize = if current_library.is_empty() {
         &*library_guard
@@ -146,20 +113,176 @@ pub async fn process_library(path_to_library: web::Path<String>) -> impl Respond
         &current_library
     };
 
-    let json = serde_json::to_string(data_to_serialize).unwrap();
+    let json = serde_json::to_string(data_to_serialize)?;
+    save_config(&json, true).await?;
+    populate_search_data().await.expect("Could not Populate the Search Data");
+    refresh_cache().await.expect("Could not Refresh Music Data Cache");
 
-    save_config(&json, true).await.unwrap();
+    Ok(json)
+}
 
-    match populate_search_data().await {
-        Ok(_) => {},
+#[get("/index/{pathToLibrary}")]
+pub async fn index(path_to_library: web::Path<String>) -> impl Responder {
+    info!("Indexing new library path...");
+    log_to_ws("Indexing new library path...".to_string()).await;
+
+    if let Err(e) = save_library_path(&path_to_library).await {
+        error!("Failed to save library path: {:?}", e);
+    }
+
+    match process_music_library(&path_to_library).await {
+        Ok(json) => HttpResponse::Ok().content_type("application/json; charset=utf-8").body(json),
         Err(e) => {
-            error!("Failed to populate search data: {:?}", e);
+            error!("Failed to process library: {:?}", e);
+            HttpResponse::InternalServerError().finish()
+        }
+    }
+}
+
+pub async fn process_music_library_no_ws(path: &str) -> Result<String, Box<dyn std::error::Error>> {
+    let now = Instant::now();
+    let library = index_library(path).await?;
+
+    let client = reqwest::Client::builder()
+        .user_agent("ParsonLabsMusic/0.1 (will@parsonlabs.com)")
+        .build()?;
+    let config_data = get_config().await.unwrap_or_default();
+    let mut current_library: Vec<Artist> = if config_data.is_empty() {
+        Vec::new()
+    } else {
+        serde_json::from_str(&config_data).unwrap_or_else(|_| Vec::new())
+    };
+
+    if current_library.is_empty() {
+        let mut library_guard = library.lock().unwrap();
+        process_artists(&client, &mut *library_guard).await;
+        process_albums(&client, &mut *library_guard).await;
+    }
+
+    if let Ok((mut new_artist_entries, mut new_album_entries, _new_song_entries)) = compare(&library).await {
+        if !new_artist_entries.is_empty() {
+            let artists_without_icon_count = new_artist_entries
+                .iter()
+                .filter(|artist| artist.icon_url.is_empty())
+                .count();
+            info!("Searching icon art for {} artists...", artists_without_icon_count);
+
+            if let Ok(access_token) = get_access_token().await {
+                for artist in new_artist_entries.iter_mut() {
+                    process_artist(&client, artist, access_token.clone()).await;
+                    current_library.push(artist.clone());
+                }
+            }
+        }
+
+        if !new_album_entries.is_empty() {
+            let albums_without_cover_count = new_album_entries
+                .iter()
+                .filter(|modified_album| modified_album.album.cover_url.is_empty())
+                .count();
+            info!("Searching cover art for {} albums...", albums_without_cover_count);
+
+            for modified_album in new_album_entries.iter_mut() {
+                process_album(&client, modified_album.artist_name.clone(), &mut modified_album.album).await;
+                if let Some(artist) = current_library.iter_mut().find(|a| a.id == modified_album.artist_id) {
+                    match artist.albums.iter_mut().find(|a| a.id == modified_album.album.id) {
+                        Some(existing_album) => *existing_album = modified_album.album.clone(),
+                        None => artist.albums.push(modified_album.album.clone()),
+                    }
+                    refresh_audio_db_info(artist);
+                }
+            }
         }
     }
 
-    HttpResponse::Ok()
-        .content_type("application/json; charset=utf-8")
-        .body(json)
+    let library_guard = library.lock().unwrap();
+    let elapsed = now.elapsed().as_secs();
+    info!("Finished Indexing Library in {} seconds", elapsed);
+
+    let data_to_serialize = if current_library.is_empty() {
+        &*library_guard
+    } else {
+        &current_library
+    };
+
+    let json = serde_json::to_string(data_to_serialize)?;
+    save_config(&json, true).await?;
+    populate_search_data().await.expect("Could not Populate the Search Data");
+    refresh_cache().await.expect("Could not Refresh Music Data Cache");
+
+    Ok(json)
+}
+
+pub async fn refresh_libraries() -> Result<Vec<String>, Box<dyn std::error::Error>> {
+    info!("Refreshing all library paths...");
+    log_to_ws("Refreshing all library paths...".to_string()).await;
+
+    let paths = read_library_paths().await;
+    let mut results = Vec::new();
+
+    for path in paths {
+        match process_music_library(&path).await {
+            Ok(json) => results.push(json),
+            Err(e) => {
+                error!("Failed to process library {}: {:?}", path, e);
+            }
+        }
+    }
+
+    Ok(results)
+}
+
+#[get("/refresh")]
+pub async fn library_refresh() -> impl Responder {
+    match refresh_libraries().await {
+        Ok(results) => {
+            if results.is_empty() {
+                HttpResponse::InternalServerError().finish()
+            } else {
+                HttpResponse::Ok()
+                    .content_type("application/json; charset=utf-8")
+                    .body(results.join(","))
+            }
+        }
+        Err(_) => HttpResponse::InternalServerError().finish()
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Default)]
+pub struct Libraries {
+    pub paths: Vec<String>
+}
+
+pub async fn read_library_paths() -> Vec<String> {
+    let libraries_file= get_libraries_config_path();
+    
+    if !libraries_file.exists() {
+        return Vec::new();
+    }
+    
+    let content = fs::read_to_string(libraries_file).expect("Could not read the Libraries JSON File");
+    let libraries: Libraries = serde_json::from_str(&content).expect("Could not Parse the JSON as a String");
+    
+    libraries.paths
+}
+
+async fn save_library_path(path: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let libraries_file = get_libraries_config_path();
+
+    let mut libraries = if libraries_file.exists() {
+        let content = fs::read_to_string(&libraries_file)?;
+        serde_json::from_str(&content).unwrap_or_default()
+    } else {
+        Libraries { paths: Vec::new() }
+    };
+
+    if !libraries.paths.contains(&path.to_string()) {
+        libraries.paths.push(path.to_string());
+        let json = serde_json::to_string_pretty(&libraries)?;
+        fs::write(libraries_file, json)?;
+    }
+
+    Ok(())
 }
 
 #[derive(Deserialize)]

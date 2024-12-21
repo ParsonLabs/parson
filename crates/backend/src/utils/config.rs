@@ -133,6 +133,26 @@ pub fn get_config_path() -> PathBuf {
     path
 }
 
+pub fn get_libraries_config_path() -> PathBuf {
+    let path = if is_docker() {
+        Path::new("/ParsonLabsMusic/Config/libraries.json").to_path_buf()
+    } else {
+        let mut path = dirs::data_local_dir().unwrap_or_else(|| PathBuf::from("."));
+        path.push("ParsonLabs");
+        path.push("Music");
+        path.push("Config");
+        path.push("libraries.json");
+        path
+    };
+
+    if let Some(parent) = path.parent() {
+        if let Err(e) = fs::create_dir_all(parent) {
+            eprintln!("Failed to create directories: {}", e);
+        }
+    }
+
+    path
+}
 
 #[get("/has_config")]
 async fn has_config() -> impl Responder {

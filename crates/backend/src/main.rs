@@ -10,9 +10,11 @@ use actix_cors::Cors;
 use actix_web::HttpResponse;
 use actix_web::{middleware, web, App, HttpServer};
 use actix_web_httpauth::middleware::HttpAuthentication;
+use notify::{Event, RecursiveMode, Watcher};
 use routes::authentication::{admin_guard, is_valid, refresh};
+use tokio::sync::broadcast;
 use tokio::task;
-use tracing::{info, Level};
+use tracing::{error, info, Level};
 use tracing_subscriber::FmtSubscriber;
 
 use routes::{album, database, genres, music};
@@ -21,7 +23,7 @@ use routes::authentication::{login, register, validator};
 use routes::filesystem;
 use routes::image::image;
 use routes::music::{
-    index_library_no_cover_url, process_library,
+    index, index_library_no_cover_url, library_refresh, process_music_library_no_ws, read_library_paths, Libraries 
 };
 use routes::playlist;
 use routes::search::{self, populate_search_data};
@@ -31,7 +33,7 @@ use routes::song;
 use routes::user;
 use routes::web as web_routes;
 
-use utils::config;
+use utils::config::{self, get_libraries_config_path};
 use utils::database::database::{migrations_ran, redo_migrations};
 use utils::database::database::run_migrations;
 // use utils::update::check_for_updates;
@@ -131,6 +133,56 @@ async fn main() -> std::io::Result<()> {
 
     info!("Starting server on port {}", port); 
 
+    let (tx, _rx) = broadcast::channel(16);
+    let tx_clone = tx.clone();
+
+    std::thread::spawn(move || {
+    let mut watcher = notify::recommended_watcher(move |res: Result<Event, notify::Error>| {
+        match res {
+            Ok(_) => {
+                if let Err(e) = tx_clone.send(()) {
+                    error!("Failed to send watch event: {}", e);
+                }
+            }
+            Err(e) => error!("Watch error: {}", e),
+        }
+    }).expect("Failed to create watcher");
+
+    let config_content = std::fs::read_to_string(get_libraries_config_path())
+        .expect("Failed to read libraries config");
+    let libraries: Libraries = serde_json::from_str(&config_content)
+        .expect("Failed to parse libraries config");
+    
+    for library_path in &libraries.paths {
+        let path = std::path::Path::new(library_path);
+        let watch_path = path.parent().unwrap_or(path);
+    
+        watcher.watch(watch_path, RecursiveMode::NonRecursive)
+            .expect("Failed to watch library path");
+
+        std::thread::park();
+        watcher.watch(watch_path, RecursiveMode::NonRecursive)
+            .expect("Failed to watch libraries path");
+    }
+    
+    std::thread::park();
+});
+
+    let mut rx = tx.subscribe();
+    std::thread::spawn(move || {
+        let rt = tokio::runtime::Runtime::new().expect("Failed to create runtime");
+        
+        while rt.block_on(rx.recv()).is_ok() {
+            info!("Libraries file changed");
+            let paths = rt.block_on(read_library_paths());
+                for path in paths {
+                    if let Err(e) = rt.block_on(process_music_library_no_ws(&path)) {
+                        error!("Failed to process library {}: {}", path, e);
+                    }
+                }
+        }
+    });
+
     task::spawn(async move {
         if !migrations_ran() {
             if let Err(e) = run_migrations() {
@@ -141,10 +193,9 @@ async fn main() -> std::io::Result<()> {
         if let Err(e) = populate_search_data().await {
             eprintln!("Failed to populate search data: {}", e);
         }
-
         // run_modules().await;
     });
-
+    
     HttpServer::new(move || {
         let authentication = HttpAuthentication::with_fn(validator);
         let admin = HttpAuthentication::with_fn(admin_guard);
@@ -170,7 +221,8 @@ async fn main() -> std::io::Result<()> {
         let library_routes = web::scope("/library")
             .wrap(admin)
             .service(index_library_no_cover_url)
-            .service(process_library);
+            .service(index)
+            .service(library_refresh);
 
         App::new()
             .wrap(

@@ -61,7 +61,7 @@ export default function TopResultsCard({ result }: ResultCardProps) {
   }, [result.id, result.item_type]);
 
   const coverUrl = result.item_type === "song"
-    ? song?.album_object.cover_url
+    ? song?.album_object?.cover_url
     : result.item_type === "album"
     ? album?.cover_url
     : result.item_type === "artist"
@@ -89,7 +89,7 @@ export default function TopResultsCard({ result }: ResultCardProps) {
     if (!song) return;
     setImageSrc(imageSrc);
     setPlayerArtist({ id: song.artist_object.id, name: song.artist });
-    setPlayerAlbum({ id: song.album_object.id, name: song.album_object.name, cover_url: song.album_object.cover_url });
+    setPlayerAlbum({ id: song?.album_object?.id, name: song?.album_object?.name, cover_url: song?.album_object?.cover_url });
     try {
       const songInfo = await getSongInfo(song.id);
       setPlayerSong(songInfo);

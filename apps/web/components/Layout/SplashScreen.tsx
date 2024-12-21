@@ -1,13 +1,13 @@
 "use client";
 
 import pl from "@/assets/pl-tp.png";
+import { isValid } from "@music/sdk";
+import { deleteCookie } from "cookies-next";
 import { Loader2Icon } from "lucide-react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import React, { useEffect, useState } from "react";
 import { useSession } from "../Providers/AuthProvider";
-import { isValid } from "@music/sdk";
-import { deleteCookie } from "cookies-next";
 
 interface SplashScreenProps {
   children: React.ReactNode;
@@ -26,10 +26,9 @@ const SplashScreen: React.FC<SplashScreenProps> = ({ children }) => {
         setLoading(true);
 
         const validationResult = await isValid();
-        
         if (!validationResult.status) {
-          deleteCookie('plm_accessToken');
           deleteCookie('plm_refreshToken');
+          deleteCookie('plm_accessToken');
           push('/login');
           return;
         }

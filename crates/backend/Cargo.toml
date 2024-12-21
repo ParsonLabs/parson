@@ -33,6 +33,7 @@ levenshtein = "1.0.5"
 libsqlite3-sys = { version = "0.29.0", features = ["bundled"] }
 lofty = "0.18.2"
 mime_guess = "2.0.5"
+notify = "7.0.0"
 rand = "0.8.5"
 ravif = "0.11.9"
 rayon = "1.8.0"

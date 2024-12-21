@@ -1,18 +1,18 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import Link from "next/link";
 import HorizontalCard from "@/components/Music/Card/HorizontalCard";
-import { useSearchParams } from "next/navigation";
-import { searchLibrary, searchYouTube } from "@music/sdk";
 import TopResultsCard from "@/components/Music/Card/Search/TopResultsCard";
+import { searchLibrary, searchYouTube } from "@music/sdk";
+import Link from "next/link";
+import { useSearchParams } from "next/navigation";
+import { useEffect, useState } from "react";
 
-import { DialogFooter, Dialog } from "@music/ui/components/dialog";
-import { DialogTrigger, DialogContent } from "@radix-ui/react-dialog";
-import ReactPlayer from "react-player";
-import Image from "next/image";
-import { YoutubeIcon } from "lucide-react";
 import PageGradient from "@/components/Layout/PageGradient";
+import { Dialog, DialogFooter } from "@music/ui/components/dialog";
+import { DialogContent, DialogTrigger } from "@radix-ui/react-dialog";
+import { YoutubeIcon } from "lucide-react";
+import Image from "next/image";
+import ReactPlayer from "react-player";
 
 interface YouTubeVideo {
   id: string;
@@ -120,7 +120,7 @@ export default function SearchComponent() {
               <TopResultCardSkeleton />
             </div>
           ) : (
-            results && results[0] && <><TopResultsCard result={results[0]} /> <PageGradient imageSrc={results[0].album_object.cover_url}/></>
+            results && results[0] && <><TopResultsCard result={results[0]} /> <PageGradient imageSrc={results[0]?.album_object?.cover_url ?? "/snf.png"} /></>
           )}
         </div>
       </div>

@@ -70,51 +70,86 @@ export default function EditSongDialog({
     }
   }, [song_id, name, contributingArtists, contributingArtistIds, trackNumber, pathValue, durationValue, artist]);
 
+
   return (
-    <Dialog open={open}>
-      <DialogTrigger asChild>
-          <ContextMenuItem onClick={() => setOpen(true)}>
+    <>
+          {/* <ContextMenuItem onClick={() => setOpen(true)}>
+            <div className="flex items-center space-x-2 pl-2"> 
             <Pencil className="size-5" />
-            <p className="pl-3">Edit Metadata</p>
-          </ContextMenuItem>
-        {/* <Button onClick={() => setOpen(true)}>Edit Metadata</Button> */}
+              <p className="pl-3">Edit Metadata</p> 
+            </div>
+          </ContextMenuItem> */}
+    <Dialog open={open} >
+      <DialogTrigger asChild>
+        <Button onClick={() => setOpen(true)}>Edit Metadata</Button>
       </DialogTrigger>
-      <DialogContent>
+      <DialogContent className="bg-zinc-950 text-white">
         <DialogHeader>
           <DialogTitle>Edit Song Metadata</DialogTitle>
         </DialogHeader>
         <div className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700">Song Name</label>
-            <Input value={name} onChange={(e) => setName(e.target.value)} />
+            <label className="text-sm font-medium text-white">Song Name</label>
+            <Input 
+              value={name} 
+              onChange={(e) => setName(e.target.value)} 
+              className="bg-zinc-900 border-zinc-800 text-white focus:ring-zinc-700 focus:border-zinc-700" 
+            />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700">Artist Name</label>
-            <Input value={artist} onChange={(e) => setArtist(e.target.value)} />
+            <label className="block text-sm font-medium text-white">Artist Name</label>
+            <Input 
+              value={artist} 
+              onChange={(e) => setArtist(e.target.value)} 
+              className="bg-zinc-900 border-zinc-800 text-white focus:ring-zinc-700 focus:border-zinc-700"
+            />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700">Contributing Artists</label>
-            <Input value={contributingArtists.join(", ")} onChange={(e) => setContributingArtists(e.target.value.split(", "))} />
+            <label className="block text-sm font-medium text-white">Contributing Artists</label>
+            <Input 
+              value={contributingArtists.join(", ")} 
+              onChange={(e) => setContributingArtists(e.target.value.split(", "))} 
+              className="bg-zinc-900 border-zinc-800 text-white focus:ring-zinc-700 focus:border-zinc-700"
+            />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700">Contributing Artist IDs</label>
-            <Input value={contributingArtistIds.join(", ")} onChange={(e) => setContributingArtistIds(e.target.value.split(", "))} />
+            <label className="block text-sm font-medium text-white">Contributing Artist IDs</label>
+            <Input 
+              value={contributingArtistIds.join(", ")} 
+              onChange={(e) => setContributingArtistIds(e.target.value.split(", "))} 
+              className="bg-zinc-900 border-zinc-800 text-white focus:ring-zinc-700 focus:border-zinc-700"
+            />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700">Track Number</label>
-            <Input type="number" value={trackNumber} onChange={(e) => setTrackNumber(Number(e.target.value))} />
+            <label className="block text-sm font-medium text-white">Track Number</label>
+            <Input 
+              type="number" 
+              value={trackNumber} 
+              onChange={(e) => setTrackNumber(Number(e.target.value))} 
+              className="bg-zinc-900 border-zinc-800 text-white focus:ring-zinc-700 focus:border-zinc-700"
+            />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700">Path</label>
-            <Input value={pathValue} onChange={(e) => setPath(e.target.value)} />
+            <label className="block text-sm font-medium text-white">Path</label>
+            <Input 
+              value={pathValue} 
+              onChange={(e) => setPath(e.target.value)} 
+              className="bg-zinc-900 border-zinc-800 text-white focus:ring-zinc-700 focus:border-zinc-700"
+            />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700">Duration</label>
-            <Input type="number" value={durationValue} onChange={(e) => setDuration(Number(e.target.value))} />
+            <label className="block text-sm font-medium text-white">Duration</label>
+            <Input 
+              type="number" 
+              value={durationValue} 
+              onChange={(e) => setDuration(Number(e.target.value))} 
+              className="bg-zinc-900 border-zinc-800 text-white focus:ring-zinc-700 focus:border-zinc-700"
+            />
           </div>
-          <Button onClick={handleEdit}>Save Changes</Button>
+          <Button onClick={handleEdit} className="bg-zinc-800 hover:bg-zinc-700">Save Changes</Button>
         </div>
       </DialogContent>
     </Dialog>
+    </>
   );
 }

@@ -8,21 +8,26 @@ export type ExtendedJWTPayload = JwtPayload & {
   role: string
 };
 
-export default function getSession(): ExtendedJWTPayload | null {
-  const jwt = getCookie("plm_accessToken");
-  if (!jwt) return null
+export default async function getSession(): Promise<ExtendedJWTPayload | null> {
+  try {
+    const jwt = getCookie("plm_accessToken");
 
-  validateJWT().then(validationResult => {
-    if (validationResult === "error") {
+    if (!jwt) {
       return null;
     }
 
-    if (validationResult === "invalid") {
-      deleteCookie("plm_accessToken");
+    const validationResult = await validateJWT();
+
+    if (validationResult === "error" || validationResult === "invalid") {
+      if (validationResult === "invalid") {
+        deleteCookie("plm_accessToken");
+      }
       return null;
     }
-  });
 
-  const user: ExtendedJWTPayload = jwtDecode(jwt as string);
-  return user;
+    const user = jwtDecode<ExtendedJWTPayload>(jwt.toString());
+    return user;
+  } catch (error) {
+    return null;
+  }
 }

@@ -141,7 +141,7 @@ export default function MainPage() {
 
   if (loading) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-screen bg-gray-900 text-white">
+      <div className="flex flex-col items-center justify-center min-h-screen bg-zinc-950 text-white">
         <div className="flex items-center mb-4">
           <Image src={pl} alt="ParsonLabs Logo" width={64} height={64} className="mr-4" />
           <p className="text-6xl font-bold">ParsonLabs Music</p>
@@ -153,7 +153,7 @@ export default function MainPage() {
 
   if (showServerSelect) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-screen bg-gray-900 text-white">
+      <div className="flex flex-col items-center justify-center min-h-screen bg-zinc-950 text-white">
         <ServerSelectIcon />
       </div>
     );
@@ -161,7 +161,7 @@ export default function MainPage() {
 
   if (showServerURLInput) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-screen bg-gray-900 text-white">
+      <div className="flex flex-col items-center justify-center min-h-screen bg-zinc-950 text-white">
         <Form {...form}>
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-6 text-white w-80">
             <p className="text-2xl mb-4">Enter Server URL</p>
@@ -184,7 +184,7 @@ export default function MainPage() {
             />
             <Button
               type="submit"
-              className="w-full px-4 py-2 mt-6 text-white bg-indigo-600 rounded-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+              className="w-full px-4 py-2 mt-6 text-white bg-indigo-800 rounded-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
             >
               Submit
             </Button>

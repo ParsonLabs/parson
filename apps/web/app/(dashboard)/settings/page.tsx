@@ -85,7 +85,7 @@ export default function SettingsPage() {
 
   return (
     <>
-      <div className="flex flex-col justify-center items-center min-h-screen bg-gray-900 ml-1/4">
+      <div className="flex flex-col justify-center items-center min-h-screen bg-zinc-950 ml-1/4">
         <div className="w-1/2">
           <Form {...form}>
             <form onSubmit={(e) => { e.preventDefault(); handleSubmit(); }} className="space-y-6 text-white">
@@ -124,7 +124,7 @@ export default function SettingsPage() {
                 <FormMessage className="text-sm text-red-600" />
               </FormItem>
               {message && <p className="text-center text-red-600">{message}</p>}
-              <Button type="submit" className="w-1/3 px-4 py-2 mt-6 text-white bg-indigo-600 rounded-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">Upload</Button>
+              <Button type="submit" className="w-1/3 px-4 py-2 mt-6 text-white bg-indigo-800 rounded-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">Upload</Button>
             </form>
           </Form>
           <div className="mt-6">

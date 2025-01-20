@@ -49,7 +49,7 @@ export function ChangePassword() {
   }
 
     return (
-      <div className="text-white bg-gray-900 rounded-md">
+      <div className="text-white bg-zinc-950 rounded-md">
         <FormProvider {...form}>
 
           <FormLabel className="block text-2xl font-medium text-white mb-2">Change Password</FormLabel>
@@ -81,7 +81,7 @@ export function ChangePassword() {
                 </FormControl>
                 <FormMessage className="text-sm text-red-600" />
               </FormItem>
-              <Button type="submit" className="w-1/3 mt-4 px-4 py-2 text-white bg-indigo-600 rounded-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+              <Button type="submit" className="w-1/3 mt-4 px-4 py-2 text-white bg-indigo-800 rounded-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
                 Update Password
               </Button>
             </Form>

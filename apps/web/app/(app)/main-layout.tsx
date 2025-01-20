@@ -60,7 +60,7 @@ export default function MainLayout({ children }: any) {
         </Sidebar>
 
         <Player />
-        <Toaster />
+        <Toaster theme="dark" />
       </Providers>
     </div>
   );

@@ -21,7 +21,7 @@ export default function RootLayout({ children }: RootLayoutProps) {
       <head />
       <body
         className={cn(
-          "min-h-screen bg-background font-sans antialiased bg-gray-900",
+          "min-h-screen bg-background font-sans antialiased bg-zinc-950",
           fontSans.variable
         )}>
           <div className="flex flex-row text-white items-center font-bold pl-4 pt-3 fixed">

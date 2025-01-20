@@ -48,7 +48,7 @@ export default function ServerSelectIcon() {
   };
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen bg-gray-900 text-white">
+    <div className="flex flex-col items-center justify-center min-h-screen bg-zinc-950 text-white">
       <Server className="w-16 h-16 mb-4" />
       <p className="text-xl mb-4">{server?.server_name || server?.product_name || "ParsonLabs Music"}</p>
       <p className="text-sm text-gray-400 mb-4">{server?.local_address}</p>

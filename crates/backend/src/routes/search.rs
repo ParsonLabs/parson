@@ -654,7 +654,6 @@ struct Replies {
 fn get_random_invidious_instance() -> String {
     let instances = vec![
         "https://invidious.nerdvpn.de",
-        "https://inv.nadeko.net",
         "https://invidious.jing.rocks"
     ];
     instances.choose(&mut rand::thread_rng())

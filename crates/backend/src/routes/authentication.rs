@@ -1,6 +1,6 @@
 use std::{env, time::{SystemTime, UNIX_EPOCH}};
 
-use actix_web::{cookie::{Cookie, SameSite}, dev::ServiceRequest, get, http::header, post, web, HttpRequest, HttpResponse, Responder};
+use actix_web::{cookie::{self, Cookie, SameSite}, dev::ServiceRequest, get, http::header, post, web, HttpRequest, HttpResponse, Responder};
 use actix_web_httpauth::extractors::bearer::BearerAuth;
 use argon2::{
     password_hash::{rand_core::OsRng, PasswordHash, PasswordHasher, PasswordVerifier, SaltString},
@@ -42,7 +42,7 @@ pub struct ResponseAuthData {
 
 fn generate_access_token(user_id: i32, username: &str, bitrate: i32, role: &String) -> String {
     let expiration = chrono::Utc::now()
-        .checked_add_signed(chrono::Duration::minutes(15))
+        .checked_add_signed(chrono::Duration::minutes(1))
         .expect("valid timestamp")
         .timestamp() as usize;
 
@@ -193,6 +193,7 @@ pub async fn login(form: web::Json<AuthData>) -> impl Responder {
                         .same_site(SameSite::None)
                         .secure(true)
                         .path("/")
+                        .max_age(cookie::time::Duration::minutes(15))
                         .finish(),
                 ) {
                     return HttpResponse::InternalServerError().json(ResponseAuthData {

@@ -90,7 +90,7 @@ export default function VideoPlayerDialog({ url }: VideoPlayerDialogProps) {
           <Video color={isHovered ? "white" : "gray"} />
         </button>
       </DialogTrigger>
-      <DialogContent className="max-w-[1000px] h-[80vh] bg-gray-900 text-white">
+      <DialogContent className="max-w-[1000px] h-[80vh] bg-zinc-950 text-white">
         <DialogHeader>
           <DialogTitle>{song.name} Music Video</DialogTitle>
         </DialogHeader>

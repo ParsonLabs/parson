@@ -29,18 +29,12 @@ type FormData = z.infer<typeof schema>;
 export default function Login() {
   const { push } = useRouter();
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
   const [serverInfo, setServerInfo] = useState<{ login_disclaimer?: string } | null>(null);
+  const { session, refreshSession } = useSession();
   const form = useForm<FormData>({
     resolver: zodResolver(schema),
   });
-
-  const { session } = useSession()
-
-  useEffect(() => {
-    if (session && session?.username) {
-      push("/home")
-    }
-  }, [session?.username, session, push])
 
   useEffect(() => {
     async function fetchServerInfo() {
@@ -52,16 +46,21 @@ export default function Login() {
       }
     };
 
-    if (session && session?.username) {
-      push("/home")
+    if (session?.username) {
+      push("/home");
+      return;
     }
 
     fetchServerInfo();
-  }, [session, push]);
+  }, [session?.username, push]);
 
   const { handleSubmit } = form;
 
   const onSubmit: SubmitHandler<FormData> = async (data) => {
+    if (isLoading) return;
+    setIsLoading(true);
+    setErrorMessage(null);
+
     try {
       const response = await fetch(`${getBaseURL()}/api/auth/login`, {
         method: 'POST',
@@ -75,12 +74,17 @@ export default function Login() {
       const result = await response.json();
   
       if (response.ok && result.status) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+        await refreshSession();
+        await new Promise(resolve => setTimeout(resolve, 100));
         push("/home");
       } else {
         setErrorMessage(result.message || 'Authentication failed');
       }
     } catch (error) {
       setErrorMessage('An error occurred during login');
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -131,9 +135,10 @@ export default function Login() {
           />
           <Button
             type="submit"
-            className="w-full px-4 py-2 mt-6 text-white bg-indigo-800 rounded-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+            disabled={isLoading}
+            className="w-full px-4 py-2 mt-6 text-white bg-indigo-800 rounded-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            Login
+            {isLoading ? 'Logging in...' : 'Login'}
           </Button>
         </form>
       </Form>

@@ -174,10 +174,10 @@ pub async fn login(form: web::Json<AuthData>) -> impl Responder {
 
                 if let Err(_) = response.add_cookie(
                     &Cookie::build("plm_refreshToken", generated_refresh_token)
-                        .http_only(true)
-                        .same_site(SameSite::None)
-                        .secure(true)
+                        .http_only(false)
+                        .secure(false)
                         .path("/")
+                        .same_site(SameSite::Lax)
                         .finish(),
                 ) {
                     return HttpResponse::InternalServerError().json(ResponseAuthData {
@@ -190,9 +190,10 @@ pub async fn login(form: web::Json<AuthData>) -> impl Responder {
                 
                 if let Err(_) = response.add_cookie(
                     &Cookie::build("plm_accessToken", generated_access_token)
-                        .same_site(SameSite::None)
-                        .secure(true)
+                        .http_only(false)
+                        .secure(false)
                         .path("/")
+                        .same_site(SameSite::Lax)
                         .max_age(cookie::time::Duration::minutes(15))
                         .finish(),
                 ) {
@@ -344,7 +345,6 @@ pub async fn refresh(req: HttpRequest) -> impl Responder {
                 HttpResponse::Ok()
                     .cookie(
                         Cookie::build("plm_accessToken", new_access_token.clone())
-                            .same_site(SameSite::Lax)
                             .path("/")
                             .finish()
                     )
@@ -397,17 +397,22 @@ pub fn validator(
         credentials.map(|creds| creds.token().to_string())
     };
 
-    if token.is_none() {
-        let actix_err = actix_web::Error::from(actix_web::error::ErrorUnauthorized("Access denied: No valid authentication provided"));
-        return ready(Err((actix_err, req)))
-    }
-
-    let mut validation = Validation::new(Algorithm::HS256);
-    validation.leeway = 60;
-    validation.validate_exp = true;
+    let token = match token {
+        Some(t) => t,
+        None => {
+            let actix_err = actix_web::Error::from(actix_web::error::ErrorUnauthorized("Access denied: No token"));
+            return ready(Err((actix_err, req)));
+        }
+    };
 
     let secret = get_jwt_secret();
-    match decode::<Claims>(&token.unwrap(), &DecodingKey::from_secret(secret.as_ref()), &validation) {
+
+    let mut validation = Validation::new(Algorithm::HS256);
+    validation.validate_exp = true;
+    validation.leeway = 60;
+    validation.required_spec_claims.clear();
+
+    match decode::<Claims>(&token, &DecodingKey::from_secret(secret.as_ref()), &validation) {
         Ok(data) => {
             if data.claims.token_type == "access" {
                 ready(Ok(req))
@@ -416,8 +421,9 @@ pub fn validator(
                 ready(Err((actix_err, req)))
             }
         },
-        Err(_) => {
-            let actix_err = actix_web::Error::from(actix_web::error::ErrorUnauthorized("Invalid token"));
+        Err(e) => {
+            println!("Token decode error: {:?}", e);
+            let actix_err = actix_web::Error::from(actix_web::error::ErrorUnauthorized(format!("Invalid token: {}", e)));
             ready(Err((actix_err, req)))
         },
     }

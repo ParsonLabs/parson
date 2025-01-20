@@ -27,7 +27,7 @@ export default function Setup() {
       <div className="flex flex-col items-center justify-center">
         <Button
           onClick={completeStartupWizard}
-          className="w-full px-6 py-4 mt-6 text-lg text-white bg-indigo-600 rounded-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+          className="w-full px-6 py-4 mt-6 text-lg text-white bg-indigo-800 rounded-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
           >
           See your Music
         </Button>

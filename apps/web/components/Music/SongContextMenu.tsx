@@ -35,6 +35,7 @@ import { LibrarySong, BareSong } from "@music/sdk/types";
 import { useSession } from "../Providers/AuthProvider";
 import { Button } from "@music/ui/components/button";
 import EditSongDialog from "./EditSongDialog";
+import { toast } from "sonner";
 
 type SongContextMenuProps = {
   children: React.ReactNode;
@@ -127,13 +128,12 @@ export default function SongContextMenu({
     }
   }, [handleViewProperties]);
 
-
   return (
     <>
       <ContextMenu>
         <ContextMenuTrigger asChild>{children}</ContextMenuTrigger>
 
-        <ContextMenuContent className="w-64">
+        <ContextMenuContent className="w-64 text-white bg-zinc-950">
           <ContextMenuSub>
             <ContextMenuSubTrigger>
               <Plus className="size-5" />
@@ -152,7 +152,16 @@ export default function SongContextMenu({
             )}
           </ContextMenuSub>
 
-          <ContextMenuItem onClick={() => addToQueue({ name: song_name, id: song_id }, { id: album_id, name: album_name }, { id: artist_id, name: artist_name })}>
+          <ContextMenuItem onClick={() => { 
+            addToQueue(
+              { name: song_name, id: song_id }, 
+              { id: album_id, name: album_name }, 
+              { id: artist_id, name: artist_name }
+            ); 
+            toast("Added to Queue", {
+              description: `${song_name} by ${artist_name} has been added to the queue.`,
+            });
+          }}>	
             <ListEnd className="size-5" />
             <p className="pl-3">Add to Queue</p>
           </ContextMenuItem>

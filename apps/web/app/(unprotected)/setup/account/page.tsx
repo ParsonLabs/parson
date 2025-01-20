@@ -87,7 +87,7 @@ async function onSubmit(values: z.infer<typeof registerSchema>) {
             />
             <Button
               type="submit"
-              className="px-4 py-2 mt-6 text-white bg-indigo-600 rounded-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+              className="px-4 py-2 mt-6 text-white bg-indigo-800 rounded-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
             >
               Next
               <ArrowRight className="mr-2 h-4 w-4 ml-2" />

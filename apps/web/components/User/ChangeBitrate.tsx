@@ -83,7 +83,7 @@ export default function ChangeBitrate() {
   }
 
   return (
-    <div className="text-white bg-gray-900 rounded-md">
+    <div className="text-white bg-zinc-950 rounded-md">
       <form onSubmit={form.handleSubmit(onSubmit)}>
         <Form {...form}>
           <FormField
@@ -146,7 +146,7 @@ export default function ChangeBitrate() {
           )}
           <Button
             type="submit"
-            className="w-1/3 mt-4 px-4 py-2 text-white bg-indigo-600 rounded-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+            className="w-1/3 mt-4 px-4 py-2 text-white bg-indigo-800 rounded-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
           >
             Change Quality
           </Button>

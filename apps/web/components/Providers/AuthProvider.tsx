@@ -18,14 +18,29 @@ const AuthContext = createContext<AuthContextType>({
 export default function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<ExtendedJWTPayload | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
 
   const refreshSession = async () => {
     try {
       setIsLoading(true);
-      const newSession = await Promise.resolve(getSession());
+      
+      const newSession = await getSession();
+
+      if (!newSession) {
+        setSession(null);
+        return;
+      }
+
+      const now = Date.now() / 1000;
+      if (newSession.exp && newSession.exp < now) {
+        setSession(null);
+        return;
+      }
+
       setSession(newSession);
+      setLastRefresh(new Date());
+      
     } catch (error) {
-      console.error('Failed to refresh session:', error);
       setSession(null);
     } finally {
       setIsLoading(false);
@@ -33,8 +48,7 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   useEffect(() => {
-    refreshSession();
-    
+    refreshSession();    
     const refreshInterval = setInterval(refreshSession, 5 * 60 * 1000);
     return () => clearInterval(refreshInterval);
   }, []);

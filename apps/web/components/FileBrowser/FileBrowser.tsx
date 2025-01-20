@@ -57,7 +57,7 @@ export default function FileBrowser() {
           </ScrollArea>
         </div>
   
-        <Button className="w-full px-4 py-2 mt-6 text-white bg-indigo-600 rounded-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500" onClick={() => indexLibrary(currentDirectory)}>Index Library</Button>
+        <Button className="w-full px-4 py-2 mt-6 text-white bg-indigo-800 rounded-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500" onClick={() => indexLibrary(currentDirectory)}>Index Library</Button>
       </div>
     </div>
   )

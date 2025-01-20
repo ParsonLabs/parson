@@ -25,7 +25,7 @@ export default function RootLayout({ children }: RootLayoutProps) {
       <head />
       <body
         className={cn(
-          "min-h-screen bg-background font-sans antialiased bg-gray-900 texxt-white",
+          "min-h-screen bg-background font-sans antialiased bg-zinc-950 texxt-white",
           fontSans.variable
         )}>
           <Link href="/home">

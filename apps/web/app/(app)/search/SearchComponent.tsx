@@ -57,7 +57,7 @@ function YoutubeResultCard({ video }: { video: YouTubeVideo }) {
         </div>
       </DialogTrigger>
 
-      <DialogContent className="fixed inset-0 z-50 max-w-[1000px] h-[80vh] mx-auto bg-gray-900 text-white rounded-3xl overflow-hidden">
+      <DialogContent className="fixed inset-0 z-50 max-w-[1000px] h-[80vh] mx-auto bg-zinc-950 text-white rounded-3xl overflow-hidden">
         <div className="flex items-center space-x-2 h-full rounded-sm overflow-hidden">
           <ReactPlayer
             controls

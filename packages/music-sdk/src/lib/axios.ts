@@ -8,19 +8,32 @@ if (typeof window !== 'undefined') {
   localAddress = server.local_address || window.location.origin;
 }
 
+const MAX_RETRY_ATTEMPTS = 3;
+const TIMEOUT_MS = 10000;
+let isRefreshing = false;
+let refreshSubscribers: ((token: string) => void)[] = [];
+
 const axiosInstance = axios.create({
   baseURL: `${localAddress}/api`,
   withCredentials: true,
+  timeout: TIMEOUT_MS
 });
 
 interface CustomAxiosRequestConfig extends AxiosRequestConfig {
   _retry?: boolean;
-  _retryAttempt?: number;
-  _retryDelay?: number;
+  _retryCount?: number;
 }
 
-const MAX_RETRY_ATTEMPTS = 3;
-const INITIAL_RETRY_DELAY = 1000;
+// Helper to add token refresh subscriber
+const addRefreshSubscriber = (callback: (token: string) => void) => {
+  refreshSubscribers.push(callback);
+}
+
+// Helper to notify subscribers
+const onRefreshed = (token: string) => {
+  refreshSubscribers.forEach(callback => callback(token));
+  refreshSubscribers = [];
+}
 
 const setupInterceptors = (instance: AxiosInstance): void => {
   instance.interceptors.request.use((config: InternalAxiosRequestConfig): InternalAxiosRequestConfig => {
@@ -38,38 +51,69 @@ const setupInterceptors = (instance: AxiosInstance): void => {
     (response: AxiosResponse): AxiosResponse => response,
     async (error: AxiosError): Promise<any> => {
       const originalRequest = error.config as CustomAxiosRequestConfig;
+      
+      // Skip retry for refresh token endpoint
+      if (originalRequest.url?.includes('refresh')) {
+        return Promise.reject(error);
+      }
 
-      if (error.response?.status === 401 && originalRequest && !originalRequest._retry) {
+      // Handle 401 with token refresh
+      if (error.response?.status === 401 && !originalRequest._retry) {
+        if (isRefreshing) {
+          // Wait for new token
+          return new Promise(resolve => {
+            addRefreshSubscriber((token: string) => {
+              if (originalRequest.headers) {
+                originalRequest.headers.Authorization = `Bearer ${token}`;
+              }
+              resolve(axiosInstance(originalRequest));
+            });
+          });
+        }
+
         originalRequest._retry = true;
-        originalRequest._retryAttempt = 0;
-        originalRequest._retryDelay = INITIAL_RETRY_DELAY;
-
+        isRefreshing = true;
+        
         try {
           const response = await refreshToken();
           
-          if (response?.token) {
-            setCookie('plm_accessToken', response.token);
-            if (originalRequest.headers) {
-              originalRequest.headers.Authorization = `Bearer ${response.token}`;
-            }
-            return axiosInstance(originalRequest);
+          if (!response?.token) {
+            throw new Error('No token received from refresh attempt');
+          }
+
+          setCookie('plm_accessToken', response.token);
+          onRefreshed(response.token);
+          if (originalRequest.headers) {
+            originalRequest.headers.Authorization = `Bearer ${response.token}`;
           }
           
-          throw new Error('No token received from refresh attempt');
+          isRefreshing = false;
+          return axiosInstance(originalRequest);
+          
         } catch (refreshError) {
           console.error('Token refresh failed:', refreshError);
           deleteCookie('plm_accessToken');
-          
-          if (originalRequest._retryAttempt! < MAX_RETRY_ATTEMPTS) {
-            originalRequest._retryAttempt! += 1;
-            const delay = originalRequest._retryDelay! * Math.pow(2, originalRequest._retryAttempt!);
-            
-            await new Promise(resolve => setTimeout(resolve, delay));
-            return axiosInstance(originalRequest);
-          }
-          
-          throw error;
+          isRefreshing = false;
+          refreshSubscribers = [];
+          return Promise.reject(error);
         }
+      }
+
+      // Skip retry for auth failures
+      if (error.response?.status === 401 || error.response?.status === 403) {
+        return Promise.reject(error);
+      }
+
+      // Handle other errors with retry logic
+      if (!originalRequest._retryCount) {
+        originalRequest._retryCount = 0;
+      }
+
+      if (originalRequest._retryCount < MAX_RETRY_ATTEMPTS) {
+        originalRequest._retryCount++;
+        const delay = Math.pow(2, originalRequest._retryCount) * 1000;
+        await new Promise(resolve => setTimeout(resolve, delay));
+        return axiosInstance(originalRequest);
       }
 
       return Promise.reject(error);

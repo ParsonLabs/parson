@@ -85,7 +85,7 @@ export default function Login() {
   };
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen bg-gray-900">
+    <div className="flex flex-col items-center justify-center min-h-screen bg-zinc-950">
       <h1 className="text-2xl font-bold text-center text-white pb-10">Sign In</h1>
       {errorMessage && (
         <div className="text-center text-red-600">
@@ -131,7 +131,7 @@ export default function Login() {
           />
           <Button
             type="submit"
-            className="w-full px-4 py-2 mt-6 text-white bg-indigo-600 rounded-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+            className="w-full px-4 py-2 mt-6 text-white bg-indigo-800 rounded-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
           >
             Login
           </Button>

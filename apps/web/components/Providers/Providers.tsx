@@ -16,7 +16,7 @@ interface ProvidersProps {
 
 export default function Providers({ children }: ProvidersProps) {
   return (
-    <ThemeProvider>
+    <ThemeProvider defaultTheme='dark'>
       <LayoutConfigProvider>
         <GradientHoverProvider>
           <ScrollProvider>

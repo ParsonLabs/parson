@@ -31,7 +31,8 @@ export default function Login() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [serverInfo, setServerInfo] = useState<{ login_disclaimer?: string } | null>(null);
-  const { session, refreshSession } = useSession();
+  const { refreshSession } = useSession();
+  
   const form = useForm<FormData>({
     resolver: zodResolver(schema),
   });
@@ -46,13 +47,8 @@ export default function Login() {
       }
     };
 
-    if (session?.username) {
-      push("/home");
-      return;
-    }
-
     fetchServerInfo();
-  }, [session?.username, push]);
+  }, []);
 
   const { handleSubmit } = form;
 

@@ -1,7 +1,8 @@
 "use client";
 
+import { memo, useEffect, useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import getBaseURL from "@/lib/Server/getBaseURL";
-import setCache, { getCache } from "@/lib/Caching/cache";
 import { getRandomAlbum } from "@music/sdk";
 import { Album, Artist, LibrarySong } from "@music/sdk/types";
 import { Button } from "@music/ui/components/button";
@@ -9,7 +10,6 @@ import { Skeleton } from "@music/ui/components/skeleton";
 import { Play } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
-import { useEffect, useState } from "react";
 import { FastAverageColor } from 'fast-average-color';
 
 async function getRandomAlbumAndSongs(): Promise<{ album: Album & { artist_object: Artist }, songs: LibrarySong[] }> {
@@ -65,68 +65,65 @@ export function LandingCarouselSkeleton() {
   );
 }
 
+const AlbumImage = memo(({ src, alt }: { src: string; alt: string }) => (
+  <Image
+    src={src}
+    alt={alt}
+    priority={true}
+    width={400}
+    height={400}
+    className="rounded-sm"
+    style={{ maxWidth: '200px', maxHeight: '200px' }}
+  />
+));
+
+const BackgroundImage = memo(({ src, alt }: { src: string; alt: string }) => (
+  <Image
+    className="absolute top-0 left-0 w-full h-full bg-cover bg-center blur-2xl brightness-50"
+    alt={alt}
+    width={400}
+    height={400}
+    role="presentation"
+    src={src}
+    style={{ filter: 'blur(12px) brightness(50%)', zIndex: '1', objectFit: 'cover', objectPosition: 'center' }}
+  />
+));
+
 export default function LandingCarousel() {
-  const [album, setAlbum] = useState<Album & { artist_object: Artist } | null>(null);
-  const [songs, setSongs] = useState<LibrarySong[]>([]);
+  const { data, isLoading } = useQuery({
+    queryKey: ['landingCarousel'],
+    queryFn: getRandomAlbumAndSongs,
+    staleTime: 24 * 60 * 60 * 1000,
+  });
+
+  const { album, songs } = data || {};
+
+  const albumCoverURL = useMemo(() => {
+    if (!album?.cover_url) return '';
+    return `${getBaseURL()}/image/${encodeURIComponent(album.cover_url)}?raw=true`;
+  }, [album?.cover_url]);
+
   const [buttonColor, setButtonColor] = useState<string>('');
 
   useEffect(() => {
-    async function fetchAlbumAndSongs() {
-      const cachedData = getCache("landingCarousel");
-
-      if (cachedData) {
-        setAlbum(cachedData.album);
-        setSongs(cachedData.songs);
-      } else {
-        const { album, songs } = await getRandomAlbumAndSongs();
-        setAlbum(album);
-        setSongs(songs);
-        setCache("landingCarousel", { album, songs }, 86400000);
-      }
-    }
-
-    fetchAlbumAndSongs();
-  }, []);
-
-  useEffect(() => {
-    async function getButtonColour() {
-      const albumCoverURL = `${getBaseURL()}/image/${encodeURIComponent(album?.cover_url || "")}?raw=true`;
-      const fac = new FastAverageColor();
-      const color = await fac.getColorAsync(albumCoverURL);
+    if (!albumCoverURL) return;
+    const fac = new FastAverageColor();
+    fac.getColorAsync(albumCoverURL).then(color => {
       setButtonColor(color.hex);
-    }
+    });
+  }, [albumCoverURL]);
 
-    if (album) {
-      getButtonColour();
-    }
-  }, [album]);
-
+  if (isLoading) return <LandingCarouselSkeleton />;
   if (!album) return null;
-
-  const albumCoverURL = `${getBaseURL()}/image/${encodeURIComponent(album.cover_url)}?raw=true`;
 
   return (
     <div className="relative p-5 flex items-center md:flex" style={{ height: '300px' }}>
-      <Image
-        className="absolute top-0 left-0 w-full h-full bg-cover bg-center blur-2xl brightness-50"
-        alt={`${album.name} Album Background Image`}
-        width={400}
-        height={400}
-        role="presentation"
-        src={albumCoverURL}
-        style={{ filter: 'blur(12px) brightness(50%)', zIndex: '1', objectFit: 'cover', objectPosition: 'center' }}
-      />
+      <BackgroundImage src={albumCoverURL} alt={`${album.name} Album Background Image`} />
+      
       <div className="relative flex-1 flex justify-center" style={{ zIndex: '10' }}>
-        <Image
-          src={albumCoverURL}
-          alt={`${album.name} Album Cover Image`}
-          priority={true}
-          width={400}
-          height={400}
-          className="rounded-sm"
-          style={{ maxWidth: '200px', maxHeight: '200px' }}
-        />
+        <AlbumImage src={albumCoverURL} alt={`${album.name} Album Cover Image`} />
       </div>
+
       <div className="relative flex-1 text-center" style={{ zIndex: '10' }}>
         <Link href={`/album?id=${album.id}`}>
           <h2 className="text-xl font-bold">{album.name}</h2>
@@ -135,17 +132,21 @@ export default function LandingCarousel() {
           <p className="text-base">{album.artist_object.name}</p>
         </Link>
         <Link href={`/album?id=${album.id}`}>
-          <Button className="mt-10 px-4 py-2 text-white rounded" style={{ backgroundColor: buttonColor }}>
+          <Button 
+            className="mt-10 px-4 py-2 text-white rounded" 
+            style={{ backgroundColor: buttonColor }}
+          >
             Play
             <Play className="ml-2 h-4 w-4" />
           </Button>
         </Link>
       </div>
+
       <div className="relative flex-1" style={{ zIndex: '10' }}>
         <p className="font-bold text-xl">Featuring songs like:</p>
         <ul>
-          {songs.map((song, index) => (
-            <li key={index} className="ml-5">
+          {songs?.map((song, index) => (
+            <li key={`${song.id}-${index}`} className="ml-5">
               <Link href={`/album?id=${album.id}#${sanitizeSongName(song.name)}`}>
                 {song.name}
               </Link>

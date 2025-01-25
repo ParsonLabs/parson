@@ -1,6 +1,6 @@
 import { getCookie, deleteCookie } from "cookies-next";
 import { jwtDecode, JwtPayload } from "jwt-decode";
-import { validateJWT } from "@music/sdk";
+import { isValid, validateJWT } from "@music/sdk";
 
 export type ExtendedJWTPayload = JwtPayload & {
   bitrate: number,
@@ -17,11 +17,10 @@ export default async function getSession(): Promise<ExtendedJWTPayload | null> {
     }
 
     const validationResult = await validateJWT();
+    const isValidResult = await isValid();
 
-    if (validationResult === "error" || validationResult === "invalid") {
-      if (validationResult === "invalid") {
-        deleteCookie("plm_accessToken");
-      }
+    if (validationResult === "error" || validationResult === "invalid" || !isValidResult.status) {
+      deleteCookie("plm_accessToken");
       return null;
     }
 

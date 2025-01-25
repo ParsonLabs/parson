@@ -29,6 +29,7 @@ const MemoizedHeaderImage = memo(({ src, alt }: { src: string; alt: string }) =>
     width={200}
   />
 ));
+MemoizedHeaderImage.displayName = 'MemoizedHeaderImage';
 
 const MemoizedHeaderText = memo(({ topText, heading }: { topText?: string; heading: string }) => (
   <div className="flex flex-col">
@@ -40,6 +41,7 @@ const MemoizedHeaderText = memo(({ topText, heading }: { topText?: string; headi
     </h1>
   </div>
 ));
+MemoizedHeaderText.displayName = 'MemoizedHeaderText';
 
 const MemoizedScrollButtons = memo(({ isAtStart, isAtEnd, onScrollLeft, onScrollRight }: {
   isAtStart: boolean;
@@ -64,6 +66,7 @@ const MemoizedScrollButtons = memo(({ isAtStart, isAtEnd, onScrollLeft, onScroll
     </button>
   </div>
 ));
+MemoizedScrollButtons.displayName = 'MemoizedScrollButtons';
 
 const MemoizedPopover = memo(({ id, currentComponent, onPinToggle, onVisibilityToggle }: {
   id: string;
@@ -97,8 +100,16 @@ const MemoizedPopover = memo(({ id, currentComponent, onPinToggle, onVisibilityT
     </PopoverContent>
   </Popover>
 ));
+MemoizedPopover.displayName = 'MemoizedPopover';
 
-function ScrollButtons({ id, children, heading, showUser, topText, imageUrl }: ScrollButtonsProps) {
+const ScrollButtons: React.FC<ScrollButtonsProps> = ({ 
+  showUser = true,
+  id, 
+  children, 
+  heading, 
+  topText, 
+  imageUrl 
+}) => {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [isAtStart, setIsAtStart] = useState(true);
   const [isAtEnd, setIsAtEnd] = useState(false);
@@ -212,4 +223,6 @@ function ScrollButtons({ id, children, heading, showUser, topText, imageUrl }: S
   );
 }
 
-export default memo(ScrollButtons);
+ScrollButtons.displayName = 'ScrollButtons';
+
+export default ScrollButtons;

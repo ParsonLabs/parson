@@ -1,6 +1,6 @@
 use std::{env, time::{SystemTime, UNIX_EPOCH}};
 
-use actix_web::{cookie::{self, Cookie, SameSite}, dev::ServiceRequest, get, http::header, post, web, HttpRequest, HttpResponse, Responder};
+use actix_web::{cookie::{self, Cookie, SameSite, CookieJar}, dev::ServiceRequest, get, http::header, post, web, HttpRequest, HttpResponse, Responder};
 use actix_web_httpauth::extractors::bearer::BearerAuth;
 use argon2::{
     password_hash::{rand_core::OsRng, PasswordHash, PasswordHasher, PasswordVerifier, SaltString},
@@ -42,7 +42,7 @@ pub struct ResponseAuthData {
 
 fn generate_access_token(user_id: i32, username: &str, bitrate: i32, role: &String) -> String {
     let expiration = chrono::Utc::now()
-        .checked_add_signed(chrono::Duration::minutes(1))
+        .checked_add_signed(chrono::Duration::minutes(60)) 
         .expect("valid timestamp")
         .timestamp() as usize;
 
@@ -61,7 +61,7 @@ fn generate_access_token(user_id: i32, username: &str, bitrate: i32, role: &Stri
 
 fn generate_refresh_token(user_id: i32, username: &str, role: &String) -> String {
     let expiration = Utc::now()
-        .checked_add_signed(chrono::Duration::days(30))
+        .checked_add_signed(chrono::Duration::days(7))  // 7 days
         .expect("valid timestamp")
         .timestamp() as usize;
 
@@ -165,47 +165,31 @@ pub async fn login(form: web::Json<AuthData>) -> impl Responder {
                 let generated_access_token = generate_access_token(user_id, &form.username, user_bitrate, &user_role);
                 let generated_refresh_token = generate_refresh_token(user_id, &form.username, &user_role);
 
-                let mut response = HttpResponse::Ok().json(ResponseAuthData {
-                    status: true,
-                    access_token: generated_access_token.clone(),
-                    refresh_token: generated_refresh_token.clone(),
-                    message: None,
-                });
+                let access_cookie = Cookie::build("plm_accessToken", generated_access_token.clone())
+                    .http_only(false)
+                    .secure(true)
+                    .same_site(SameSite::Strict)
+                    .path("/")
+                    .max_age(cookie::time::Duration::minutes(15))
+                    .finish();
 
-                if let Err(_) = response.add_cookie(
-                    &Cookie::build("plm_refreshToken", generated_refresh_token)
-                        .http_only(false)
-                        .secure(false)
-                        .path("/")
-                        .same_site(SameSite::Lax)
-                        .finish(),
-                ) {
-                    return HttpResponse::InternalServerError().json(ResponseAuthData {
-                        status: false,
-                        access_token: String::new(),
-                        refresh_token: String::new(),
-                        message: Some(String::from("Failed to set refresh token cookie")),
-                    });
-                }
-                
-                if let Err(_) = response.add_cookie(
-                    &Cookie::build("plm_accessToken", generated_access_token)
-                        .http_only(false)
-                        .secure(false)
-                        .path("/")
-                        .same_site(SameSite::Lax)
-                        .max_age(cookie::time::Duration::minutes(15))
-                        .finish(),
-                ) {
-                    return HttpResponse::InternalServerError().json(ResponseAuthData {
-                        status: false,
-                        access_token: String::new(),
-                        refresh_token: String::new(),
-                        message: Some(String::from("Failed to set access token cookie")),
-                    });
-                }
+                let refresh_cookie = Cookie::build("plm_refreshToken", generated_refresh_token.clone())
+                    .http_only(true)
+                    .secure(true)
+                    .same_site(SameSite::Strict)
+                    .path("/")
+                    .max_age(cookie::time::Duration::days(7))
+                    .finish();
 
-                response
+                HttpResponse::Ok()
+                    .cookie(access_cookie)
+                    .cookie(refresh_cookie)
+                    .json(ResponseAuthData {
+                        status: true,
+                        access_token: generated_access_token,
+                        refresh_token: String::new(),
+                        message: None,
+                    })
             } else {
                 HttpResponse::Ok().json(ResponseAuthData {
                     status: false,
@@ -342,16 +326,20 @@ pub async fn refresh(req: HttpRequest) -> impl Responder {
                     &data.claims.role.clone()
                 );
 
+                let access_cookie = Cookie::build("plm_accessToken", new_access_token.clone())
+                    .http_only(false)
+                    .secure(true)
+                    .same_site(SameSite::Strict)
+                    .path("/")
+                    .max_age(cookie::time::Duration::minutes(15))
+                    .finish();
+
                 HttpResponse::Ok()
-                    .cookie(
-                        Cookie::build("plm_accessToken", new_access_token.clone())
-                            .path("/")
-                            .finish()
-                    )
+                    .cookie(access_cookie)
                     .json(ResponseAuthData {
                         status: true,
                         access_token: new_access_token,
-                        refresh_token: refresh_token.clone(),
+                        refresh_token: String::new(),
                         message: None,
                     })
             } else {
@@ -364,14 +352,61 @@ pub async fn refresh(req: HttpRequest) -> impl Responder {
             }
         },
         Err(_) => {
-            HttpResponse::Unauthorized().json(ResponseAuthData {
-                status: false,
-                access_token: String::new(),
-                refresh_token: String::new(),
-                message: Some(String::from("Invalid token")),
-            })
+            let mut jar = CookieJar::new();
+
+            let expired_cookie = Cookie::build("plm_accessToken", "")
+                .path("/")
+                .secure(true)
+                .http_only(true)
+                .same_site(SameSite::Strict)
+                .max_age(cookie::time::Duration::seconds(0))
+                .finish();
+
+            jar.add(expired_cookie);
+
+            HttpResponse::Unauthorized()
+                .cookie(jar.delta().next().unwrap().clone())
+                .json(ResponseAuthData {
+                    status: false,
+                    access_token: String::new(),
+                    refresh_token: String::new(),
+                    message: Some(String::from("Invalid token")),
+                })
         }
     }
+}
+
+// Add logout endpoint
+#[post("/logout")]
+pub async fn logout() -> impl Responder {
+    let mut jar = CookieJar::new();
+    
+    let access_cookie = Cookie::build("plm_accessToken", "")
+        .path("/")
+        .secure(true)
+        .http_only(true)
+        .same_site(SameSite::Strict)
+        .max_age(cookie::time::Duration::seconds(0))
+        .finish();
+
+    let refresh_cookie = Cookie::build("plm_refreshToken", "")
+        .path("/")
+        .secure(true)
+        .http_only(true) 
+        .same_site(SameSite::Strict)
+        .max_age(cookie::time::Duration::seconds(0))
+        .finish();
+
+    jar.add(access_cookie);
+    jar.add(refresh_cookie);
+
+    HttpResponse::Ok()
+        .cookie(jar.delta().next().unwrap().clone())
+        .cookie(jar.delta().nth(1).unwrap().clone())
+        .json(json!({
+            "status": true,
+            "message": "Logged out successfully"
+        }))
 }
 
 pub fn validator(
@@ -391,7 +426,7 @@ pub fn validator(
                 .find(|cookie| cookie.name() == "plm_accessToken")
                 .map(|cookie| cookie.value().to_string())
         } else {
-            None
+            credentials.map(|creds| creds.token().to_string())
         }
     } else {
         credentials.map(|creds| creds.token().to_string())
@@ -422,7 +457,6 @@ pub fn validator(
             }
         },
         Err(e) => {
-            println!("Token decode error: {:?}", e);
             let actix_err = actix_web::Error::from(actix_web::error::ErrorUnauthorized(format!("Invalid token: {}", e)));
             ready(Err((actix_err, req)))
         },

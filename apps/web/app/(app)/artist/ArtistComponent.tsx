@@ -5,12 +5,16 @@ import SongsInLibrary from "@/components/Artist/SongsInLibrary";
 import Description from "@/components/Description/Description";
 import ScrollButtons from "@/components/Home/ScrollButtons";
 import PageGradient from "@/components/Layout/PageGradient";
-import AlbumCard from "@/components/Music/Card/Album/AlbumCard";
 import SongCard from "@/components/Music/Card/SongCard";
+import SongRow from "@/components/Music/Card/SongRow";
 import { getArtistInfo } from "@music/sdk";
 import { Album, Artist, LibrarySong } from "@music/sdk/types";
 import { useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
+import Image from "next/image";
+import ArtistMusicVideos from "./ArtistMusicVideos";
+import ArtistAlbumCard from "./ArtistAlbumCard";
+import SimilarArtists from "./SimilarArtists";
 
 export default function ArtistComponent() {
   const searchParams = useSearchParams();
@@ -67,74 +71,116 @@ export default function ArtistComponent() {
   }
 
   if (!artist) {
-    return
+    return null;
   }
 
   const artistIconURL = artist.icon_url.length === 0 ? "/snf.png" : `${getBaseURL()}/image/${encodeURIComponent(artist.icon_url)}?raw=true`;
 
   return (
-    <>
-      <div
+    <div className="relative min-h-screen">
+      <div className="fixed inset-0 bg-neutral-900" />
+      
+      <div 
+        className="fixed inset-0 opacity-30"
         style={{
-          backgroundImage: `linear-gradient(to bottom, rgba(0,0,0,0) 0%, rgba(0,0,0,1) 100%), url(${artistIconURL})`,
-          backgroundSize: "cover",
-          backgroundPosition: "center",
-          height: "500px",
+          backgroundImage: `url(${artistIconURL})`,
+          backgroundSize: 'cover',
+          backgroundPosition: 'center',
+          filter: 'blur(140px)',
         }}
-        >
-        <PageGradient imageSrc={artistIconURL} />
-        <div className="flex flex-col justify-center items-center gap-8 pt-32">
-          <h1 className="text-8xl font-extrabold">{artist.name}</h1>
-          <h1 className="text-2xl">{formatFollowers(artist.followers)} Followers</h1>
-        </div>
-      </div>
-      <div className="mx-52">
-        <Description description={artist.description} />
-      </div>
+      />
 
-      <ScrollButtons heading="Songs">
-        <div className="flex flex-row justify-center items-start pb-20">
-          {randomSongs.map((song, index) => (
-            <div key={index} className="w-full sm:w-1/2 md:w-1/3 lg:w-1/4 p-8">
-              <SongCard album_cover={song.album_object.cover_url} album_id={song.album_object.id} album_name={song.album_object.name} artist_id={song.artist_object.id} artist_name={song.artist} path={song.path} song_id={song.id} song_name={song.name} />
-            </div>
-          ))}
-        </div>
-      </ScrollButtons>
-
-      <ScrollButtons heading="Albums">
-        <div className="flex flex-row items-start pb-20">
-          {albums
-            .sort((a: Album, b: Album) => {
-              const dateA = new Date(a.first_release_date).getTime();
-              const dateB = new Date(b.first_release_date).getTime();
-        
-              if (isNaN(dateA)) return 1;
-              if (isNaN(dateB)) return -1;
-        
-              return dateB - dateA;
-            })
-            .map((album: Album, index: number) => (
-              <div key={index} className="w-full sm:w-1/2 md:w-1/3 lg:w-1/4 p-8">
-                <AlbumCard
-                  artist_id={artist.id}
-                  artist_name={artist.name}
-                  album_id={album.id}
-                  album_name={album.name}
-                  album_cover={album.cover_url}
-                  album_songs_count={album.songs.length}
-                  first_release_date={album.first_release_date}
+      <div className="relative z-10 px-4 md:px-8 pt-8 pb-16">
+        <div className="max-w-8xl mx-auto">
+          <div className="flex flex-col md:flex-row gap-6 mb-8">
+            <div className="flex-shrink-0 flex justify-center md:justify-start">
+              <div className="relative w-64 md:w-[300px] aspect-square shadow-2xl">
+                <Image
+                  src={artistIconURL}
+                  alt={artist.name}
+                  layout="fill"
+                  className="rounded-full object-cover"
+                  priority
                 />
               </div>
-            ))}
+            </div>
+
+            <div className="flex flex-col justify-end text-center md:text-left">
+              <h1 className="text-4xl md:text-7xl font-bold mb-4 text-white">
+                {artist.name}
+              </h1>
+              <div className="text-gray-300 text-lg">
+                {formatFollowers(artist.followers)} Followers
+              </div>
+            </div>
+          </div>
+
+          {artist.description && (
+            <div className="bg-black/20 backdrop-blur-sm rounded-xl p-6 mb-8">
+              <Description description={artist.description} />
+            </div>
+          )}
+
+          <div className="mb-8">
+            <h2 className="text-2xl font-bold text-white mb-4">Popular Songs</h2>
+            <div className="bg-black/20 backdrop-blur-sm rounded-xl p-4">
+              <div className="space-y-2">
+                {randomSongs.slice(0, 5).map((song, index) => (
+                  <SongRow
+                    key={song.id}
+                    song_name={song.name}
+                    song_id={song.id}
+                    artist_id={song.artist_object.id}
+                    artist_name={song.artist}
+                    album_id={song.album_object.id}
+                    album_name={song.album_object.name}
+                    album_cover={song.album_object.cover_url}
+                    path={song.path}
+                    duration={song.duration}
+                  />
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <ArtistMusicVideos artistName={artist.name} />
+
+          <div>
+            <h2 className="text-2xl font-bold text-white mb-4">Albums</h2>
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+              {albums
+                .sort((a, b) => {
+                  const dateA = new Date(a.first_release_date).getTime();
+                  const dateB = new Date(b.first_release_date).getTime();
+                  if (isNaN(dateA)) return 1;
+                  if (isNaN(dateB)) return -1;
+                  return dateB - dateA;
+                })
+                .map((album, index) => (
+                  <div key={index}>
+                    <ArtistAlbumCard
+                      album_id={album.id}
+                      album_name={album.name}
+                      album_cover={album.cover_url}
+                      first_release_date={album.first_release_date}
+                    />
+                  </div>
+                ))}
+            </div>
+          </div>
+
+          <SimilarArtists 
+            artistName={artist.name}
+            genres={albums.flatMap(album => 
+              [...(album.release_group_album?.genres || []), ...(album.release_album?.genres || [])]
+            ).map(g => g.name)}
+          />
+
+          <Suspense>
+            <SongsInLibrary />
+          </Suspense>
         </div>
-      </ScrollButtons>
-
-      <Suspense>
-        <SongsInLibrary />
-      </Suspense>
-
-      <div className="pb-48" />
-    </>
+      </div>
+    </div>
   );
 }

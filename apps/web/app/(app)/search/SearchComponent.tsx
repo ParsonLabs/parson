@@ -83,25 +83,34 @@ export default function SearchComponent() {
   const [loading, setLoading] = useState<boolean>(true);
   const [youtubeResults, setYoutubeResults] = useState<any[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [youtubeLoading, setYoutubeLoading] = useState<boolean>(true);
+  const [youtubeError, setYoutubeError] = useState<string | null>(null);
 
   useEffect(() => {
     async function getSearchResults() {
       setLoading(true);
+      setYoutubeLoading(true);
       setError(null);
+      setYoutubeError(null);
 
       try {
-        const [searchResults, ytResults] = await Promise.all([
-          searchLibrary(query),
-          searchYouTube(query),
-        ]);
-
+        const searchResults = await searchLibrary(query);
         setResults(searchResults);
-        setYoutubeResults(ytResults);
       } catch (err) {
         console.error("Search error:", err);
-        setError("Failed to load YouTube results");
+        setError("Failed to load search results");
       } finally {
         setLoading(false);
+      }
+
+      try {
+        const ytResults = await searchYouTube(query);
+        setYoutubeResults(ytResults);
+      } catch (err) {
+        console.error("YouTube error:", err);
+        setYoutubeError("Failed to load YouTube results");
+      } finally {
+        setYoutubeLoading(false);
       }
     }
 
@@ -111,236 +120,106 @@ export default function SearchComponent() {
   }, [query]);
 
   return (
-    <>
-      <div className="pt-32">
-        {!loading && !results && <p className="text-2xl pb-5">Top Result</p>}
-        <div className="flex justify-start">
-          {loading ? (
-            <div className="mb-8">
+    <div className="relative min-h-screen">
+      <div className="fixed inset-0 bg-neutral-900" />
+      
+      <div 
+        className="fixed inset-0 opacity-30 will-change-transform"
+        style={{
+          backgroundImage: `url(${results[0]?.album_object?.cover_url ?? "/snf.png"})`,
+          backgroundSize: 'cover',
+          backgroundPosition: 'center',
+          filter: 'blur(140px)',
+          transform: 'translateZ(0)',
+        }}
+      />
+
+      <div className="relative z-10 px-4 md:px-8 pt-8 pb-8 backdrop-blur-sm">
+        <div className="max-w-8xl mx-auto">
+          <div className="mb-8">
+            {loading ? (
               <TopResultCardSkeleton />
-            </div>
-          ) : (
-            results && results[0] && <><TopResultsCard result={results[0]} /> <PageGradient imageSrc={results[0]?.album_object?.cover_url ?? "/snf.png"} /></>
-          )}
-        </div>
-      </div>
-
-      <div className="overflow-hidden flex justify-between overflow-y-hidden pt-14 pb-20 px-20">
-        <div className="w-1/2 transform scale-110 pt-20 pb-20 pr-8">
-          {suggestion && suggestion.toLowerCase() !== query.toLowerCase() && (
-            <p className="text-sm text-white mt-6">
-              Did you mean:{" "}
-              <Link
-                href={`/search?q=${suggestion}`}
-                className="text-gray-200 hover:underline"
-              >
-                {suggestion}
-              </Link>
-            </p>
-          )}
-
-          {loading ? (
-            <>
-              <div className="mb-4">
-                <HorizontalCardSkeleton />
-              </div>
-              <div className="mb-8">
-                <HorizontalCardSkeleton />
-              </div>
-              <div className="mb-4">
-                <HorizontalCardSkeleton />
-              </div>
-              <div className="mb-8">
-                <HorizontalCardSkeleton />
-              </div>
-              <div className="mb-4">
-                <HorizontalCardSkeleton />
-              </div>
-              <div className="mb-4">
-                <HorizontalCardSkeleton />
-              </div>
-            </>
-          ) : (
-            <>
-              {results[0]?.item_type === "album" && (
-                <>
-                  {results
-                    .slice(1)
-                    .some((result: any) => result.item_type === "song") && (
-                    <>
-                      <p className="text-2xl">Songs</p>
-                      <div className="grid grid-cols-1 gap-4 pb-10 pt-6 rounded-md pl-2">
-                        {results
-                          .slice(1)
-                          .filter((result: any) => result.item_type === "song")
-                          .map((result: any) => (
-                            <HorizontalCard item={result} key={result.id} />
-                          ))}
-                      </div>
-                    </>
-                  )}
-                  {results
-                    .slice(1)
-                    .some((result: any) => result.item_type === "album") && (
-                    <>
-                      <p className="text-2xl">Albums</p>
-                      <div className="grid grid-cols-1 gap-4 pb-10 pt-6 rounded-md pl-2">
-                        {results
-                          .slice(1)
-                          .filter((result: any) => result.item_type === "album")
-                          .map((result: any) => (
-                            <HorizontalCard item={result} key={result.id} />
-                          ))}
-                      </div>
-                    </>
-                  )}
-                  {results
-                    .slice(1)
-                    .some((result: any) => result.item_type === "artist") && (
-                    <>
-                      <p className="text-2xl">Artists</p>
-                      <div className="grid grid-cols-1 gap-4 pb-10 pt-6 rounded-md pl-2">
-                        {results
-                          .slice(1)
-                          .filter(
-                            (result: any) => result.item_type === "artist"
-                          )
-                          .map((result: any) => (
-                            <HorizontalCard item={result} key={result.id} />
-                          ))}
-                      </div>
-                    </>
-                  )}
-                </>
-              )}
-              {results[0]?.item_type === "artist" && (
-                <>
-                  {results
-                    .slice(1)
-                    .some((result: any) => result.item_type === "album") && (
-                    <>
-                      <p className="text-2xl">Albums</p>
-                      <div className="grid grid-cols-1 gap-4 pb-10 pt-6 rounded-md pl-2">
-                        {results
-                          .slice(1)
-                          .filter((result: any) => result.item_type === "album")
-                          .map((result: any) => (
-                            <HorizontalCard item={result} key={result.id} />
-                          ))}
-                      </div>
-                    </>
-                  )}
-                  {results
-                    .slice(1)
-                    .some((result: any) => result.item_type === "song") && (
-                    <>
-                      <p className="text-2xl">Songs</p>
-                      <div className="grid grid-cols-1 gap-4 pb-10 pt-6 rounded-md pl-2">
-                        {results
-                          .slice(1)
-                          .filter((result: any) => result.item_type === "song")
-                          .map((result: any) => (
-                            <HorizontalCard item={result} key={result.id} />
-                          ))}
-                      </div>
-                    </>
-                  )}
-                  {results
-                    .slice(1)
-                    .some((result: any) => result.item_type === "artist") && (
-                    <>
-                      <p className="text-2xl">Artists</p>
-                      <div className="grid grid-cols-1 gap-4 pb-10 pt-6 rounded-md pl-2">
-                        {results
-                          .slice(1)
-                          .filter(
-                            (result: any) => result.item_type === "artist"
-                          )
-                          .map((result: any) => (
-                            <HorizontalCard item={result} key={result.id} />
-                          ))}
-                      </div>
-                    </>
-                  )}
-                </>
-              )}
-              {results[0]?.item_type === "song" && (
-                <>
-                  {results
-                    .slice(1)
-                    .some((result: any) => result.item_type === "song") && (
-                    <>
-                      <p className="text-2xl">Songs</p>
-                      <div className="grid grid-cols-1 gap-4 pb-10 pt-6 rounded-md pl-2">
-                        {results
-                          .slice(1)
-                          .filter((result: any) => result.item_type === "song")
-                          .map((result: any) => (
-                            <HorizontalCard item={result} key={result.id} />
-                          ))}
-                      </div>
-                    </>
-                  )}
-                  {results
-                    .slice(1)
-                    .some((result: any) => result.item_type === "album") && (
-                    <>
-                      <p className="text-2xl">Albums</p>
-                      <div className="grid grid-cols-1 gap-4 pb-10 pt-6 rounded-md pl-2">
-                        {results
-                          .slice(1)
-                          .filter((result: any) => result.item_type === "album")
-                          .map((result: any) => (
-                            <HorizontalCard item={result} key={result.id} />
-                          ))}
-                      </div>
-                    </>
-                  )}
-                  {results
-                    .slice(1)
-                    .some((result: any) => result.item_type === "artist") && (
-                    <>
-                      <p className="text-2xl">Artists</p>
-                      <div className="grid grid-cols-1 gap-4 pb-10 pt-6 rounded-md pl-2">
-                        {results
-                          .slice(1)
-                          .filter(
-                            (result: any) => result.item_type === "artist"
-                          )
-                          .map((result: any) => (
-                            <HorizontalCard item={result} key={result.id} />
-                          ))}
-                      </div>
-                    </>
-                  )}
-                </>
-              )}
-            </>
-          )}
-        </div>
-
-        {youtubeResults.length != 0 && (
-          <div className="w-1/2 pb-20 pl-8 border-l border-gray-800">
-            <div className="flex items-center gap-2 mb-4">
-              <h2 className="text-2xl font-bold bg-gradient-to-r from-purple-400 via-pink-500 to-red-500 bg-clip-text text-transparent">
-                From YouTube
-              </h2>
-              <YoutubeIcon className="w-6 h-6 text-red-600" />
-            </div>
-
-            <div className="space-y-4">
-              {loading
-                ? [...Array(10)].map((_, i) => (
-                    <HorizontalCardSkeleton key={i} />
-                  ))
-                : youtubeResults.map((video) => (
-                    <YoutubeResultCard video={video} key={video.id} />
-                  ))}
-            </div>
+            ) : (
+              results && results[0] && <TopResultsCard result={results[0]} />
+            )}
           </div>
-        )}
+
+          <div className="grid grid-cols-1 lg:grid-cols-[1fr,400px] gap-6">
+            <div className="space-y-6">
+              {loading ? (
+                <div className="space-y-4">
+                  {[...Array(6)].map((_, i) => (
+                    <HorizontalCardSkeleton key={i} />
+                  ))}
+                </div>
+              ) : (
+                <>
+                  {results.slice(1).some((result: any) => result.item_type === "song") && (
+                    <div className="bg-black/20 rounded-xl p-4">
+                      <h2 className="text-2xl font-bold text-white mb-4">Songs</h2>
+                      <div className="space-y-2">
+                        {results
+                          .slice(1)
+                          .filter((result: any) => result.item_type === "song")
+                          .map((result: any) => (
+                            <HorizontalCard item={result} key={result.id} />
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {results.slice(1).some((result: any) => result.item_type === "album") && (
+                    <div className="bg-black/20 rounded-xl p-4">
+                      <h2 className="text-2xl font-bold text-white mb-4">Albums</h2>
+                      <div className="space-y-2">
+                        {results
+                          .slice(1)
+                          .filter((result: any) => result.item_type === "album")
+                          .map((result: any) => (
+                            <HorizontalCard item={result} key={result.id} />
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {results.slice(1).some((result: any) => result.item_type === "artist") && (
+                    <div className="bg-black/20 rounded-xl p-4">
+                      <h2 className="text-2xl font-bold text-white mb-4">Artists</h2>
+                      <div className="space-y-2">
+                        {results
+                          .slice(1)
+                          .filter((result: any) => result.item_type === "artist")
+                          .map((result: any) => (
+                            <HorizontalCard item={result} key={result.id} />
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+
+            {!youtubeError && (youtubeResults.length > 0 || youtubeLoading) && (
+              <div className="space-y-6">
+                <div className="bg-black/20 rounded-xl p-4">
+                  <div className="flex items-center gap-2 mb-4">
+                    <h2 className="text-2xl font-bold bg-gradient-to-r from-purple-400 via-pink-500 to-red-500 bg-clip-text text-transparent">
+                      From YouTube
+                    </h2>
+                    <YoutubeIcon className="w-6 h-6 text-red-600" />
+                  </div>
+                  <div className="space-y-2">
+                    {youtubeResults.map((video) => (
+                      <YoutubeResultCard video={video} key={video.id} />
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
       </div>
-    </>
+    </div>
   );
 }
 

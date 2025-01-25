@@ -60,36 +60,54 @@ export default function HorizontalCard({ item }: HorizontalCardProps) {
 
   return (
     <ConditionalLink type={item_type} album={album_object} artist={artist_object}>
-      <div className="w-full text-white flex items-center" onMouseEnter={setDominantGradient} onClick={() => item_type == "song" && handlePlay()}>
-        <Image src={imageUrl} className={`${item.item_type === "artist" ? "rounded-full" : "rounded-sm"}`} width={64} height={64} alt={`${name} Image`} />
-        <div className="ml-4">
-          <p className="font-bold">{name}</p>
-          <div className="text-gray-400">
+      <div 
+        className="group w-full text-white flex items-center p-2 rounded-lg hover:bg-white/10 transition-all duration-200 backdrop-blur-sm cursor-pointer"
+        onMouseEnter={setDominantGradient} 
+        onClick={() => item_type == "song" && handlePlay()}
+      >
+        <div className="relative flex-shrink-0">
+          <Image 
+            src={imageUrl} 
+            className={`${item.item_type === "artist" ? "rounded-full" : "rounded-lg"} object-cover transition-all duration-300 group-hover:brightness-75`} 
+            width={64} 
+            height={64} 
+            alt={`${name} Image`} 
+          />
+        </div>
+
+        <div className="ml-4 min-w-0">
+          <p className="font-medium text-white truncate">{name}</p>
+          <div className="text-sm text-gray-400">
             {item_type == "song" && song_object && (
-              <p>
-                <Link href={`/artist?id=${artist_object?.id ?? "0"}`}>
+              <div className="flex items-center gap-2">
+                <Link href={`/artist?id=${artist_object?.id ?? "0"}`} className="hover:underline truncate">
                   {artist_object?.name}
-                </Link>{"  "}•{"  "}
-                <Link href={`/album?id=${album_object?.id ?? "0"}`}>
+                </Link>
+                <span>•</span>
+                <Link href={`/album?id=${album_object?.id ?? "0"}`} className="hover:underline truncate">
                   {album_object?.name}
-                </Link>{"  "}•{"  "}
-                {formatDuration(song_object.duration)}
-              </p>
+                </Link>
+                <span>•</span>
+                <span>{formatDuration(song_object.duration)}</span>
+              </div>
             )}
             {item_type == "album" && album_object && (
-              <p>
-                Album{"  "}•{"  "}
-                <Link href={`/artist?id=${artist_object?.id ?? "0"}`}>
+              <div className="flex items-center gap-2">
+                <span>Album</span>
+                <span>•</span>
+                <Link href={`/artist?id=${artist_object?.id ?? "0"}`} className="hover:underline truncate">
                   {artist_object?.name}
-                </Link>{"  "}•{"  "}
-                {formatReleaseDate(album_object?.first_release_date ?? "")}
-              </p>
+                </Link>
+                <span>•</span>
+                <span>{formatReleaseDate(album_object?.first_release_date ?? "")}</span>
+              </div>
             )}
             {item_type == "artist" && artist_object && (
-              <p>
-                Artist{"  "}•{"  "}
-                {formatFollowers(artist_object?.followers ?? 0)} Followers
-              </p>
+              <div className="flex items-center gap-2">
+                <span>Artist</span>
+                <span>•</span>
+                <span>{formatFollowers(artist_object?.followers ?? 0)} Followers</span>
+              </div>
             )}
           </div>
         </div>

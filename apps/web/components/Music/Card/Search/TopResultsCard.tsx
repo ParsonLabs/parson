@@ -101,133 +101,118 @@ export default function TopResultsCard({ result }: ResultCardProps) {
     }
   }
 
-  if (result.item_type === 'song' && song) {
-    return (
-      <div key={result.id} className="relative flex items-center p-8" style={{ height: 200, width: '100%' }}>
-        <div className="relative z-10 flex items-center p-5 bg-white bg-opacity-30 backdrop-blur-md rounded-lg" style={{ height: '100%', width: '100%' }}>
-          <div
-            className="absolute inset-0 bg-cover bg-center"
-            style={{
-              backgroundImage: `url(${imageSrc})`,
-              filter: 'blur(80px) brightness(75%)',
-              zIndex: "-1"
-            }}
-          />
-          <div className="flex-shrink-0 w-28 h-28 relative">
+  return (
+    <div 
+      className="relative w-full rounded-xl overflow-hidden transition-transform duration-200 hover:scale-[1.01] cursor-pointer"
+      onClick={() => {
+        if (result.item_type === "album" && album) {
+          window.location.href = `/album?id=${album.id}`;
+        } else if (result.item_type === "artist" && artist) {
+          window.location.href = `/artist?id=${artist.id}`;
+        }
+      }}
+    >
+      <div 
+        className="absolute inset-0 bg-cover bg-center opacity-30"
+        style={{
+          backgroundImage: `url(${imageSrc})`,
+          filter: 'blur(140px)',
+        }}
+      />
+
+      <div className="relative z-10 flex flex-col md:flex-row items-center p-8 gap-8">
+        <div className="relative flex-shrink-0">
+          <div className="relative w-48 md:w-[200px] aspect-square shadow-2xl">
             <Image
               src={imageSrc}
-              alt={song.name + " Image"}
-              height={112}
-              width={112}
-              loading="lazy"
-              className="rounded cursor-pointer transition-filter duration-300 hover:brightness-50 object-cover w-full h-full"
-              onClick={handlePlay}
+              alt={result.name}
+              layout="fill"
+              className={`${result.item_type === "artist" ? "rounded-full" : "rounded-lg"} object-cover transition-all duration-300 group-hover:brightness-90`}
+              priority
             />
-            {playingSongID === song.id && (
-              <div
-                className="absolute inset-0 flex items-center justify-center"
+            {result.item_type === "song" && (
+              <button
                 onClick={(e) => {
                   e.stopPropagation();
-                  togglePlayPause();
+                  handlePlay();
                 }}
+                className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 hover:opacity-100 transition-opacity"
               >
-                {volume < 1 ? (
-                  isVolumeHovered ? (
-                    isPlaying ? (
-                      <Pause className="w-10 h-10 text-white" fill="white" strokeWidth={0} />
-                    ) : (
-                      <Play className="w-10 h-10 text-white" fill="white" strokeWidth={0} />
-                    )
+                {playingSongID === song?.id ? (
+                  isPlaying ? (
+                    <Pause className="w-16 h-16 text-white" fill="white" strokeWidth={0} />
                   ) : (
-                    <Volume2
-                      className="w-10 h-10 text-white"
-                      onMouseEnter={() => setIsVolumeHovered(true)}
-                      onMouseLeave={() => setIsVolumeHovered(false)}
-                    />
+                    <Play className="w-16 h-16 text-white" fill="white" strokeWidth={0} />
                   )
-                ) : isPlaying ? (
-                  <Pause className="w-10 h-10 text-white" fill="white" strokeWidth={0} />
                 ) : (
-                  <Play className="w-10 h-10 text-white" fill="white" strokeWidth={0} />
+                  <Play className="w-16 h-16 text-white" fill="white" strokeWidth={0} />
                 )}
-              </div>
+              </button>
             )}
           </div>
-          <div className="ml-5 flex justify-between items-center h-28 w-full">
-            <div className="flex flex-col justify-start items-start text-left">
-              <h2 className="text-2xl font-bold">{song.name}</h2>
-              <p className="text-md text-gray-400">
-                Song • <Link href={`/artist/?id=${song.artist_object.id}`} className="text-gray-400 hover:underline">{song.artist}</Link> • <Link href={`/album/?id=${song.album_object.id}`} className="text-gray-400 hover:underline">{song.album_object.name}</Link> • {formatDuration(song.duration)}
-              </p>
-            </div>
-            <div className="flex items-center justify-center h-full pr-8">
-              <button className="flex items-center px-16 py-2 bg-white text-black rounded-full" onClick={handlePlay}>
-                <Play className="mr-2" size={24} fill="black" strokeWidth={0} /> <p className="text-lg">Play</p>
-              </button>
-            </div>
+        </div>
+
+        <div className="flex flex-col justify-center text-center md:text-left">
+          <h1 className="text-3xl md:text-5xl font-bold mb-4 text-white">
+            {result.name}
+          </h1>
+          
+          <div className="flex flex-wrap items-center justify-center md:justify-start gap-2 text-sm text-gray-300 mb-6">
+            {result.item_type === "song" && song && (
+              <>
+                <span>Song</span>
+                <span>•</span>
+                <Link href={`/artist?id=${song.artist_object.id}`} className="hover:underline">
+                  {song.artist}
+                </Link>
+                <span>•</span>
+                <Link href={`/album?id=${song.album_object.id}`} className="hover:underline">
+                  {song.album_object.name}
+                </Link>
+                <span>•</span>
+                <span>{formatDuration(song.duration)}</span>
+              </>
+            )}
+            
+            {result.item_type === "album" && album && (
+              <>
+                <span>Album</span>
+                <span>•</span>
+                <Link href={`/artist?id=${album.artist_object.id}`} className="hover:underline">
+                  {album.artist_object.name}
+                </Link>
+                <span>•</span>
+                <span>{album.songs.length} Songs</span>
+              </>
+            )}
+            
+            {result.item_type === "artist" && artist && (
+              <>
+                <span>Artist</span>
+                <span>•</span>
+                <span>{artist.followers.toLocaleString()} Followers</span>
+              </>
+            )}
           </div>
+
+          {result.item_type === "song" && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                handlePlay();
+              }}
+              className="inline-flex items-center justify-center px-8 py-3 rounded-full bg-white text-black font-medium hover:scale-105 transition-transform self-center md:self-start"
+            >
+              {playingSongID === song?.id && isPlaying ? (
+                <Pause className="w-6 h-6 mr-2" />
+              ) : (
+                <Play className="w-6 h-6 mr-2" fill="black" />
+              )}
+              {playingSongID === song?.id && isPlaying ? "Pause" : "Play"}
+            </button>
+          )}
         </div>
       </div>
-    );
-  } else if (result.item_type === 'artist' && artist) {
-    return (
-      <div key={result.id} className="relative flex flex-col items-center p-14" style={{ height: 350, width: 500 }}>
-        <Image
-          className="bg-cover bg-center blur-3xl"
-          src={imageSrc}
-          alt="Background Image"
-          height={1000}
-          width={1000}
-          style={{
-            backgroundColor: "#202020",
-            transition: "background background-color 0.5s ease",
-            position: 'absolute',
-            top: 0,
-            left: 0,
-            width: '100%',
-            height: '100%',
-            filter: 'blur(10px) brightness(50%)',
-            zIndex: "10"
-          }}
-        />
-        <div className="relative z-10">
-          <ArtistCard artist={artist} />
-        </div>
-      </div>
-    );
-  } else if (result.item_type === 'album' && album) {
-    return (
-      <div key={result.id} className="relative flex flex-col items-center p-14 h-14 w-14" style={{ height: 350, width: 500 }}>
-        <Image
-          className="bg-cover bg-center blur-3xl"
-          src={imageSrc}
-          alt="Background Image"
-          height={1000}
-          width={1000}
-          style={{
-            backgroundColor: "#202020",
-            transition: "background background-color 0.5s ease",
-            position: 'absolute',
-            top: 0,
-            left: 0,
-            width: '100%',
-            height: '100%',
-            filter: 'blur(10px) brightness(50%)',
-            zIndex: "10"
-          }}
-        />
-        <div className="relative z-10">
-          <AlbumCard 
-            artist_id={album.artist_object.id}
-            artist_name={album.artist_object.name}
-            album_id={album.id}
-            album_name={album.name}
-            album_cover={album.cover_url}
-            album_songs_count={album.songs.length}
-            first_release_date={album.first_release_date}
-          />
-        </div>
-      </div>
-    );
-  }
+    </div>
+  );
 }

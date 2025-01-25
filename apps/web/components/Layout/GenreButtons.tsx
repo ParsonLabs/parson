@@ -25,6 +25,7 @@ const MemoizedButton = memo(({ genre, isSelected, onClick }: {
     {capitalizeWords(genre)}
   </button>
 ));
+MemoizedButton.displayName = 'MemoizedButton';
 
 function capitalizeWords(str: string): string {
   return str.replace(/\b\w/g, char => char.toUpperCase())
@@ -34,7 +35,7 @@ interface GenreButtonsProps {
   children: ReactNode
 }
 
-export default function GenreButtons({ children }: GenreButtonsProps) {
+function GenreButtons({ children }: GenreButtonsProps) {
   const router = useRouter()
   const searchParams = useSearchParams()
   const selectedGenre = searchParams.get('genre')
@@ -85,3 +86,6 @@ export default function GenreButtons({ children }: GenreButtonsProps) {
     </>
   )
 }
+GenreButtons.displayName = 'GenreButtons';
+
+export default GenreButtons;

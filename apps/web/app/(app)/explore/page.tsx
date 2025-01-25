@@ -1,9 +1,11 @@
 "use client";
 
+import { memo } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { getAlbumsByGenres, listAllGenres, getAlbumInfo } from "@music/sdk";
-import { useEffect, useState } from "react";
-import { Card, CardTitle } from "@music/ui/components/card";
 import { Album, Artist } from "@music/sdk/types";
+import { useState } from "react";
+import { CardTitle } from "@music/ui/components/card";
 import Image from "next/image";
 import getBaseURL from "@/lib/Server/getBaseURL";
 import { FastAverageColor } from "fast-average-color";
@@ -15,66 +17,96 @@ function capitalizeWords(str: string): string {
   return str.replace(/\b\w/g, char => char.toUpperCase());
 }
 
+const MemoizedAlbumCard = memo(AlbumCard);
+const MemoizedGenreButton = memo(({ genre, backgroundColor, albumCover, onSelect }: {
+  genre: string;
+  backgroundColor: string;
+  albumCover: string;
+  onSelect: () => void;
+}) => (
+  <button
+    className="relative flex items-center justify-center overflow-hidden w-full h-40 rounded-lg"
+    style={{ backgroundColor }}
+    onClick={onSelect}
+  >
+    <div className="absolute top-2 left-2">
+      <CardTitle className="text-xl font-bold">{capitalizeWords(genre)}</CardTitle>
+    </div>
+    {albumCover && (
+      <Image
+        src={albumCover}
+        height={125}
+        width={125}
+        alt={genre}
+        className="absolute bottom-0 right-0 shadow-lg rounded-sm"
+        style={{ transform: 'rotate(35deg) translateX(25%)' }}
+      />
+    )}
+  </button>
+));
+
 export default function ExplorePage() {
-  const [genres, setGenres] = useState<string[]>([]);
-  const [albums, setAlbums] = useState<{ [key: string]: Album[] }>({});
-  const [backgroundColors, setBackgroundColors] = useState<{ [key: string]: string }>({});
   const [selectedGenre, setSelectedGenre] = useState<string | null>(null);
-  const [albumDetails, setAlbumDetails] = useState<{ [key: string]: LibraryAlbum }>({});
 
-  useEffect(() => {
-    async function fetchGenresAndAlbums() {
-      const genreList = await listAllGenres();
-      setGenres(genreList);
+  const { data: genres = [] } = useQuery({
+    queryKey: ['genres'],
+    queryFn: listAllGenres,
+    staleTime: 24 * 60 * 60 * 1000
+  });
 
-      const albumsByGenres = await getAlbumsByGenres(genreList);
+  const { data: albumsByGenre = {} } = useQuery({
+    queryKey: ['albumsByGenre', genres],
+    queryFn: () => getAlbumsByGenres(genres),
+    staleTime: 60 * 60 * 1000,
+    enabled: genres.length > 0,
+    select: (data) => {
       const albumsMap: { [key: string]: Album[] } = {};
-      albumsByGenres.forEach((album) => {
+      data.forEach((album) => {
         const genres = album.release_group_album?.genres || album.release_album?.genres;
         genres?.forEach((genre) => {
-          if (!albumsMap[genre.name]) {
-            albumsMap[genre.name] = [];
-          }
+          if (!albumsMap[genre.name]) albumsMap[genre.name] = [];
           albumsMap[genre.name]?.push(album);
         });
       });
-      setAlbums(albumsMap);
+      return albumsMap;
+    }
+  });
 
+  const { data: albumDetails = {} } = useQuery({
+    queryKey: ['albumDetails', selectedGenre],
+    queryFn: async () => {
+      if (!selectedGenre || !albumsByGenre[selectedGenre]) return {};
+      const details: { [key: string]: LibraryAlbum } = {};
+      await Promise.all(
+        albumsByGenre[selectedGenre].map(async (album) => {
+          details[album.id] = await getAlbumInfo(album.id) as LibraryAlbum;
+        })
+      );
+      return details;
+    },
+    enabled: !!selectedGenre,
+    staleTime: 60 * 60 * 1000
+  });
+
+  const { data: backgroundColors = {} } = useQuery({
+    queryKey: ['backgroundColors', albumsByGenre],
+    queryFn: async () => {
       const fac = new FastAverageColor();
-      const colorsMap: { [key: string]: string } = {};
-      for (const genre of genreList) {
-        if (albumsMap[genre] && albumsMap[genre][0]) {
-          const imageSrc = albumsMap[genre][0].cover_url.length === 0
-            ? "/snf.png"
-            : `${getBaseURL()}/image/${encodeURIComponent(albumsMap[genre][0].cover_url)}`;
-          const color = await fac.getColorAsync(imageSrc);
-          colorsMap[genre] = color.hex;
+      const colors: { [key: string]: string } = {};
+      for (const genre of genres) {
+        if (albumsByGenre[genre]?.[0]) {
+          const imageSrc = albumsByGenre[genre][0].cover_url || "/snf.png";
+          const color = await fac.getColorAsync(
+            imageSrc.startsWith('/') ? imageSrc : `${getBaseURL()}/image/${encodeURIComponent(imageSrc)}`
+          );
+          colors[genre] = color.hex;
         }
       }
-      setBackgroundColors(colorsMap);
-    }
-    fetchGenresAndAlbums();
-  }, []);
-
-  useEffect(() => {
-    async function fetchAlbumDetails() {
-      if (selectedGenre) {
-        const genreAlbums = albums[selectedGenre];
-        const albumDetailsMap: { [key: string]: LibraryAlbum } = {};
-
-        if (genreAlbums) {
-          const albumDetailsPromises = genreAlbums.map(async (album) => {
-            const albumInfo = await getAlbumInfo(album.id);
-            albumDetailsMap[album.id] = albumInfo as LibraryAlbum;
-          });
-
-          await Promise.all(albumDetailsPromises);
-          setAlbumDetails(albumDetailsMap);
-        }
-      }
-    }
-    fetchAlbumDetails();
-  }, [selectedGenre, albums]);
+      return colors;
+    },
+    enabled: Object.keys(albumsByGenre).length > 0,
+    staleTime: 24 * 60 * 60 * 1000
+  });
 
   const resetSelection = () => {
     setSelectedGenre(null);
@@ -96,10 +128,10 @@ export default function ExplorePage() {
           </div>
         </h1>
         <div className="pt-10 flex flex-wrap -mx-2">
-          {albums[selectedGenre]?.map((album) => (
+          {albumsByGenre[selectedGenre]?.map((album) => (
             <div key={album.id} className="w-full sm:w-1/2 md:w-1/3 lg:w-1/4 px-2 mb-4 py-16">
               {albumDetails[album.id] ? (
-                <AlbumCard
+                <MemoizedAlbumCard
                   artist_id={albumDetails[album.id]?.artist_object?.id ?? ""}
                   artist_name={albumDetails[album.id]?.artist_object?.name ?? ""}
                   album_id={albumDetails[album.id]?.id ?? ""}
@@ -121,34 +153,19 @@ export default function ExplorePage() {
       <h1 className="pt-28 font-bold text-lg md:text-3xl lg:text-4xl mr-5">Browse All</h1>
       <div className="pt-12 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-5 overflow-hidden">
         {genres.map((genre) => (
-          <button
+          <MemoizedGenreButton
             key={genre}
-            className="relative flex items-center justify-center overflow-hidden w-full h-40 rounded-lg"
-            style={{
-              backgroundColor: backgroundColors[genre] || 'transparent',
-            }}
-            onClick={() => setSelectedGenre(genre)}
-          >
-            <div className="absolute top-2 left-2">
-              <CardTitle className="text-xl font-bold">{capitalizeWords(genre)}</CardTitle>
-            </div>
-            {albums[genre] && albums[genre][0] && (
-              <Image
-                src={
-                  albums[genre][0].cover_url.length === 0
-                    ? "/snf.png"
-                    : `${getBaseURL()}/image/${encodeURIComponent(albums[genre][0].cover_url)}`
-                }
-                height={125}
-                width={125}
-                alt={albums[genre][0].name}
-                className="absolute bottom-0 right-0 shadow-lg rounded-sm"
-                style={{
-                  transform: 'rotate(35deg) translateX(25%)',
-                }}
-              />
-            )}
-          </button>
+            genre={genre}
+            backgroundColor={backgroundColors[genre] || 'transparent'}
+            albumCover={
+              albumsByGenre[genre]?.[0]?.cover_url.length === 0
+                ? "/snf.png"
+                : albumsByGenre[genre]?.[0]?.cover_url
+                  ? `${getBaseURL()}/image/${encodeURIComponent(albumsByGenre[genre][0].cover_url)}`
+                  : "/snf.png"
+            }
+            onSelect={() => setSelectedGenre(genre)}
+          />
         ))}
       </div>
     </>

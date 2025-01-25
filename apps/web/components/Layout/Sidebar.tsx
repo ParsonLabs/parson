@@ -48,7 +48,12 @@ export default function Sidebar({ children, sidebarContent }: SidebarProps) {
 
   return (
     <div className="flex">
-      <aside className={`hidden md:block z-40 fixed h-full ${onTopOfPage || areLyricsVisible ? "" : "border-r border-gray-500"} ${isOpen ? "w-1/5 xl:w-[18%]" : "w-3 xl:w-20"} space-y-4 p-4 lg:block pt-20`}>
+      <aside className={`hidden md:block z-40 fixed h-full 
+        ${onTopOfPage || areLyricsVisible 
+          ? "" 
+          : "border-r border-gray-500 bg-black"} 
+        ${isOpen ? "w-1/5 xl:w-[18%]" : "w-3 xl:w-20"} 
+        space-y-4 p-4 lg:block pt-20 transition-colors duration-100`}>
         <Button variant="ghost" asChild size={isOpen ? "default" : "icon"} className={`w-full flex items-center justify-start ${!isOpen && "h-12 w-12 flex-col items-center justify-center"}`}>
           <Link href="/home">
             <div className={`flex ${isOpen ? "flex-row" : "flex-col"} items-center text-white text-semibold`} style={{ mixBlendMode: 'difference', pointerEvents: 'none' }}>

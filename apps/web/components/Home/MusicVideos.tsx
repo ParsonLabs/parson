@@ -1,55 +1,47 @@
+"use client";
+
+import { memo } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { getSongsWithMusicVideos } from "@music/sdk";
-import { useEffect, useState } from "react";
+import { MusicVideoSong } from "@music/sdk/types";
 import MusicVideoCard from "../Music/Card/MusicVideoCard";
 import ScrollButtons from "./ScrollButtons";
-import { MusicVideoSong } from "@music/sdk/types";
-import setCache, { getCache } from "@/lib/Caching/cache";
+
+const MemoizedMusicVideoCard = memo(MusicVideoCard);
+
+async function getMusicVideos(): Promise<MusicVideoSong[]> {
+  const allMusicVideos = await getSongsWithMusicVideos();
+  
+  const uniqueNames = new Set();
+  const uniqueMusicVideos = allMusicVideos.filter(song => {
+    if (!uniqueNames.has(song.name)) {
+      uniqueNames.add(song.name);
+      return true;
+    }
+    return false;
+  });
+
+  return uniqueMusicVideos
+    .sort(() => 0.5 - Math.random())
+    .slice(0, 30);
+}
 
 export default function MusicVideos() {
-  const [songs, setSongs] = useState<MusicVideoSong[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { data: songs = [], isLoading } = useQuery({
+    queryKey: ['musicVideos'],
+    queryFn: getMusicVideos,
+    staleTime: 60 * 60 * 1000,
+    enabled: true
+  });
 
-  useEffect(() => {
-    async function fetchAllMusicVideos() {
-      const cacheKey = "musicVideos";
-      const cachedData = getCache(cacheKey);
+  if (isLoading) return null;
+  if (!songs.length) return null;
 
-      if (cachedData) {
-        setSongs(cachedData);
-        setLoading(false);
-      } else {
-        const allMusicVideos = await getSongsWithMusicVideos();
-        
-        const uniqueNames = new Set();
-        const uniqueMusicVideos = [];
-        
-        for (const song of allMusicVideos) {
-          if (!uniqueNames.has(song.name)) {
-            uniqueNames.add(song.name);
-            uniqueMusicVideos.push(song);
-          }
-        }
-
-        const randomizedMusicVideos = uniqueMusicVideos.sort(() => 0.5 - Math.random());
-
-        const musicVideos = randomizedMusicVideos.slice(0, 30);
-        
-        setSongs(musicVideos);
-        setLoading(false);
-        setCache(cacheKey, musicVideos, 3600000);
-      }
-    }
-  
-    fetchAllMusicVideos();
-  }, []);
-
-  if (loading) return null;
-
-  return songs && (
+  return (
     <ScrollButtons heading="Music Videos" id="MusicVideos">
       <div className="flex flex-row">
         {songs.map((song) => (
-          <MusicVideoCard key={song.id} song={song} />
+          <MemoizedMusicVideoCard key={song.id} song={song} />
         ))}
       </div>
     </ScrollButtons>

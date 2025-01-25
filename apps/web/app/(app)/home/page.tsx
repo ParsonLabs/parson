@@ -76,19 +76,19 @@ export default function Home() {
     if (!component.visible) return null;
     switch (component.id) {
       case "LandingCarousel":
-        return <LandingCarousel key={component.id} />;
+        return <LandingCarousel key="LandingCarousel" />;
       case "ListenAgain":
-        return <ListenAgain key={component.id} />;
+        return <ListenAgain key="ListenAgain" />;
       case "SimilarTo":
-        return <SimilarTo key={component.id} />;
+        return <SimilarTo key="SimilarTo" />;
       case "RecommendedAlbums":
-        return <RecommendedAlbums key={component.id} />;
+        return <RecommendedAlbums key="RecommendedAlbums" />;
       case "RandomSongs":
-        return <RandomSongs key={component.id} />;
+        return <RandomSongs key="RandomSongs" />;
       case "FromYourLibrary":
-        return <FromYourLibrary key={component.id} />;
+        return <FromYourLibrary key="FromYourLibrary" />;
       case "MusicVideos":
-        return <MusicVideos key={component.id} />;
+        return <MusicVideos key="MusicVideos" />;
       default:
         return null;
     }

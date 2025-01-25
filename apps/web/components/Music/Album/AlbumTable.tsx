@@ -116,7 +116,7 @@ export default function AlbumTable({ songs, album, artist }: PlaylistTableProps)
 
   return (
     <div className="pb-24">
-      <Table>
+      <div className="flex flex-col space-y-1">
         {orderedSongs.map(song => (
           <SongContextMenu
             song_name={song.name}
@@ -127,81 +127,83 @@ export default function AlbumTable({ songs, album, artist }: PlaylistTableProps)
             album_name={album.name}
             key={song.id}
           >            
-            <TableBody key={song.id}>
-              <TableRow
-                id={sanitizeSongName(song.name)}
-                onClick={() => handlePlay(album.cover_url, song, `${getBaseURL()}/api/stream/${encodeURIComponent(song.path)}?bitrate=${bitrate}`, artist)}
-                onMouseEnter={() => setIsHovered(song.id)}
-                onMouseLeave={() => setIsHovered(null)}
-                className={cn(
-                  "mx-2 rounded-lg",
-                  playingSongID === song.id ? "bg-[#1e1e1d] bg-gray-600/50" : ""
-                )}
-              >
-                <TableCell className="font-medium text-gray-300 relative">
-                  {isHovered === song.id || playingSongID === song.id ? (
-                    <div
-                      className="absolute inset-0 flex items-center justify-start pl-3"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        if (playingSongID === song.id) {
-                          togglePlayPause();
-                        } else {
-                          handlePlay(album.cover_url, song, `${getBaseURL()}/api/stream/${encodeURIComponent(song.path)}?bitrate=${bitrate}`, artist);
-                        }
-                      }}
-                    >
-                      {volume < 1 ? (
-                        isVolumeHovered ? (
-                          playingSongID === song.id && isPlaying ? (
-                            <Pause className="w-5 h-5 text-white" fill="white" strokeWidth={0} />
-                          ) : (
-                            <Play className="w-5 h-5 text-white" fill="white" strokeWidth={0} />
-                          )
-                        ) : (
-                          <Volume2
-                            className="w-5 h-5 text-white"
-                            onMouseEnter={() => setIsVolumeHovered(true)}
-                            onMouseLeave={() => setIsVolumeHovered(false)}
-                          />
-                        )
-                      ) : (
+            <div 
+              key={song.id}
+              onClick={() => handlePlay(album.cover_url, song, `${getBaseURL()}/api/stream/${encodeURIComponent(song.path)}?bitrate=${bitrate}`, artist)}
+              onMouseEnter={() => setIsHovered(song.id)}
+              onMouseLeave={() => setIsHovered(null)}
+              className={cn(
+                "grid grid-cols-[48px,1fr,auto] items-center p-2 rounded-lg transition-all duration-200 hover:bg-white/10 backdrop-blur-sm cursor-pointer group",
+                playingSongID === song.id ? "bg-white/20" : ""
+              )}
+            >
+              <div className="font-medium text-gray-200 relative w-12 flex items-center justify-center">
+                {isHovered === song.id || playingSongID === song.id ? (
+                  <div
+                    className="flex items-center justify-center"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (playingSongID === song.id) {
+                        togglePlayPause();
+                      } else {
+                        handlePlay(album.cover_url, song, `${getBaseURL()}/api/stream/${encodeURIComponent(song.path)}?bitrate=${bitrate}`, artist);
+                      }
+                    }}
+                  >
+                    {volume < 1 ? (
+                      isVolumeHovered ? (
                         playingSongID === song.id && isPlaying ? (
                           <Pause className="w-5 h-5 text-white" fill="white" strokeWidth={0} />
                         ) : (
                           <Play className="w-5 h-5 text-white" fill="white" strokeWidth={0} />
                         )
-                      )}
-                    </div>
-                  ) : (
-                    song.track_number
-                  )}
-                </TableCell>
-                <TableCell>
-                  <div className="overflow-hidden whitespace-nowrap text-overflow">
-                    <PlaylistCard song={song} coverURL={album.cover_url} artist={artist} album={album} showCover={false} showArtist={false} />
-                    <div className="text-gray-400">
-                      <Link href={`/artist?id=${artist.id}`}>
-                        {artist.name}
-                      </Link>
-                      {(contributingArtists[song.id]?.length ?? 0) > 0 && ', '}
-                      {(contributingArtists[song.id] ?? []).map((contributingArtist, index) => (
-                        <span key={contributingArtist.id}>
-                          <Link href={`/artist?id=${contributingArtist.id}`} onClick={(e) => e.stopPropagation()}>
-                            {contributingArtist.name}
-                          </Link>
-                          {index < (contributingArtists[song.id]?.length ?? 0) - 1 && ', '}
-                        </span>
-                      ))}
-                    </div>
+                      ) : (
+                        <Volume2
+                          className="w-5 h-5 text-white"
+                          onMouseEnter={() => setIsVolumeHovered(true)}
+                          onMouseLeave={() => setIsVolumeHovered(false)}
+                        />
+                      )
+                    ) : (
+                      playingSongID === song.id && isPlaying ? (
+                        <Pause className="w-5 h-5 text-white" fill="white" strokeWidth={0} />
+                      ) : (
+                        <Play className="w-5 h-5 text-white" fill="white" strokeWidth={0} />
+                      )
+                    )}
                   </div>
-                </TableCell>
-                <TableCell className="text-right">{formatDuration(song.duration)}</TableCell>
-              </TableRow>
-            </TableBody>
+                ) : (
+                  <span className="opacity-50 group-hover:opacity-0">{song.track_number}</span>
+                )}
+              </div>
+
+              <div className="min-w-0">
+                <div className="overflow-hidden whitespace-nowrap text-overflow">
+                  <PlaylistCard song={song} coverURL={album.cover_url} artist={artist} album={album} showCover={false} showArtist={false} />
+                  <div className="text-gray-400 text-sm">
+                    <Link href={`/artist?id=${artist.id}`} className="hover:underline">
+                      {artist.name}
+                    </Link>
+                    {(contributingArtists[song.id]?.length ?? 0) > 0 && ', '}
+                    {(contributingArtists[song.id] ?? []).map((contributingArtist, index) => (
+                      <span key={contributingArtist.id}>
+                        <Link href={`/artist?id=${contributingArtist.id}`} onClick={(e) => e.stopPropagation()} className="hover:underline">
+                          {contributingArtist.name}
+                        </Link>
+                        {index < (contributingArtists[song.id]?.length ?? 0) - 1 && ', '}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              <div className="text-right text-gray-400 text-sm px-4">
+                {formatDuration(song.duration)}
+              </div>
+            </div>
           </SongContextMenu>
         ))}
-      </Table>
       </div>
-  )
+    </div>
+  );
 }

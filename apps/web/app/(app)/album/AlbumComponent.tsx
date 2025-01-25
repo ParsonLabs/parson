@@ -1,7 +1,6 @@
 "use client";
 
 import Description from "@/components/Description/Description";
-import PageGradient from "@/components/Layout/PageGradient";
 import AlbumTable from "@/components/Music/Album/AlbumTable";
 import getBaseURL from "@/lib/Server/getBaseURL";
 import AllmusicLogo from "@/public/AllmusicLogo.png";
@@ -14,10 +13,8 @@ import WikidataLogo from "@/public/wikidata_logo.png";
 import WikipediaLogo from "@/public/wikipedia_logo.png";
 import { getAlbumInfo, getArtistInfo, LibraryAlbum } from "@music/sdk";
 import { Artist } from "@music/sdk/types";
-import { AspectRatio } from "@music/ui/components/aspect-ratio";
 import { Badge } from "@music/ui/components/badge";
 import { Button } from "@music/ui/components/button";
-import { ScrollArea, ScrollBar } from "@music/ui/components/scroll-area";
 import Image from "next/image";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
@@ -30,33 +27,35 @@ export default function AlbumComponent() {
   const [album, setAlbum] = useState<LibraryAlbum | null>(null);
   const [artist, setArtist] = useState<Artist | null>(null);
   const [contributingArtists, setContributingArtists] = useState<Artist[]>([]);
-  
+
   useEffect(() => {
     if (!id || typeof id !== "string") return;
-  
+
     const fetchAlbumInfo = async () => {
-      const album = await getAlbumInfo(id) as LibraryAlbum;
-  
+      const album = (await getAlbumInfo(id)) as LibraryAlbum;
+
       const artistData = album.artist_object;
       const contributingArtistIds = album.contributing_artists_ids;
 
       if (contributingArtistIds) {
-        const contributingArtistsPromises = contributingArtistIds.map((artistId) =>
-          getArtistInfo(artistId)
+        const contributingArtistsPromises = contributingArtistIds.map(
+          (artistId) => getArtistInfo(artistId)
         );
-    
-        const contributingArtistsData = await Promise.all(contributingArtistsPromises);
+
+        const contributingArtistsData = await Promise.all(
+          contributingArtistsPromises
+        );
         setContributingArtists(contributingArtistsData);
       } else {
-        setContributingArtists([])
+        setContributingArtists([]);
       }
-  
+
       setAlbum(album);
       setArtist(artistData);
 
       // setContributingArtists(contributingArtistsData);
     };
-  
+
     fetchAlbumInfo();
   }, [id]);
 
@@ -68,6 +67,11 @@ export default function AlbumComponent() {
     album.cover_url.length === 0
       ? "/snf.png"
       : `${getBaseURL()}/image/${encodeURIComponent(album.cover_url)}?raw=true`;
+
+  const artistIconURL =
+    artist.icon_url.length === 0
+      ? "/snf.png"
+      : `${getBaseURL()}/image/${encodeURIComponent(artist.icon_url)}?raw=true`;
 
   function formatDuration(duration: number) {
     const hours = Math.floor(duration / 3600);
@@ -88,241 +92,90 @@ export default function AlbumComponent() {
     (total, song) => total + song.duration,
     0
   );
-  let releaseDate = new Date(album.first_release_date).toLocaleString(
-    "default",
-    { month: "long", year: "numeric" }
-  );
+
+  let releaseDate = "Release date unknown";
+  if (
+    album.first_release_date &&
+    !isNaN(new Date(album.first_release_date).getTime())
+  ) {
+    releaseDate = new Date(album.first_release_date).toLocaleString("default", {
+      month: "long",
+      year: "numeric",
+    });
+  }
+
+  const genres = [
+    ...(album.release_group_album?.genres || []),
+    ...(album.release_album?.genres || []),
+  ];
+  const relationships = [
+    ...(album.release_group_album?.relationships || []),
+    ...(album.release_album?.relationships || []),
+  ];
 
   return (
-    <div className="flex flex-col md:flex-row h-full">
-      <Image
-        className="bg-cover bg-center blur-3xl w-full h-full"
-        src={albumCoverURL}
-        height={800}
-        width={800}
-        alt={`${album.name} Cover URL`}
+    <div className="relative min-h-screen">
+      <div className="fixed inset-0 bg-neutral-900" />
+
+      <div
+        className="fixed inset-0 opacity-30 will-change-transform"
         style={{
-          position: "absolute",
-          top: 0,
-          left: 0,
-          width: "100%",
-          height: "100%",
-          filter: "blur(80px) brightness(60%)",
-          objectFit: "cover",
-          objectPosition: "center",
+          backgroundImage: `url(${albumCoverURL})`,
+          backgroundSize: "cover",
+          backgroundPosition: "center",
+          filter: "blur(140px)",
+          transform: "translateZ(0)",
         }}
       />
-      <div className="flex-1 h-full overflow-hidden relative">
-        <PageGradient imageSrc={albumCoverURL} />
-        <div className="flex flex-col md:flex-row items-start my-8">
-          <ScrollArea className="flex flex-col items-center w-full md:w-1/4 h-full">
-            <div className="flex-shrink-0 w-full max-w-xs mx-auto">
-              <div className="relative" style={{ paddingBottom: '100%' }}>
+
+      <div className="relative z-10 px-4 md:px-8 pt-8 pb-8 backdrop-blur-sm">
+        <div className="max-w-8xl mx-auto">
+          <div className="flex flex-col items-center md:items-start md:flex-row gap-6 mb-6">
+            <div className="flex-shrink-0 flex justify-center md:justify-start">
+              <div className="relative w-64 md:w-[300px] aspect-square shadow-2xl">
                 <Image
                   src={albumCoverURL}
-                  alt={`${album.name} Image`}
+                  alt={`${album.name} Cover`}
                   layout="fill"
-                  className="absolute top-0 left-0 w-full h-full object-cover rounded"
+                  className="rounded-lg object-cover"
+                  priority
                 />
               </div>
             </div>
-            <div className="md:pl-4 flex-grow text-center mt-4">
-              <h1 className="text-4xl">{album.name}</h1>
-              {album.release_group_album?.rating.value !== 0 && renderStars(album.release_group_album?.rating.value || 0)}
-              <div className="flex flex-col gap-2 justify-center items-center mt-4 pb-4">
-                <Link href={`/artist?id=${artist.id}`} className="flex items-center">
-                  <Image
-                    src={artist.icon_url.length === 0 ? "/snf.png" : `${getBaseURL()}/image/${encodeURIComponent(artist.icon_url)}`}
-                    width={20}
-                    height={20}
-                    alt={`${artist.name} Profile Picture`}
-                    className="rounded-full"
-                    />
-                  <p className="text-xs text-gray-200 ml-2">
-                    {album.release_group_album?.artist_credit.map((artist) => (
-                      <span key={artist.musicbrainz_id}>{artist.name}</span>
-                    ))}
-                    {album.release_album?.information.artist_credits.map((artist) => (
-                      <span key={artist.musicbrainz_id}>{artist.name}</span>
-                    ))}
-                  </p>
-                </Link>
-                <div className="flex flex-row gap-2 justify-center items-center">
-                  <p className="text-xs text-gray-400">{releaseDate}</p>
-                  <p className="text-xs text-gray-400">•</p>
-                  <p className="text-xs text-gray-400">{album.songs.length} Songs</p>
-                  <p className="text-xs text-gray-400">•</p>
-                  <p className="text-xs text-gray-400">{formatDuration(totalDuration)}</p>
-                </div>
-              </div>
-              <p>
-                {album.release_group_album?.genres.map((tag) => (
-                  <Badge
-                    key={tag.count}
-                    variant="outline"
-                    className="mb-2 mr-1"
-                  >
-                    {tag.name}
-                  </Badge>
-                ))}
-                {album.release_album?.genres.map((tag) => (
-                  <Badge
-                    key={tag.count}
-                    variant="outline"
-                    className="mb-2 mr-1"
-                  >
-                    {tag.name}
-                  </Badge>
-                ))}
-              </p>
-              <Link
-                href={
-                  album.release_group_album
-                    ? `https://musicbrainz.org/release-group/${album.musicbrainz_id}`
-                    : `https://musicbrainz.org/release/${album.musicbrainz_id}`
-                }
-                target="_blank"
-              >
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-8 w-8 hover:bg-inherit"
-                >
-                  <Image
-                    src={MusicbrainzLogo}
-                    alt="MusicBrainz Logo"
-                    height={200}
-                    width={200}
-                  />
-                </Button>
-              </Link>
-              {album.release_group_album?.relationships.map((relationship) => (
-                <Link
-                  key={relationship.musicbrainz_id}
-                  href={relationship.url}
-                  target="_blank"
-                >
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-8 w-8 hover:bg-inherit m-1"
-                  >
+
+            <div className="flex flex-col justify-end text-center md:text-left">
+              <h1 className="text-4xl md:text-7xl font-bold mb-4 text-white">
+                {album.name}
+              </h1>
+              <div className="flex items-center justify-center md:justify-start gap-2 mb-4">
+                <Link href={`/artist?id=${artist.id}`}>
+                  <div className="flex items-center hover:opacity-80 transition">
                     <Image
-                      src={
-                        relationship.url.includes("discogs")
-                          ? DiscogsLogo
-                          : relationship.url.includes("wikidata")
-                            ? WikidataLogo
-                            : relationship.url.includes("wikipedia")
-                              ? WikipediaLogo
-                            : relationship.url.includes("allmusic")
-                              ? AllmusicLogo
-                            : relationship.url.includes("rateyourmusic")
-                              ? RateyourmusicLogo
-                              : relationship.url.includes("pitchfork")
-                                ? PitchforkLogo
-                                : relationship.url.includes("bbc")
-                                  ? BBCLogo
-                                  : MusicbrainzLogo
-                      }
-                      alt={
-                        relationship.url.includes("discogs")
-                          ? "Discogs Logo"
-                          : relationship.url.includes("wikidata")
-                            ? "Wikidata Logo"
-                            : relationship.url.includes("wikipedia")
-                              ? "Wikipedia Logo"
-                            : relationship.url.includes("allmusic")
-                              ? "AllMusic Logo"
-                            : relationship.url.includes("musicmoz")
-                              ? "MusicMoz Logo"
-                            : relationship.url.includes("rateyourmusic")
-                              ? "RateYourMusic Logo"
-                            : relationship.url.includes("pitchfork")
-                              ? "Pitchfork Logo"
-                            : relationship.url.includes("bbc")
-                              ? "BBC Logo"
-                            : "MusicBrainz Logo"
-                      }
-                      className="w-8 h-8"
-                    />
-                  </Button>
-                </Link>
-              ))}
-              {album.release_album?.relationships.map((relationship) => (
-                <Link
-                  key={relationship.musicbrainz_id}
-                  href={relationship.url}
-                  target="_blank"
-                >
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-8 w-8 hover:bg-inherit m-1"
-                  >
-                    <Image
-                      src={
-                        relationship.url.includes("discogs")
-                          ? DiscogsLogo
-                          : relationship.url.includes("wikidata")
-                            ? WikidataLogo
-                            : relationship.url.includes("wikipedia")
-                              ? WikipediaLogo
-                            : relationship.url.includes("allmusic")
-                              ? AllmusicLogo
-                            : relationship.url.includes("rateyourmusic")
-                              ? RateyourmusicLogo
-                            : relationship.url.includes("pitchfork")
-                              ? PitchforkLogo
-                            : relationship.url.includes("bbc")
-                              ? BBCLogo
-                            : MusicbrainzLogo
-                      }
-                      alt={
-                        relationship.url.includes("discogs")
-                          ? "Discogs Logo"
-                          : relationship.url.includes("wikidata")
-                            ? "Wikidata Logo"
-                            : relationship.url.includes("wikipedia")
-                              ? "Wikipedia Logo"
-                            : relationship.url.includes("allmusic")
-                              ? "AllMusic Logo"
-                            : relationship.url.includes("musicmoz")
-                              ? "MusicMoz Logo"
-                            : relationship.url.includes("rateyourmusic")
-                              ? "RateYourMusic Logo"
-                            : relationship.url.includes("pitchfork")
-                              ? "Pitchfork Logo"
-                            : relationship.url.includes("bbc")
-                              ? "BBC Logo"
-                            : "MusicBrainz Logo"
-                      }
-                      className="w-8 h-8"
-                    />
-                  </Button>
-                </Link>
-              ))}
-            </div>
-            <Description description={album.description}/>
-            <div className="grid grid-cols-1 gap-4 mt-4">
-              {contributingArtists.map(artist => (
-                <Link href={`/artist/?id=${artist.id}`} key={artist.id}>
-                  <div key={artist.id} className="flex items-center">
-                    <Image
-                      src={artist.icon_url.length === 0 ? "/snf.png" : `${getBaseURL()}/image/${encodeURIComponent(artist.icon_url)}`}
-                      alt={`${artist.name} Image`}
-                      height={70}
-                      width={70}
+                      src={artistIconURL}
+                      width={28}
+                      height={28}
+                      alt={artist.name}
                       className="rounded-full"
-                      />
-                    <p className="ml-4 text-gray-500 text-xl">{artist.name}</p>
+                    />
+                    <span className="ml-2 text-lg text-white font-medium">
+                      {artist.name}
+                    </span>
                   </div>
                 </Link>
-              ))}
+              </div>
+
+              <div className="flex flex-wrap items-center justify-center md:justify-start gap-2 text-sm text-gray-300">
+                <span>{releaseDate}</span>
+                <span>•</span>
+                <span>{album.songs.length} Songs</span>
+                <span>•</span>
+                <span>{formatDuration(totalDuration)}</span>
+              </div>
             </div>
-          </ScrollArea>
-          <ScrollArea className="flex-grow md:ml-8 h-full pt-10">
-            <div className="p-8 w-full">
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-[1fr,300px] gap-6">
+            <div className="bg-black/20 rounded-xl p-4">
               <AlbumTable
                 album={album}
                 songs={album.songs}
@@ -330,8 +183,134 @@ export default function AlbumComponent() {
                 key={album.id}
               />
             </div>
-            <ScrollBar orientation="vertical" />
-          </ScrollArea>
+
+            <div className="space-y-6">
+              {genres.length > 0 && (
+                <div className="bg-black/20 rounded-xl p-4">
+                  <h3 className="text-lg font-semibold mb-3 text-white">
+                    Genres
+                  </h3>
+                  <div className="flex flex-wrap gap-2">
+                    {genres.map((tag) => (
+                      <Badge
+                        key={tag.name}
+                        variant="secondary"
+                        className="bg-white/10 hover:bg-white/20 transition"
+                      >
+                        {tag.name}
+                      </Badge>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {relationships.length > 0 && (
+                <div className="bg-black/20 rounded-xl p-4">
+                  <h3 className="text-lg font-semibold mb-3 text-white">
+                    Links
+                  </h3>
+                  <div className="flex flex-wrap gap-2">
+                    {relationships.map((relationship) => (
+                      <Link
+                        key={relationship.musicbrainz_id}
+                        href={relationship.url}
+                        target="_blank"
+                      >
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 hover:bg-inherit m-1"
+                        >
+                          <Image
+                            src={
+                              relationship.url.includes("discogs")
+                                ? DiscogsLogo
+                                : relationship.url.includes("wikidata")
+                                  ? WikidataLogo
+                                  : relationship.url.includes("wikipedia")
+                                    ? WikipediaLogo
+                                    : relationship.url.includes("allmusic")
+                                      ? AllmusicLogo
+                                      : relationship.url.includes(
+                                            "rateyourmusic"
+                                          )
+                                        ? RateyourmusicLogo
+                                        : relationship.url.includes("pitchfork")
+                                          ? PitchforkLogo
+                                          : relationship.url.includes("bbc")
+                                            ? BBCLogo
+                                            : MusicbrainzLogo
+                            }
+                            alt={
+                              relationship.url.includes("discogs")
+                                ? "Discogs Logo"
+                                : relationship.url.includes("wikidata")
+                                  ? "Wikidata Logo"
+                                  : relationship.url.includes("wikipedia")
+                                    ? "Wikipedia Logo"
+                                    : relationship.url.includes("allmusic")
+                                      ? "AllMusic Logo"
+                                      : relationship.url.includes("musicmoz")
+                                        ? "MusicMoz Logo"
+                                        : relationship.url.includes(
+                                              "rateyourmusic"
+                                            )
+                                          ? "RateYourMusic Logo"
+                                          : relationship.url.includes(
+                                                "pitchfork"
+                                              )
+                                            ? "Pitchfork Logo"
+                                            : relationship.url.includes("bbc")
+                                              ? "BBC Logo"
+                                              : "MusicBrainz Logo"
+                            }
+                            className="w-8 h-8"
+                          />
+                        </Button>
+                      </Link>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {contributingArtists.length > 0 && (
+                <div className="bg-black/20 rounded-xl p-4">
+                  <h3 className="text-lg font-semibold mb-3 text-white">
+                    Featured Artists
+                  </h3>
+                  <div className="space-y-3">
+                    {contributingArtists.map((artist) => (
+                      <Link href={`/artist/?id=${artist.id}`} key={artist.id}>
+                        <div className="flex items-center gap-3 hover:bg-white/10 p-2 rounded-lg transition">
+                          <Image
+                            src={
+                              artist.icon_url.length === 0
+                                ? "/snf.png"
+                                : `${getBaseURL()}/image/${encodeURIComponent(artist.icon_url)}?raw=true`
+                            }
+                            alt={artist.name}
+                            height={40}
+                            width={40}
+                            className="rounded-full"
+                          />
+                          <span className="text-gray-200">{artist.name}</span>
+                        </div>
+                      </Link>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {album.description && (
+                <div className="bg-black/20 rounded-xl p-4">
+                  <h3 className="text-lg font-semibold mb-3 text-white">
+                    About
+                  </h3>
+                  <Description description={album.description} />
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       </div>
     </div>

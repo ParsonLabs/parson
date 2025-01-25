@@ -48,7 +48,7 @@ function sanitizeSongName(songName: string) {
   return songName.replace(/\s+/g, '_').replace(/[^\w-]+/g, '');
 }
 
-export function LandingCarouselSkeleton() {
+const LandingCarouselSkeleton: React.FC = () => {
   return (
     <div className="relative p-5 flex items-center" style={{ height: '300px' }}>
       <Skeleton
@@ -63,7 +63,9 @@ export function LandingCarouselSkeleton() {
       </div>
     </div>
   );
-}
+};
+
+LandingCarouselSkeleton.displayName = 'LandingCarouselSkeleton';
 
 const AlbumImage = memo(({ src, alt }: { src: string; alt: string }) => (
   <Image
@@ -76,6 +78,7 @@ const AlbumImage = memo(({ src, alt }: { src: string; alt: string }) => (
     style={{ maxWidth: '200px', maxHeight: '200px' }}
   />
 ));
+AlbumImage.displayName = 'AlbumImage';
 
 const BackgroundImage = memo(({ src, alt }: { src: string; alt: string }) => (
   <Image
@@ -88,8 +91,9 @@ const BackgroundImage = memo(({ src, alt }: { src: string; alt: string }) => (
     style={{ filter: 'blur(12px) brightness(50%)', zIndex: '1', objectFit: 'cover', objectPosition: 'center' }}
   />
 ));
+BackgroundImage.displayName = 'BackgroundImage';
 
-export default function LandingCarousel() {
+const LandingCarousel: React.FC = () => {
   const { data, isLoading } = useQuery({
     queryKey: ['landingCarousel'],
     queryFn: getRandomAlbumAndSongs,
@@ -156,4 +160,8 @@ export default function LandingCarousel() {
       </div>
     </div>
   );
-}
+};
+
+LandingCarousel.displayName = 'LandingCarousel';
+
+export default LandingCarousel;

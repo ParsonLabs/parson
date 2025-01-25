@@ -19,7 +19,7 @@ export default function NavBar() {
   const { toggleSidebar } = useSidebar()
 
   return (
-    <nav className={`fixed w-full top-0 p-4 flex items-center justify-between gap-2 box-border h-16 transition-colors duration-200 ${onTopOfPage || areLyricsVisible ? "bg-transparent" : "bg-black border-b border-gray-500"}  ${isSearchActive && 'items-stretch'}`}>
+    <nav className={`fixed w-full top-0 p-4 flex items-center justify-between gap-2 box-border h-16 transition-colors duration-100 ${onTopOfPage || areLyricsVisible ? "bg-transparent" : "bg-black border-b border-gray-500"}  ${isSearchActive && 'items-stretch'}`}>
       <div className={`${isSearchActive ? 'hidden' : 'flex'} md:flex items-center`}>
         <Button onClick={toggleSidebar} variant="ghost" className="pr-4">
           <Menu />

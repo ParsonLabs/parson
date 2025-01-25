@@ -18,7 +18,9 @@ function capitalizeWords(str: string): string {
 }
 
 const MemoizedAlbumCard = memo(AlbumCard);
-const MemoizedGenreButton = memo(({ genre, backgroundColor, albumCover, onSelect }: {
+MemoizedAlbumCard.displayName = 'MemoizedAlbumCard';
+
+const GenreButton = ({ genre, backgroundColor, albumCover, onSelect }: {
   genre: string;
   backgroundColor: string;
   albumCover: string;
@@ -43,9 +45,13 @@ const MemoizedGenreButton = memo(({ genre, backgroundColor, albumCover, onSelect
       />
     )}
   </button>
-));
+);
+GenreButton.displayName = 'GenreButton';
 
-export default function ExplorePage() {
+const MemoizedGenreButton = memo(GenreButton);
+MemoizedGenreButton.displayName = 'MemoizedGenreButton';
+
+function ExplorePage() {
   const [selectedGenre, setSelectedGenre] = useState<string | null>(null);
 
   const { data: genres = [] } = useQuery({
@@ -171,3 +177,6 @@ export default function ExplorePage() {
     </>
   );
 }
+ExplorePage.displayName = 'ExplorePage';
+
+export default ExplorePage;

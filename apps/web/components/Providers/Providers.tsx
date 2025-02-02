@@ -12,7 +12,8 @@ import { ThemeProvider } from "./ThemeProvider";
 import { SlowedReverbProvider } from "./SlowedReverbProvider";
 import { LayoutConfigProvider } from "./LayoutConfigContext";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { createAuthMiddleware } from "../Authentication/AuthMiddleware";
+// import { createAuthMiddleware } from "../Authentication/AuthMiddleware";
+import AuthProvider from "./AuthProvider";
 
 interface ProvidersProps {
   children: ReactNode;
@@ -28,14 +29,15 @@ export default function Providers({ children }: ProvidersProps) {
     },
   });
 
-  queryClient.setDefaultOptions({
-    mutations: {
-      onMutate: createAuthMiddleware(queryClient),
-    },
-    queries: {
-      queryFn: createAuthMiddleware(queryClient),
-    },
-  });
+  // queryClient.setDefaultOptions({
+  //   mutations: {
+  //     onMutate: createAuthMiddleware(queryClient),
+  //   },
+  //   queries: {
+  //     queryFn: createAuthMiddleware(queryClient),
+  //   },
+  // });
+
   return (
     <ThemeProvider defaultTheme="dark">
       <QueryClientProvider client={queryClient}>

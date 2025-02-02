@@ -1,4 +1,3 @@
-import SplashScreen from "@/components/Layout/SplashScreen";
 import "@music/ui/globals.css";
 import { cn } from "@music/ui/lib/utils";
 import { Metadata, Viewport } from "next";

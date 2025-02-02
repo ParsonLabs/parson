@@ -1,11 +1,8 @@
 "use client";
 
 import pl from "@/assets/pl-tp.png";
-import { useSession } from "@/components/Providers/AuthProvider";
 import ServerSelectIcon from "@/components/Setup/Server/ServerSelectIcon";
-import getSession from "@/lib/Authentication/JWT/getSession";
-import { zodResolver } from '@hookform/resolvers/zod';
-import { getServerInfo } from "@music/sdk";
+import { zodResolver } from "@hookform/resolvers/zod";
 import { ServerInfo } from "@music/sdk/types";
 import { Button } from '@music/ui/components/button';
 import {
@@ -19,7 +16,7 @@ import {
 import { Input } from '@music/ui/components/input';
 import { Loader2Icon } from "lucide-react";
 import Image from "next/image";
-import { useRouter, useSelectedLayoutSegment } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { SubmitHandler, useForm } from 'react-hook-form';
 import * as z from 'zod';
@@ -31,71 +28,46 @@ const schema = z.object({
 type FormData = z.infer<typeof schema>;
 
 export default function MainPage() {
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [showServerURLInput, setShowServerURLInput] = useState(false);
   const [showServerSelect, setShowServerSelect] = useState(false);
   const { push } = useRouter();
-  const { session, isLoading } = useSession()
 
   useEffect(() => {
-      if (process.env.LOCAL_APP) {
+    const checkServerUrl = async () => {
+      setLoading(true);
+
+      try {
+        const storedServer = localStorage.getItem("server");
+        const response = await fetch(
+          `${(storedServer && JSON.parse(storedServer).local_address) || window.location.origin}/api/s/server/info`
+        );
+        let serverInfo: ServerInfo = await response.json();
+
+        localStorage.setItem("server", JSON.stringify(serverInfo));
+
+        if (serverInfo.product_name && serverInfo.startup_wizard_completed) {
           push("/home");
-          return;
+        } else if (!serverInfo.startup_wizard_completed) {
+          push("/setup/library");
+        } else {
+          push("/setup");
+        }
+      } catch (error) {
+        console.error("Error checking server URL:", error);
+        const storedServer = localStorage.getItem("server");
+        if (storedServer) {
+          setShowServerSelect(true);
+        } else {
+          setShowServerURLInput(true);
+        }
+      } finally {
+        setLoading(false);
       }
-  
-      const checkServerUrl = async () => {
-          if (isLoading) return;
-          
-          setLoading(true);
-  
-          try {
-              if (session) {
-                  const storedServer = localStorage.getItem("server");
-                  if (storedServer) {
-                      const serverInfo = JSON.parse(storedServer);
-                      if (serverInfo.startup_wizard_completed) {
-                          push("/home");
-                          return;
-                      }
-                  }
-              }
-  
-              const storedServer = localStorage.getItem("server");
-              const response = await fetch(
-                  `${(storedServer && JSON.parse(storedServer).local_address) || window.location.origin}/api/s/server/info`
-              );
-              let serverInfo: ServerInfo = await response.json();
-  
-              localStorage.setItem("server", JSON.stringify(serverInfo));
-  
-              if (!isLoading) {
-                  if (serverInfo.product_name && serverInfo.startup_wizard_completed) {
-                      if (session) {
-                          push("/home");
-                      } else {
-                          push("/login");
-                      }
-                  } else if (!serverInfo.startup_wizard_completed && session) {
-                      push("/setup/library");
-                  } else {
-                      push("/setup");
-                  }
-              }
-          } catch (error) {
-              console.error("Error checking server URL:", error);
-              const storedServer = localStorage.getItem("server");
-              if (storedServer) {
-                  setShowServerSelect(true);
-              } else {
-                  setShowServerURLInput(true);
-              }
-          } finally {
-              setLoading(false);
-          }
-      };
-  
-      checkServerUrl();
-  }, [push, session, isLoading]);
+    };
+
+    checkServerUrl();
+  }, [push]);
 
   const form = useForm<FormData>({
     resolver: zodResolver(schema),
@@ -114,19 +86,14 @@ export default function MainPage() {
         credentials: 'include'
       });
 
-      const serverInfo = await response.json()
+      const serverInfo = await response.json();
 
       if (serverInfo.product_name && serverInfo.startup_wizard_completed) {
         localStorage.setItem("server", JSON.stringify(serverInfo));
-
-        if (session) {
-          push("/home");
-        } else {
-          push("/login");
-        }
+        push("/home");
       } else {
         localStorage.setItem("server", JSON.stringify({ local_address: data.serverUrl }));
-        if (!serverInfo.startup_wizard_completed && session) {
+        if (!serverInfo.startup_wizard_completed) {
           push("/setup/library");
         } else {
           push("/setup");
@@ -138,18 +105,6 @@ export default function MainPage() {
       setLoading(false);
     }
   };
-
-  if (loading) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-screen bg-zinc-950 text-white">
-        <div className="flex items-center mb-4">
-          <Image src={pl} alt="ParsonLabs Logo" width={64} height={64} className="mr-4" />
-          <p className="text-6xl font-bold">ParsonLabs Music</p>
-        </div>
-        <Loader2Icon className="animate-spin w-12 h-12 mt-4" stroke="#4338ca" />
-      </div>
-    );
-  }
 
   if (showServerSelect) {
     return (

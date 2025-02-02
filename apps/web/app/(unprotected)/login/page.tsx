@@ -1,6 +1,7 @@
 "use client";
 
 import { useSession } from "@/components/Providers/AuthProvider";
+import getSession from "@/lib/Authentication/JWT/getSession";
 import getBaseURL from "@/lib/Server/getBaseURL";
 import { zodResolver } from '@hookform/resolvers/zod';
 import { getServerInfo } from "@music/sdk";
@@ -31,7 +32,7 @@ export default function Login() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [serverInfo, setServerInfo] = useState<{ login_disclaimer?: string } | null>(null);
-  const { refreshSession } = useSession();
+  const { setSession } = useSession();
   
   const form = useForm<FormData>({
     resolver: zodResolver(schema),
@@ -68,15 +69,10 @@ export default function Login() {
       });
   
       const result = await response.json();
-  
-      if (response.ok && result.status) {
-        await new Promise(resolve => setTimeout(resolve, 100));
-        await refreshSession();
-        await new Promise(resolve => setTimeout(resolve, 100));
-        push("/home");
-      } else {
-        setErrorMessage(result.message || 'Authentication failed');
-      }
+
+      const newSession = await getSession()
+      setSession(newSession)
+      push("/home")
     } catch (error) {
       setErrorMessage('An error occurred during login');
     } finally {

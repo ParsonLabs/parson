@@ -1,4 +1,4 @@
-import axios from './axios';
+import axios, { isAxiosError } from './axios';
 
 interface AuthData {
   username: string;
@@ -46,13 +46,23 @@ interface TokenValidationResponse {
   message?: string;
 }
 
-/**
- * Check if the current token is valid.
- * @returns {Promise<TokenValidationResponse>} - A promise that resolves to the validation response.
- */
 export async function isValid(): Promise<TokenValidationResponse> {
-  const response = await axios.get('/auth/is-valid');
-  return response.data;
+  try {
+    const response = await axios.get('/auth/is-valid');
+    return response.data;
+  } catch (error) {
+    if (isAxiosError(error)) {
+      console.error("Token validation error:", error.response?.data);
+      return {
+        status: false,
+        message: error.response?.data?.message || "Token validation failed"
+      };
+    }
+    return {
+      status: false,
+      message: "Token validation failed"
+    };
+  }
 }
 
 /**
@@ -70,8 +80,28 @@ export async function login(data: AuthData): Promise<ResponseAuthData> {
  * @returns {Promise<ResponseAuthData>} - A promise that resolves to the response data.
  */
 export async function refreshToken(): Promise<ResponseAuthData> {
-  const response = await axios.post('/auth/refresh');
-  return response.data;
+  try {
+    const response = await axios.post('/auth/refresh');
+    return {
+      status: true,
+      token: response.data.token,
+      message: 'Token refreshed successfully'
+    };
+  } catch (error) {
+    if (isAxiosError(error)) {
+      console.error("Refresh Token Error:", error.response?.data);
+      return {
+        status: false,
+        token: '',
+        message: error.response?.data?.message || "Token refresh failed"
+      };
+    }
+    return {
+      status: false,
+      token: '',
+      message: "Token refresh failed"
+    };
+  }
 }
 
 /**

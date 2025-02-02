@@ -1,18 +1,38 @@
-import axios, { AxiosError, AxiosHeaders, AxiosInstance, AxiosRequestConfig, AxiosResponse, InternalAxiosRequestConfig } from 'axios';
+import axios, { 
+  AxiosError, 
+  AxiosInstance, 
+  AxiosRequestConfig, 
+  AxiosResponse, 
+  InternalAxiosRequestConfig 
+} from 'axios';
 import { deleteCookie, getCookie, setCookie } from 'cookies-next';
 import { refreshToken } from './authentication';
 import { jwtDecode } from 'jwt-decode';
 
+export { isAxiosError } from "axios"
+
+const MAX_RETRY_ATTEMPTS = 3;
+const TIMEOUT_MS = 10000;
+const REFRESH_THRESHOLD_SECONDS = 30;
+
+interface CustomAxiosRequestConfig extends AxiosRequestConfig {
+  _retry?: boolean;
+  _retryCount?: number;
+  _errorType?: string;
+}
+interface TokenResponse {
+  status: boolean;
+  token: string;
+}
+
+let isRefreshing = false;
+let refreshSubscribers: ((token: string) => void)[] = [];
 let localAddress = '';
+
 if (typeof window !== 'undefined') {
   const server = JSON.parse(window.localStorage.getItem('server') || '{}');
   localAddress = server.local_address || window.location.origin;
 }
-
-const MAX_RETRY_ATTEMPTS = 3;
-const TIMEOUT_MS = 10000;
-let isRefreshing = false;
-let refreshSubscribers: ((token: string) => void)[] = [];
 
 const axiosInstance = axios.create({
   baseURL: `${localAddress}/api`,
@@ -20,67 +40,68 @@ const axiosInstance = axios.create({
   timeout: TIMEOUT_MS
 });
 
-interface CustomAxiosRequestConfig extends AxiosRequestConfig {
-  _retry?: boolean;
-  _retryCount?: number;
-}
+const redirectToLogin = () => {
+  deleteCookie('plm_accessToken');
+  deleteCookie('plm_refreshToken');
+  window.location.href = '/login';
+};
 
-// Helper to add token refresh subscriber
 const addRefreshSubscriber = (callback: (token: string) => void) => {
   refreshSubscribers.push(callback);
-}
+};
 
-// Helper to notify subscribers
 const onRefreshed = (token: string) => {
   refreshSubscribers.forEach(callback => callback(token));
   refreshSubscribers = [];
-}
+};
+
+const handleTokenRefresh = async () => {
+  try {
+    const response = await refreshToken();
+    if (response?.status && response.token) {
+      setCookie('plm_accessToken', response.token);
+      return response.token;
+    }
+    redirectToLogin();
+    return null;
+  } catch (error) {
+    console.error('Token refresh failed:', error);
+    redirectToLogin();
+    return null;
+  }
+};
 
 const setupInterceptors = (instance: AxiosInstance): void => {
   instance.interceptors.request.use(async (config: InternalAxiosRequestConfig) => {
-    const accessToken = getCookie('plm_accessToken');
-    const refreshTokenValue = getCookie('plm_refreshToken');
-
     if (config.url?.includes('refresh')) {
       return config;
     }
 
+    const accessToken = getCookie('plm_accessToken');
+    const refreshTokenValue = getCookie('plm_refreshToken');
+
     try {
       if (!accessToken && refreshTokenValue && !isRefreshing) {
-        // Try refresh first if no access token but refresh token exists
         isRefreshing = true;
-        try {
-          const response = await refreshToken();
-          if (response?.token) {
-            setCookie('plm_accessToken', response.token);
-            config.headers.set('Authorization', `Bearer ${response.token}`);
-            isRefreshing = false;
-            return config;
-          }
-        } catch (error) {
-          console.error('Initial refresh failed:', error);
-        } finally {
-          isRefreshing = false;
+        const newToken = await handleTokenRefresh();
+        isRefreshing = false;
+        if (newToken) {
+          config.headers.set('Authorization', `Bearer ${newToken}`);
         }
+        return config;
       }
 
       if (accessToken) {
         const decoded = jwtDecode<{ exp: number }>(accessToken.toString());
         const currentTime = Math.floor(Date.now() / 1000);
         
-        if (decoded.exp && (decoded.exp - currentTime) < 30 && refreshTokenValue && !isRefreshing) {
+        if (decoded.exp && (decoded.exp - currentTime) < REFRESH_THRESHOLD_SECONDS && 
+            refreshTokenValue && !isRefreshing) {
           isRefreshing = true;
-          try {
-            const response = await refreshToken();
-            if (response?.token) {
-              setCookie('plm_accessToken', response.token);
-              config.headers.set('Authorization', `Bearer ${response.token}`);
-            }
-          } catch (error) {
-            console.error('Pre-emptive refresh failed:', error);
-            // Don't delete cookies here, let the response interceptor handle it
-          } finally {
-            isRefreshing = false;
+          const newToken = await handleTokenRefresh();
+          isRefreshing = false;
+          if (newToken) {
+            config.headers.set('Authorization', `Bearer ${newToken}`);
           }
         } else {
           config.headers.set('Authorization', `Bearer ${accessToken}`);
@@ -88,8 +109,8 @@ const setupInterceptors = (instance: AxiosInstance): void => {
       }
     } catch (error) {
       console.error('Token validation failed:', error);
-      // Don't delete cookies here, attempt refresh in response interceptor
     }
+    
     return config;
   });
 
@@ -97,9 +118,20 @@ const setupInterceptors = (instance: AxiosInstance): void => {
     (response: AxiosResponse) => response,
     async (error: AxiosError) => {
       const originalRequest = error.config as CustomAxiosRequestConfig;
-      const refreshTokenValue = getCookie('plm_refreshToken');
       
-      if (error.response?.status === 401 && !originalRequest._retry && refreshTokenValue) {
+      if (originalRequest.url?.includes('auth/refresh') || 
+          originalRequest.url?.includes('auth/is-valid')) {
+        return Promise.reject(error);
+      }
+
+      if (error.response?.status === 401) {
+        const refreshTokenValue = getCookie('plm_refreshToken');
+        
+        if (!refreshTokenValue) {
+          redirectToLogin();
+          return Promise.reject(error);
+        }
+      
         if (isRefreshing) {
           return new Promise(resolve => {
             addRefreshSubscriber((token: string) => {
@@ -111,32 +143,19 @@ const setupInterceptors = (instance: AxiosInstance): void => {
             });
           });
         }
-
-        originalRequest._retry = true;
+      
         isRefreshing = true;
-        
-        try {
-          const refreshResult = await refreshToken();
-          if (refreshResult?.token) {
-            setCookie('plm_accessToken', refreshResult.token);
-            onRefreshed(refreshResult.token);
-            originalRequest.headers = {
-              ...originalRequest.headers,
-              Authorization: `Bearer ${refreshResult.token}`
-            };
-            return axiosInstance(originalRequest);
-          }
-        } catch (refreshError) {
-          console.error('Refresh failed, clearing tokens:', refreshError);
-        } finally {
-          isRefreshing = false;
-        }
+        const newToken = await handleTokenRefresh();
+        isRefreshing = false;
 
-        // Only delete cookies if refresh failed
-        deleteCookie('plm_accessToken');
-        deleteCookie('plm_refreshToken');
-        refreshSubscribers = [];
-        window.location.href = '/login';
+        if (newToken) {
+          onRefreshed(newToken);
+          originalRequest.headers = {
+            ...originalRequest.headers,
+            Authorization: `Bearer ${newToken}`
+          };
+          return axiosInstance(originalRequest);
+        }
       }
 
       return Promise.reject(error);

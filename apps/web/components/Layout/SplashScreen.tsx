@@ -25,143 +25,75 @@ interface DecodedToken {
 
 const SplashScreen: React.FC<SplashScreenProps> = ({ children }) => {
   const [loading, setLoading] = useState(true);
-  const [isRefreshing, setIsRefreshing] = useState(false);
-  const [authChecked, setAuthChecked] = useState(false);
-  const [serverChecked, setServerChecked] = useState(false);
-  const [tokensReady, setTokensReady] = useState(false);
   const { push } = useRouter();
-  const { session, isLoading, refreshSession } = useSession();
+  const { session, setSession, isLoading } = useSession();
 
-  const protectedRoutes = ['/home', '/library', '/settings'];
-  const publicRoutes = ['/', '/login', '/setup'];
+  useEffect(() => {
+    async function checkSession() {
+      const accessToken = getCookie("plm_accessToken");
 
-  const refreshTokens = async () => {
-    try {
-      setIsRefreshing(true);
-      const result = await refreshToken();
-      if (result.status) {
-        await refreshSession();
-        return true;
-      }
-      return false;
-    } catch (error) {
-      console.error("Token refresh failed:", error);
-      return false;
-    } finally {
-      setIsRefreshing(false);
-    }
-  };
-
-  const checkServerStatus = async () => {
-    try {
-      const storedServer = localStorage.getItem("server");
-      const serverUrl = storedServer
-        ? JSON.parse(storedServer).local_address
-        : window.location.origin;
-
-      const response = await fetch(`${serverUrl}/api/s/server/info`);
-      const serverInfo = await response.json();
-
-      if (!response.ok) {
-        push("/");
-        return false;
-      }
-
-      if (!serverInfo.startup_wizard_completed) {
-        push("/setup");
-        return false;
-      }
-
-      setServerChecked(true);
-      return true;
-    } catch (error) {
-      console.error("Server check failed:", error);
-      push("/");
-      return false;
-    }
-  };
-
-  const validateTokens = async (currentPath: string): Promise<boolean> => {
-    const accessToken = getCookie('plm_accessToken');
-    if (!accessToken) {
-      const refreshSuccessful = await refreshTokens();
-      return refreshSuccessful;
-    }
-  
-    try {
-      const decodedToken = jwtDecode<DecodedToken>(accessToken as string);
-      const expirationTime = decodedToken.exp * 1000;
-      const currentTime = Date.now();
-  
-      if (expirationTime <= currentTime) {
-        return await refreshTokens();
-      }
-  
-      const validationResult = await isValid();
-      if (!validationResult.status) {
-        return await refreshTokens();
-      }
+      if (!accessToken) {
+        try {
+          const sessionRequest = await refreshToken();
       
-      return true;
-    } catch (error) {
-      console.error("Token validation failed:", error);
-      return await refreshTokens();
-    }
-  };
-
-  const validateAndRefresh = async () => {
-    if (isLoading || isRefreshing) return;
-
-    try {
-      const currentPath = window.location.pathname;
+          if (!sessionRequest.status || 
+              sessionRequest.message === "Invalid token" || 
+              sessionRequest.message === "Refresh token not found"
+          ) {
+            deleteCookie("plm_refreshToken");
+            push("/login");
+          } else {
+            const newSession = await getSession();
+            setSession(newSession);
+            push("/home");
+          }
+        } catch (error) {
+          push("/login");
+        } finally {
+          setLoading(false);
+        }
+        return;
+      }
+      const user = jwtDecode<DecodedToken>(accessToken.toString());
+      try {
+        const isValidResult = await isValid();
       
-      const serverStatus = await checkServerStatus();
-      if (!serverStatus) {
+        if (!isValidResult.status) {
+          deleteCookie("plm_accessToken");
+          deleteCookie("plm_refreshToken");
+          setSession(null);
+          push("/login");
+        } else {
+        }
+      } catch (error) {
+        push("/login");
+      } finally {
         setLoading(false);
+      }
+
+      if (user.exp * 1000 < Date.now()) {
+        setLoading(false);
+        deleteCookie("plm_accessToken");
         return;
       }
 
-      const isValid = await validateTokens(currentPath);
-      
-      if (isValid) {
-        await refreshSession();
-        const sessionData = await getSession();
-        
-        if (sessionData) {
-          setTokensReady(true);
-          if (currentPath === '/' || currentPath === '/login') {
-            push('/home');
-          }
+      try {
+        await refreshToken();
+        const newSession = await getSession();
+        if (newSession) {
+          setLoading(false);
+          return;
         }
-      } else {
-        deleteCookie('plm_refreshToken');
-        deleteCookie('plm_accessToken');
-        if (!publicRoutes.includes(currentPath)) {
-          push('/login');
-        }
+      } catch (error) {
+        setLoading(false);
+        return;
       }
-    } catch (error) {
-      console.error("Auth check failed:", error);
-      push('/');
-    } finally {
-      setAuthChecked(true);
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    let mounted = true;
-
-    if (mounted && (!authChecked || !tokensReady)) {
-      validateAndRefresh();
     }
 
-    return () => {
-      mounted = false;
-    };
-  }, [authChecked, serverChecked, isLoading, tokensReady]);
+    checkSession();
+  })
 
-  if (loading || !tokensReady) {
+  if (loading) {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen bg-zinc-950 text-white">
         <div className="flex items-center mb-4">

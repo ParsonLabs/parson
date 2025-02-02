@@ -13,20 +13,20 @@ export default async function getSession(): Promise<ExtendedJWTPayload | null> {
     const jwt = getCookie("plm_accessToken");
 
     if (!jwt) {
-      return null;
-    }
-
-    const validationResult = await validateJWT();
-    const isValidResult = await isValid();
-
-    if (validationResult === "error" || validationResult === "invalid" || !isValidResult.status) {
-      deleteCookie("plm_accessToken");
-      return null;
+      return Promise.resolve(null);
     }
 
     const user = jwtDecode<ExtendedJWTPayload>(jwt.toString());
-    return user;
+    
+    const isValidToken = await validateJWT();
+    if (!isValidToken) {
+      deleteCookie("plm_accessToken");
+      return Promise.resolve(null);
+    }
+
+    return Promise.resolve(user);
   } catch (error) {
-    return null;
+    console.error("Error getting session:", error);
+    return Promise.resolve(null);
   }
 }

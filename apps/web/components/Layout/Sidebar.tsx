@@ -14,6 +14,13 @@ type SidebarProps = {
   sidebarContent: ReactNode
 }
 
+const navigationItems = [
+  { href: '/home', icon: Home, label: 'Home' },
+  { href: '/explore', icon: Compass, label: 'Explore' },
+  { href: '/social', icon: Users, label: 'Social' },
+  { href: '/history', icon: HistoryIcon, label: 'History' },
+  { href: '/l', icon: LibraryBig, label: 'Library' },
+];
 
 export default function Sidebar({ children, sidebarContent }: SidebarProps) {
   const { isOpen, closeSidebar, openSidebar } = useSidebar();
@@ -54,46 +61,33 @@ export default function Sidebar({ children, sidebarContent }: SidebarProps) {
           : "border-r border-gray-500 bg-black"} 
         ${isOpen ? "w-1/5 xl:w-[18%]" : "w-3 xl:w-20"} 
         space-y-4 p-4 lg:block pt-20 transition-colors duration-100`}>
-        <Button variant="ghost" asChild size={isOpen ? "default" : "icon"} className={`w-full flex items-center justify-start ${!isOpen && "h-12 w-12 flex-col items-center justify-center"}`}>
-          <Link href="/home">
-            <div className={`flex ${isOpen ? "flex-row" : "flex-col"} items-center text-white text-semibold`} style={{ mixBlendMode: 'difference', pointerEvents: 'none' }}>
-              <Home className={`h-6 w-6 ${isOpen && "mr-4"}`} />
-              <span className={`block mt-1`}>Home</span>
-            </div>
-          </Link>
+        
+        {navigationItems.map((item) => (
+          <Button 
+            key={item.href}
+            variant="ghost" 
+            asChild 
+            size={isOpen ? "default" : "icon"} 
+            className={`w-full flex items-center justify-start ${!isOpen && "h-12 w-12 flex-col items-center justify-center"}`}
+          >
+            <Link href={item.href}>
+              <div className={`flex ${isOpen ? "flex-row" : "flex-col"} items-center text-white text-semibold`} 
+                style={{ mixBlendMode: 'difference', pointerEvents: 'none' }}>
+                <item.icon className={`h-6 w-6 ${isOpen && "mr-4"}`} />
+                <span className="block mt-1">{item.label}</span>
+              </div>
+            </Link>
+          </Button>
+        ))}
+
+        <Button 
+          variant="ghost" 
+          asChild 
+          size={isOpen ? "default" : "icon"} 
+          className={`w-full flex items-center justify-start ${!isOpen && "h-12 w-12 flex-col items-center justify-center"}`}
+        >
         </Button>
-        <Button variant="ghost" asChild size={isOpen ? "default" : "icon"} className={`w-full flex items-center justify-start ${!isOpen && "h-12 w-12 flex-col items-center justify-center"}`}>
-          <Link href="/explore">
-            <div className={`flex ${isOpen ? "flex-row" : "flex-col"} items-center text-white text-semibold`} style={{ mixBlendMode: 'difference', pointerEvents: 'none' }}>
-              <Compass className={`h-6 w-6 ${isOpen && "mr-4"}`} />
-              <span className={`${"block mt-1"}`}>Explore</span>
-            </div>
-          </Link>
-        </Button>
-        <Button variant="ghost" asChild size={isOpen ? "default" : "icon"} className={`w-full flex items-center justify-start ${!isOpen && "h-12 w-12 flex-col items-center justify-center"}`}>
-          <Link href="/social">
-            <div className={`flex ${isOpen ? "flex-row" : "flex-col"} items-center text-white text-semibold`} style={{ mixBlendMode: 'difference', pointerEvents: 'none' }}>
-              <Users className={`h-6 w-6 ${isOpen && "mr-4"}`} />
-              <span className={`${"block mt-1"}`}>Social</span>
-            </div>
-          </Link>
-        </Button>
-        <Button variant="ghost" asChild size={isOpen ? "default" : "icon"} className={`w-full flex items-center justify-start ${!isOpen && "h-12 w-12 flex-col items-center justify-center"}`}>
-          <Link href="/history">
-            <div className={`flex ${isOpen ? "flex-row" : "flex-col"} items-center text-white text-semibold`} style={{ mixBlendMode: 'difference', pointerEvents: 'none' }}>
-              <HistoryIcon className={`h-6 w-6 ${isOpen && "mr-4"}`} />
-              <span className={`${"block mt-1"}`}>History</span>
-            </div>
-          </Link>
-        </Button>
-        <Button variant="ghost" asChild size={isOpen ? "default" : "icon"} className={`w-full flex items-center justify-start ${!isOpen && "h-12 w-12 flex-col items-center justify-center"}`}>
-          <Link href="/l">
-            <div className={`flex ${isOpen ? "flex-row" : "flex-col"} items-center text-white text-semibold`} style={{ mixBlendMode: 'difference', pointerEvents: 'none' }}>
-              <LibraryBig className={`h-6 w-6 ${isOpen && "mr-4"}`} />
-              <span className={`${"block mt-1"}`}>Library</span>
-            </div>
-          </Link>
-        </Button>
+
         {isOpen && sidebarContent}
       </aside>
   

@@ -290,6 +290,7 @@ pub struct BitrateQueryParams {
     pub bitrate: u32,
     pub slowed_reverb: Option<bool>,
 }
+
 #[get("/stream/{song}")]
 async fn stream_song(
     req: HttpRequest,

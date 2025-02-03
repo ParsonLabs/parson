@@ -25,7 +25,6 @@ jobs:
         path: /tmp/.buildx-cache
         key: ${{ runner.os }}-buildx-${{ github.sha }}
         restore-keys: |
-          ${{ runner.os }}-buildx-${{ github.sha:0:8 }}
           ${{ runner.os }}-buildx-
 
     - name: Cache Cargo registry
@@ -34,7 +33,6 @@ jobs:
         path: ~/.cargo/registry
         key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
         restore-keys: |
-          ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock'):0:8 }}
           ${{ runner.os }}-cargo-registry-
 
     - name: Cache Cargo index
@@ -43,7 +41,6 @@ jobs:
         path: ~/.cargo/git
         key: ${{ runner.os }}-cargo-index-${{ hashFiles('**/Cargo.lock') }}
         restore-keys: |
-          ${{ runner.os }}-cargo-index-${{ hashFiles('**/Cargo.lock'):0:8 }}
           ${{ runner.os }}-cargo-index-
 
     - name: Cache Cargo build
@@ -52,7 +49,6 @@ jobs:
         path: target
         key: ${{ runner.os }}-cargo-build-${{ hashFiles('**/Cargo.lock') }}
         restore-keys: |
-          ${{ runner.os }}-cargo-build-${{ hashFiles('**/Cargo.lock'):0:8 }}
           ${{ runner.os }}-cargo-build-
 
     - name: Log in to GitHub Container Registry

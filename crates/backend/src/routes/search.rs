@@ -3,6 +3,7 @@ use std::error::Error;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use actix_web::{delete, get, post, web, HttpResponse, Responder};
 use chrono::NaiveDateTime;
@@ -18,7 +19,7 @@ use tantivy::query::{FuzzyTermQuery, QueryParser};
 use tantivy::schema::{*, Term};
 use tantivy::{doc, Index, IndexWriter, ReloadPolicy};
 use tokio::task;
-use tracing::{error, info};
+use tracing::{debug, error, info, warn};
 
 use crate::routes::album::fetch_album_info;
 use crate::routes::artist::fetch_artist_info;
@@ -548,35 +549,67 @@ async fn search_youtube(query: web::Query<SearchRequest>) -> Result<impl Respond
     let client = reqwest::Client::new();
     let search_query = &query.q;
     
-    let invidious_url = env::var("INVIDIOUS_URL")
-        .unwrap_or_else(|_| get_random_invidious_instance());
+    for _ in 0..3 {
+        let invidious_url = env::var("INVIDIOUS_URL")
+            .unwrap_or_else(|_| get_random_invidious_instance());
 
-    let response = client
-        .get(format!(
-            "{}/api/v1/search?q={}&type=video&page=1",
-            invidious_url.trim_end_matches('/'),
-            search_query
-        ))
-        .header("Accept", "application/json")
-        .send()
-        .await?
-        .json::<Vec<InvidiousVideo>>()
-        .await?;
+        let response = match client
+            .get(format!(
+                "{}/api/v1/search?q={}&type=video&page=1",
+                invidious_url.trim_end_matches('/'),
+                search_query
+            ))
+            .header("Accept", "application/json")
+            .send()
+            .await {
+                Ok(resp) => resp,
+                Err(e) => {
+                    warn!("Failed to connect to {}: {}", invidious_url, e);
+                    continue;
+                }
+            };
 
-    let limited_results = response.into_iter()
-        .take(10)
-        .map(|video| YouTubeVideoResponse {
-            id: video.video_id.clone(),
-            title: video.title,
-            thumbnail: format!("https://i.ytimg.com/vi/{}/mqdefault.jpg", video.video_id),
-            channel: Channel { 
-                name: video.author 
-            },
-            url: format!("https://youtube.com/watch?v={}", video.video_id),
-        })
-        .collect::<Vec<_>>();
+        if !response.status().is_success() {
+            warn!("Instance {} returned status {}", invidious_url, response.status());
+            continue;
+        }
 
-    Ok(HttpResponse::Ok().json(limited_results))
+        let response_text = match response.text().await {
+            Ok(text) => text,
+            Err(e) => {
+                warn!("Failed to get response text from {}: {}", invidious_url, e);
+                continue;
+            }
+        };
+
+        match serde_json::from_str::<Vec<InvidiousVideo>>(&response_text) {
+            Ok(videos) => {
+                let limited_results = videos.into_iter()
+                    .take(10)
+                    .map(|video| YouTubeVideoResponse {
+                        id: video.video_id.clone(),
+                        title: video.title,
+                        thumbnail: format!("https://i.ytimg.com/vi/{}/mqdefault.jpg", video.video_id),
+                        channel: Channel { 
+                            name: video.author 
+                        },
+                        url: format!("https://youtube.com/watch?v={}", video.video_id),
+                    })
+                    .collect::<Vec<_>>();
+
+                return Ok(HttpResponse::Ok().json(limited_results));
+            }
+            Err(e) => {
+                warn!("Failed to parse response from {}: {}\nResponse: {}", 
+                    invidious_url, e, response_text);
+                continue;
+            }
+        }
+    }
+
+    Ok(HttpResponse::ServiceUnavailable().json(serde_json::json!({
+        "error": "Failed to fetch results from any Invidious instance"
+    })))
 }
 
 #[derive(Deserialize)]
@@ -632,18 +665,6 @@ struct AuthorThumbnail {
     height: i32,
 }
 
-#[derive(Default, Serialize, Debug)]
-struct CommentResponse {
-    author: String,
-    author_thumbnails: Vec<AuthorThumbnail>,
-    content: String,
-    likes: i64,
-    published: String,
-    published_text: String,
-    is_pinned: bool,
-    replies: Option<Replies>,
-}
-
 #[derive(Default, Debug, Serialize, Deserialize)]
 struct Replies {
     #[serde(rename = "replyCount")]
@@ -653,43 +674,80 @@ struct Replies {
 
 fn get_random_invidious_instance() -> String {
     let instances = vec![
-        "https://invidious.nerdvpn.de",
-        "https://invidious.jing.rocks"
+        "https://inv.nadeko.net",            
+        "https://vid.puffyan.us",            
+        "https://y.com.sb",                  
     ];
+    
     instances.choose(&mut rand::thread_rng())
-        .unwrap_or(&"https://invidious.snopyta.org")
+        .unwrap_or(&"https://inv.nadeko.net")
         .to_string()
 }
 
 #[get("/youtube/comments")]
 async fn get_youtube_comments(query: web::Query<CommentsRequest>) -> Result<impl Responder, Box<dyn Error>> {
-    let client = reqwest::Client::new();
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(5))
+        .build()?;
     let video_id = &query.video_id;
     
-    let invidious_url = env::var("INVIDIOUS_URL")
-        .unwrap_or_else(|_| get_random_invidious_instance());
+    for _ in 0..3 {
+        let invidious_url = env::var("INVIDIOUS_URL")
+            .unwrap_or_else(|_| get_random_invidious_instance());
 
-    info!("Using Invidious instance: {}", invidious_url);
-    
-    let response = client
-        .get(format!(
-            "{}/api/v1/comments/{}",
-            invidious_url.trim_end_matches('/'),
-            video_id
-        ))
-        .header("Accept", "application/json")
-        .send()
-        .await?;
+        info!("Trying Invidious instance: {}", invidious_url);
+        
+        let response = match client
+            .get(format!(
+                "{}/api/v1/comments/{}",
+                invidious_url.trim_end_matches('/'),
+                video_id
+            ))
+            .header("Accept", "application/json")
+            .send()
+            .await {
+                Ok(resp) => resp,
+                Err(e) => {
+                    warn!("Failed to connect to {}: {}", invidious_url, e);
+                    continue;
+                }
+            };
 
-    if !response.status().is_success() {
-        error!("Failed to fetch comments: {}", response.status());
-        return Ok(HttpResponse::InternalServerError().json(json!({
-            "error": "Failed to fetch comments"
-        })));
+        if !response.status().is_success() {
+            warn!("Instance {} returned status {}", invidious_url, response.status());
+            continue;
+        }
+
+        let response_text = match response.text().await {
+            Ok(text) => {
+                debug!("Response from {}: {}", invidious_url, text);
+                text
+            },
+            Err(e) => {
+                warn!("Failed to get response text from {}: {}", invidious_url, e);
+                continue;
+            }
+        };
+
+        match serde_json::from_str::<CommentInfo>(&response_text) {
+            Ok(comments) => {
+                if comments.comments.is_empty() {
+                    warn!("No comments returned from {}", invidious_url);
+                    continue;
+                }
+                return Ok(HttpResponse::Ok().json(comments));
+            },
+            Err(e) => {
+                warn!("Failed to parse comments from {}: {}\nResponse: {}", 
+                    invidious_url, e, response_text);
+                continue;
+            }
+        }
     }
 
-    let comments = response.json::<CommentInfo>().await?;
-    Ok(HttpResponse::Ok().json(comments))
+    Ok(HttpResponse::ServiceUnavailable().json(json!({
+        "error": "Failed to fetch comments from any Invidious instance"
+    })))
 }
 
 #[derive(Debug, Serialize, Deserialize)]

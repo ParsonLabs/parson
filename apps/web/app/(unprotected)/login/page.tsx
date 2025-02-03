@@ -42,6 +42,11 @@ export default function Login() {
     async function fetchServerInfo() {
       try {
         const info = await getServerInfo();
+        if (!info) {
+          setIsLoading(false)
+          push("/")
+          return
+        }
         setServerInfo(info);
       } catch (error) {
         console.error('Error fetching server info:', error);

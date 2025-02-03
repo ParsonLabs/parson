@@ -10,6 +10,21 @@ import ScrollButtons from "./ScrollButtons";
 
 const MemoizedSongCard = memo(SongCard);
 
+function shuffleArray<T>(array: T[]): T[] {
+  const date = new Date();
+  const seed = date.getDate() + date.getMonth() * 100;
+  const shuffled = [...array];
+  
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    const j = Math.floor(((i + 1) * Math.sin(seed + i)) * 1000) % (i + 1);
+    if (i < shuffled.length && j < shuffled.length) {
+      [shuffled[i] as any, shuffled[j] as any] = [shuffled[j], shuffled[i]];
+    }
+  }
+  
+  return shuffled;
+}
+
 async function getSongsFromYourLibrary(user_id: number, genre?: string) {
   const playlists = await getPlaylists(user_id);
   const playlistSongIDsPromises = playlists.map(async (playlist) => {
@@ -22,15 +37,15 @@ async function getSongsFromYourLibrary(user_id: number, genre?: string) {
   const songsDetailsPromises = playlistSongIDs.map((songID) => getSongInfo(String(songID)));
   const songsDetails = await Promise.all(songsDetailsPromises) as LibrarySong[];
 
-  if (genre) {
-    return songsDetails.filter(song => {
-      const releaseAlbumGenres = song.album_object.release_album?.genres?.some(g => g.name === genre);
-      const releaseGroupAlbumGenres = song.album_object.release_group_album?.genres?.some(g => g.name === genre);
-      return releaseAlbumGenres || releaseGroupAlbumGenres;
-    });
-  }
+  const filteredSongs = genre 
+    ? songsDetails.filter(song => {
+        const releaseAlbumGenres = song.album_object.release_album?.genres?.some(g => g.name === genre);
+        const releaseGroupAlbumGenres = song.album_object.release_group_album?.genres?.some(g => g.name === genre);
+        return releaseAlbumGenres || releaseGroupAlbumGenres;
+      })
+    : songsDetails;
 
-  return songsDetails;
+  return shuffleArray(filteredSongs);
 }
 
 interface FromYourLibraryProps {

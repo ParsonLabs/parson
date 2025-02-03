@@ -10,6 +10,18 @@ import ScrollButtons from "./ScrollButtons";
 
 const MemoizedAlbumCard = memo(AlbumCard);
 
+function shuffleWithSeed<T>(array: T[]): T[] {
+  const seed = new Date().getDate();
+  const shuffled = [...array];
+  
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    const j = Math.floor(((i + 1) * Math.sin(seed + i)) * 1000) % (i + 1);
+    [shuffled[i] as any, shuffled[j] as any] = [shuffled[j], shuffled[i]];
+  }
+  
+  return shuffled.slice(0, 20);
+}
+
 async function getSongsFromYourLibrary(user_id: number, genre?: string) {
   const playlists = await getPlaylists(user_id);
   const playlistSongIDsPromises = playlists.map(async (playlist) => {
@@ -20,17 +32,23 @@ async function getSongsFromYourLibrary(user_id: number, genre?: string) {
   const playlistSongIDsArrays = await Promise.all(playlistSongIDsPromises);
   const playlistSongIDs = playlistSongIDsArrays.flat();
   const songsDetailsPromises = playlistSongIDs.map((songID) => getSongInfo(String(songID)));
-  const songsDetails = await Promise.all(songsDetailsPromises) as unknown as LibrarySong[];
+  const songsDetails = await Promise.all(songsDetailsPromises) as LibrarySong[];
 
-  if (genre) {
-    return songsDetails.filter(song => {
-      const releaseAlbumGenres = song.album_object.release_album?.genres?.some(g => g.name === genre);
-      const releaseGroupAlbumGenres = song.album_object.release_group_album?.genres?.some(g => g.name === genre);
-      return releaseAlbumGenres || releaseGroupAlbumGenres;
-    });
-  }
+  const uniqueAlbums = Array.from(
+    new Map(
+      songsDetails.map(song => [song.album_object.id, song])
+    ).values()
+  );
 
-  return songsDetails;
+  const filteredAlbums = genre 
+    ? uniqueAlbums.filter(song => {
+        const releaseAlbumGenres = song.album_object.release_album?.genres?.some(g => g.name === genre);
+        const releaseGroupAlbumGenres = song.album_object.release_group_album?.genres?.some(g => g.name === genre);
+        return releaseAlbumGenres || releaseGroupAlbumGenres;
+      })
+    : uniqueAlbums;
+
+  return shuffleWithSeed(filteredAlbums);
 }
 
 interface RecommendedAlbumsProps {
@@ -52,7 +70,7 @@ export default function RecommendedAlbums({ genre }: RecommendedAlbumsProps) {
 
   return (
     <ScrollButtons heading="Recommended Albums" id="RecommendedAlbums">
-      <div className="flex flex-row pb-14">
+      <div className="flex flex-row pb-16">
         {librarySongs.map((song) => (
           <div className="mr-20" key={`${song.album_object.id}-${song.id}`}>
             <MemoizedAlbumCard 

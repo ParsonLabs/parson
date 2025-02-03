@@ -35,25 +35,17 @@ async function getSongsFromYourLibrary(user_id: number, genre?: string) {
   const playlistSongIDsArrays = await Promise.all(playlistSongIDsPromises);
   const playlistSongIDs = playlistSongIDsArrays.flat();
   const songsDetailsPromises = playlistSongIDs.map((songID) => getSongInfo(String(songID)));
-  const songsDetails = (await Promise.all(songsDetailsPromises)).filter(Boolean) as LibrarySong[];
+  const songsDetails = await Promise.all(songsDetailsPromises) as LibrarySong[];
 
   const filteredSongs = genre 
     ? songsDetails.filter(song => {
-        if (!song) return false;
-        const releaseAlbumGenres = song.album_object?.release_album?.genres?.some(g => g.name === genre);
-        const releaseGroupAlbumGenres = song.album_object?.release_group_album?.genres?.some(g => g.name === genre);
+        const releaseAlbumGenres = song.album_object.release_album?.genres?.some(g => g.name === genre);
+        const releaseGroupAlbumGenres = song.album_object.release_group_album?.genres?.some(g => g.name === genre);
         return releaseAlbumGenres || releaseGroupAlbumGenres;
       })
     : songsDetails;
 
-  return shuffleArray(filteredSongs.filter(song => 
-    song && 
-    song.album_object &&
-    song.artist_object &&
-    song.path &&
-    song.id &&
-    song.name
-  ));
+  return shuffleArray(filteredSongs);
 }
 
 interface FromYourLibraryProps {
@@ -73,24 +65,29 @@ export default function FromYourLibrary({ genre }: FromYourLibraryProps) {
   if (isLoading) return null;
   if (!librarySongs || librarySongs.length === 0) return null;
 
+  const validSongs = librarySongs.filter((song): song is LibrarySong => 
+    !!song && 
+    !!song.id && 
+    !!song.album_object &&
+    !!song.artist_object
+  );
+
   return (
     <ScrollButtons heading="From Your Library" id="FromYourLibrary">
       <div className="flex flex-row pb-14">
-        {librarySongs.filter(Boolean).map((song) => (
-          song && song.album_object && song.artist_object ? (
-            <div className="mr-20" key={`${song.id}-${song.album_object.id}`}>
-              <MemoizedSongCard 
-                album_cover={song.album_object.cover_url ?? ''} 
-                album_id={song.album_object.id} 
-                album_name={song.album_object.name ?? 'Unknown Album'} 
-                artist_id={song.artist_object.id} 
-                artist_name={song.artist ?? 'Unknown Artist'} 
-                path={song.path ?? ''} 
-                song_id={song.id} 
-                song_name={song.name ?? 'Unknown Song'} 
-              />
-            </div>
-          ) : null
+        {validSongs.map((song) => (
+          <div className="mr-20" key={`${song.id}-${song.album_object.id}`}>
+            <MemoizedSongCard 
+              album_cover={song.album_object.cover_url ?? ''} 
+              album_id={song.album_object.id} 
+              album_name={song.album_object.name ?? 'Unknown Album'} 
+              artist_id={song.artist_object.id} 
+              artist_name={song.artist ?? 'Unknown Artist'} 
+              path={song.path ?? ''} 
+              song_id={song.id} 
+              song_name={song.name ?? 'Unknown Song'} 
+            />
+          </div>
         ))}
       </div>
     </ScrollButtons>

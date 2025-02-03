@@ -1,12 +1,12 @@
 "use client";
 
 import pl from "@/assets/pl-tp.png";
-import { isValid, refreshToken } from "@music/sdk";
+import { getServerInfo, isValid, refreshToken, setServerInfo, renewRefreshToken } from "@music/sdk";
 import { deleteCookie, getCookie } from "cookies-next";
 import { Loader2Icon } from "lucide-react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import { useSession } from "../Providers/AuthProvider";
 import { jwtDecode } from "jwt-decode";
 import getSession from "@/lib/Authentication/JWT/getSession";
@@ -23,75 +23,143 @@ interface DecodedToken {
   token_type: string;
 }
 
+const REFRESH_KEY = 'plm_last_refresh';
+
 const SplashScreen: React.FC<SplashScreenProps> = ({ children }) => {
   const [loading, setLoading] = useState(true);
+  const [path, setPath] = useState("");
   const { push } = useRouter();
   const { session, setSession, isLoading } = useSession();
 
-  useEffect(() => {
-    async function checkSession() {
-      const accessToken = getCookie("plm_accessToken");
+  const shouldRefreshToken = useCallback(() => {
+    const lastRefresh = localStorage.getItem(REFRESH_KEY);
+    const now = Date.now();
 
-      if (!accessToken) {
-        try {
-          const sessionRequest = await refreshToken();
-      
-          if (!sessionRequest.status || 
-              sessionRequest.message === "Invalid token" || 
-              sessionRequest.message === "Refresh token not found"
-          ) {
-            deleteCookie("plm_refreshToken");
-            push("/login");
-          } else {
-            const newSession = await getSession();
-            setSession(newSession);
-            push("/home");
-          }
-        } catch (error) {
-          push("/login");
-        } finally {
-          setLoading(false);
-        }
-        return;
+    if (!lastRefresh) {
+      localStorage.setItem(REFRESH_KEY, now.toString());
+      return true;
+    }
+
+    if (document.hidden) {
+      localStorage.setItem(REFRESH_KEY, now.toString());
+      return true;
+    }
+
+    return false;
+  }, []);
+
+  const handleServerCheck = useCallback(async () => {
+    try {
+      const info = await getServerInfo();
+      if (!info) {
+        setLoading(false);
+        push("/");
+        return false;
       }
-      const user = jwtDecode<DecodedToken>(accessToken.toString());
+      if (!info.startup_wizard_completed) {
+        setLoading(false);
+        push("/setup");
+        return false;
+      }
+      return true;
+    } catch (error) {
+      console.error('Server check failed:', error);
+      setLoading(false);
+      push("/");
+      return false;
+    }
+  }, [push]);
+  
+  const handleSession = useCallback(async () => {
+    const accessToken = getCookie("plm_accessToken");
+
+    if (shouldRefreshToken()) {
       try {
-        const isValidResult = await isValid();
-      
-        if (!isValidResult.status) {
-          deleteCookie("plm_accessToken");
+        await renewRefreshToken();
+      } catch (error) {
+        console.error('Failed to renew refresh token:', error);
+      }
+    }
+
+    if (!accessToken) {
+      try {
+        const sessionRequest = await refreshToken();
+        if (!sessionRequest.status || 
+            sessionRequest.message === "Invalid token" || 
+            sessionRequest.message === "Refresh token not found"
+        ) {
           deleteCookie("plm_refreshToken");
-          setSession(null);
-          push("/login");
-        } else {
+          const serverInfo = await getServerInfo();
+          if (!serverInfo) {
+            setLoading(false)
+            push("/")
+            return;
+          }
+          push(serverInfo.startup_wizard_completed ? "/login" : "/setup");
+          return;
         }
+        const newSession = await getSession();
+        setSession(newSession);
+        push("/home");
       } catch (error) {
         push("/login");
       } finally {
         setLoading(false);
       }
-
-      if (user.exp * 1000 < Date.now()) {
-        setLoading(false);
-        deleteCookie("plm_accessToken");
-        return;
-      }
-
-      try {
-        await refreshToken();
-        const newSession = await getSession();
-        if (newSession) {
-          setLoading(false);
-          return;
-        }
-      } catch (error) {
-        setLoading(false);
-        return;
-      }
+      return;
     }
 
-    checkSession();
-  })
+    const user = jwtDecode<DecodedToken>(accessToken.toString());
+    try {
+      const isValidResult = await isValid();
+      if (!isValidResult.status) {
+        deleteCookie("plm_refreshToken");
+        deleteCookie("plm_accessToken");
+        setSession(null);
+        push("/login");
+      }
+    } catch {
+      push("/login");
+    } finally {
+      setLoading(false);
+    }
+
+    if (user.exp * 1000 < Date.now()) {
+      setLoading(false);
+      deleteCookie("plm_accessToken");
+      return;
+    }
+
+    try {
+      // await refreshToken();
+      // const newSession = await getSession();
+      // if (newSession) {
+      //   setSession(newSession);
+      // }
+    } catch (error) {
+      console.error('Session refresh failed:', error);
+    } finally {
+      setLoading(false);
+    }
+  }, [push, shouldRefreshToken, setSession]);
+
+  useEffect(() => {
+    setPath(window.location.pathname);
+    
+    if (window.location.pathname.startsWith('/setup')) {
+      setLoading(false);
+      return;
+    }
+
+    const initializeApp = async () => {
+      const serverOk = await handleServerCheck();
+      if (serverOk) {
+        await handleSession();
+      }
+    };
+
+    initializeApp();
+  }, [handleServerCheck, handleSession]);
 
   if (loading) {
     return (
@@ -106,6 +174,6 @@ const SplashScreen: React.FC<SplashScreenProps> = ({ children }) => {
   }
 
   return <>{children}</>;
-};
+}
 
 export default SplashScreen;

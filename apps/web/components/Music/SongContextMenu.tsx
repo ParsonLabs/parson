@@ -12,9 +12,7 @@ import {
   Dialog,
   DialogContent,
   DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-  DialogClose,
+  DialogTitle, DialogClose,
   DialogFooter
 } from "@music/ui/components/dialog";
 import {
@@ -28,7 +26,7 @@ import {
 import { addSongToPlaylist, getPlaylists, PlaylistsResponse, getSongInfo } from "@music/sdk";
 import { CircleArrowUp, CirclePlus, ExternalLink, ListEnd, Plus, UserRoundSearch } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useState, useRef, useCallback } from "react";
+import { useEffect, useState, useCallback } from "react";
 import Bars3Left from "../Icons/Bars3Left";
 import { usePlayer } from "./Player/usePlayer";
 import { LibrarySong, BareSong } from "@music/sdk/types";
@@ -60,27 +58,13 @@ export default function SongContextMenu({
   const [songInfo, setSongInfo] = useState<LibrarySong | BareSong | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const { session } = useSession();
-  const isMounted = useRef(true);
-  const dialogCleanupTimeout = useRef<NodeJS.Timeout>();
-
-  // Cleanup function
-  useEffect(() => {
-    return () => {
-      isMounted.current = false;
-      if (dialogCleanupTimeout.current) {
-        clearTimeout(dialogCleanupTimeout.current);
-      }
-    };
-  }, []);
 
   useEffect(() => {
     const getPlaylistsRequest = async () => {
       try {
         if (!session?.sub) return;
         const playlists = await getPlaylists(Number(session.sub));
-        if (isMounted.current) {
-          setPlaylists(playlists);
-        }
+        setPlaylists(playlists);
       } catch (error) {
         console.error("Failed to fetch playlists:", error);
       }
@@ -92,15 +76,8 @@ export default function SongContextMenu({
   const { addToQueue } = usePlayer();
   
   const handleViewProperties = useCallback(async () => {
-    if (!isMounted.current) return;
-    try {
-      const info = await getSongInfo(song_id, true);
-      if (isMounted.current) {
-        setSongInfo(info as BareSong);
-      }
-    } catch (error) {
-      console.error("Failed to fetch song info:", error);
-    }
+    const info = await getSongInfo(song_id, true);
+    setSongInfo(info as BareSong);
   }, [song_id]);
   const handleOpenChange = useCallback((open: boolean) => {
   if (open) {
@@ -112,20 +89,8 @@ export default function SongContextMenu({
 }, [handleViewProperties]);
   
   const handleDialogOpenChange = useCallback((open: boolean) => {
-    if (!isMounted.current) return;
-    
-    if (open) {
       setIsDialogOpen(true);
       handleViewProperties();
-    } else {
-      // Delay cleanup to prevent state updates during unmount
-      dialogCleanupTimeout.current = setTimeout(() => {
-        if (isMounted.current) {
-          setSongInfo(null);
-          setIsDialogOpen(false);
-        }
-      }, 100);
-    }
   }, [handleViewProperties]);
 
   return (

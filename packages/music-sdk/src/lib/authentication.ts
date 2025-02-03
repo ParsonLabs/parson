@@ -105,6 +105,35 @@ export async function refreshToken(): Promise<ResponseAuthData> {
 }
 
 /**
+ * Renew the refresh token.
+ * @returns {Promise<ResponseAuthData>} - A promise that resolves to the response data.
+ */
+export async function renewRefreshToken(): Promise<ResponseAuthData> {
+  try {
+    const response = await axios.post('/auth/renew-refresh-token');
+    return {
+      status: true,
+      token: response.data.token,
+      message: 'Refresh token renewed successfully'
+    };
+  } catch (error) {
+    if (isAxiosError(error)) {
+      console.error("Renew Refresh Token Error:", error.response?.data);
+      return {
+        status: false,
+        token: '',
+        message: error.response?.data?.message || "Token renewal failed"
+      };
+    }
+    return {
+      status: false,
+      token: '',
+      message: "Token renewal failed"
+    };
+  }
+}
+
+/**
  * Update user information.
  * @param {UpdateUserData} data - The update user data.
  * @returns {Promise<ResponseAuthData>} - A promise that resolves to the response data.

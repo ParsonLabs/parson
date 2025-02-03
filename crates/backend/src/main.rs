@@ -11,7 +11,7 @@ use actix_web::HttpResponse;
 use actix_web::{middleware, web, App, HttpServer};
 use actix_web_httpauth::middleware::HttpAuthentication;
 use notify::{Event, RecursiveMode, Watcher};
-use routes::authentication::{admin_guard, is_valid, refresh};
+use routes::authentication::{admin_guard, is_valid, refresh, renew_refresh_token};
 use tokio::sync::broadcast;
 use tokio::task;
 use tracing::{error, info, Level};
@@ -236,10 +236,11 @@ async fn main() -> std::io::Result<()> {
             .wrap(middleware::Logger::default())
             .service(
                 web::scope("/api/auth")
-                .service(login)
-                .service(register)
-                .service(refresh)
-                .service(is_valid)
+                    .service(login)
+                    .service(register)
+                    .service(refresh)
+                    .service(is_valid)
+                    .service(renew_refresh_token)
             )
             .service(image)
             .route("/ws", web::get().to(ws))

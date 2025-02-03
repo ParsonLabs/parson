@@ -61,7 +61,7 @@ fn generate_access_token(user_id: i32, username: &str, bitrate: i32, role: &Stri
 
 fn generate_refresh_token(user_id: i32, username: &str, role: &String) -> String {
     let expiration = Utc::now()
-        .checked_add_signed(chrono::Duration::days(7))  // 7 days
+        .checked_add_signed(chrono::Duration::days(30))  // 7 days
         .expect("valid timestamp")
         .timestamp() as usize;
 
@@ -80,6 +80,7 @@ fn generate_refresh_token(user_id: i32, username: &str, role: &String) -> String
 
     encode(&header, &claims, &EncodingKey::from_secret(secret.as_ref())).expect("Token encoding failed")
 }
+
 
 #[get("/is-valid")]
 pub async fn is_valid(req: HttpRequest) -> impl Responder {
@@ -137,6 +138,7 @@ pub async fn is_valid(req: HttpRequest) -> impl Responder {
     }
 }
 
+
 #[post("/login")]
 pub async fn login(form: web::Json<AuthData>) -> impl Responder {
     use crate::utils::database::schema::user::dsl::*;
@@ -167,18 +169,16 @@ pub async fn login(form: web::Json<AuthData>) -> impl Responder {
 
                 let access_cookie = Cookie::build("plm_accessToken", generated_access_token.clone())
                     .http_only(false)
-                    .secure(true)
-                    .same_site(SameSite::Strict)
+                    .same_site(SameSite::None)
                     .path("/")
-                    .max_age(cookie::time::Duration::minutes(15))
+                    .max_age(cookie::time::Duration::minutes(60))
                     .finish();
 
                 let refresh_cookie = Cookie::build("plm_refreshToken", generated_refresh_token.clone())
                     .http_only(true)
-                    .secure(true)
-                    .same_site(SameSite::Strict)
+                    .same_site(SameSite::None)
                     .path("/")
-                    .max_age(cookie::time::Duration::days(7))
+                    .max_age(cookie::time::Duration::days(30))
                     .finish();
 
                 HttpResponse::Ok()
@@ -296,6 +296,79 @@ pub async fn register(form: web::Json<RegisterData>, req: HttpRequest) -> impl R
     })
 }
 
+#[post("/renew-refresh-token")]
+pub async fn renew_refresh_token(req: HttpRequest) -> impl Responder {
+    dotenv().ok();
+
+    let secret = get_jwt_secret();
+
+    let refresh_token = match req.cookie("plm_refreshToken") {
+        Some(cookie) => cookie.value().to_string(),
+        None => {
+            return HttpResponse::Unauthorized().json(ResponseAuthData {
+                status: false,
+                access_token: String::new(),
+                refresh_token: String::new(),
+                message: Some(String::from("Refresh token not found")),
+            });
+        }
+    };
+
+    let token_data = decode::<Claims>(&refresh_token, &DecodingKey::from_secret(secret.as_ref()), &Validation::new(Algorithm::HS256));
+
+    match token_data {
+        Ok(data) => {
+            if data.claims.token_type == "refresh" {
+                let new_refresh_token = generate_refresh_token(data.claims.sub.parse().unwrap(), &data.claims.username, &data.claims.role.clone());
+
+                let refresh_cookie = Cookie::build("plm_refreshToken", new_refresh_token.clone())
+                    .http_only(true)
+                    .same_site(SameSite::None)
+                    .path("/")
+                    .max_age(cookie::time::Duration::days(30))
+                    .finish();
+
+                HttpResponse::Ok()
+                    .cookie(refresh_cookie)
+                    .json(ResponseAuthData {
+                        status: true,
+                        access_token: String::new(),
+                        refresh_token: new_refresh_token,
+                        message: None,
+                    })
+            } else {
+                HttpResponse::Unauthorized().json(ResponseAuthData {
+                    status: false,
+                    access_token: String::new(),
+                    refresh_token: String::new(),
+                    message: Some(String::from("Invalid token type")),
+                })
+            }
+        },
+        Err(_) => {
+            let mut jar = CookieJar::new();
+
+            let expired_cookie = Cookie::build("plm_refreshToken", "")
+                .path("/")
+                .http_only(true)
+                .same_site(SameSite::None)
+                .max_age(cookie::time::Duration::seconds(0))
+                .finish();
+
+            jar.add(expired_cookie);
+
+            HttpResponse::Unauthorized()
+                .cookie(jar.delta().next().unwrap().clone())
+                .json(ResponseAuthData {
+                    status: false,
+                    access_token: String::new(),
+                    refresh_token: String::new(),
+                    message: Some(String::from("Invalid token")),
+                })
+        }
+    }
+}
+
 #[post("/refresh")]
 pub async fn refresh(req: HttpRequest) -> impl Responder {
     dotenv().ok();
@@ -328,10 +401,9 @@ pub async fn refresh(req: HttpRequest) -> impl Responder {
 
                 let access_cookie = Cookie::build("plm_accessToken", new_access_token.clone())
                     .http_only(false)
-                    .secure(true)
-                    .same_site(SameSite::Strict)
+                    .same_site(SameSite::None)
                     .path("/")
-                    .max_age(cookie::time::Duration::minutes(15))
+                    .max_age(cookie::time::Duration::minutes(60))
                     .finish();
 
                 HttpResponse::Ok()
@@ -356,9 +428,8 @@ pub async fn refresh(req: HttpRequest) -> impl Responder {
 
             let expired_cookie = Cookie::build("plm_accessToken", "")
                 .path("/")
-                .secure(true)
                 .http_only(true)
-                .same_site(SameSite::Strict)
+                .same_site(SameSite::None)
                 .max_age(cookie::time::Duration::seconds(0))
                 .finish();
 
@@ -376,24 +447,21 @@ pub async fn refresh(req: HttpRequest) -> impl Responder {
     }
 }
 
-// Add logout endpoint
 #[post("/logout")]
 pub async fn logout() -> impl Responder {
     let mut jar = CookieJar::new();
     
     let access_cookie = Cookie::build("plm_accessToken", "")
         .path("/")
-        .secure(true)
         .http_only(true)
-        .same_site(SameSite::Strict)
+        .same_site(SameSite::None)
         .max_age(cookie::time::Duration::seconds(0))
         .finish();
 
     let refresh_cookie = Cookie::build("plm_refreshToken", "")
         .path("/")
-        .secure(true)
         .http_only(true) 
-        .same_site(SameSite::Strict)
+        .same_site(SameSite::None)
         .max_age(cookie::time::Duration::seconds(0))
         .finish();
 

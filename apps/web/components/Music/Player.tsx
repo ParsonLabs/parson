@@ -7,10 +7,10 @@ import {
   SliderThumb,
   SliderTrack,
 } from "@music/ui/components/slider";
-import { AudioLines, BookAudioIcon, MicVocal, SkipBack, SkipForward, Volume2, VolumeX } from "lucide-react";
+import { AudioLines, BookAudioIcon, MicVocal, Shuffle, SkipBack, SkipForward, Volume2, VolumeX } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
-import React, { useContext, useEffect, useRef, useState } from "react";
+import React, { useContext, useEffect, useMemo, useRef, useState } from "react";
 import * as Tone from "tone";
 import { AIContext } from "../AI/AIOverlayContext";
 import ArrowPath from "../Icons/ArrowPath";
@@ -173,7 +173,12 @@ export default function Player() {
     };
   }
 
-  const debouncedTogglePlayPause = debounce(togglePlayPause, 150);
+  const debouncedTogglePlayPause = useMemo(
+    () => debounce(togglePlayPause, 150),
+    [togglePlayPause]
+  );
+
+
 
   const formatTime = (time: number) => {
     const minutes = Math.floor(time / 60);
@@ -182,242 +187,180 @@ export default function Player() {
   };
 
   return song.id && (
-    <footer className="z-50 fixed bottom-0 border-t border-gray-800 px-3 py-3 flex flex-col md:flex-row items-center justify-between md:gap-4 w-full" 
+    <footer 
+      className="z-50 fixed bottom-0 backdrop-blur-xl border-t border-white/5 px-3 py-2 
+      flex flex-col md:flex-row items-center justify-between gap-3 w-full"
       style={{ 
-        backgroundColor: "#212121",
-        transition: 'background-color 0.5s ease',
-        height: "100px"
+        background: 'rgba(18, 18, 18, 0.98)',
+        height: "80px",
+        transition: 'all 0.3s ease',
       }}>
-      <Image
-        className="bg-cover bg-center blur-3xl"
-        src={isPlaying ? imageSrc : "/snf.png"}
-        alt="Background Image"
-        height={1000}
-        width={1000}
+      <div 
+        className="absolute inset-0 z-[-1]"
         style={{
-          backgroundColor: isPlaying ? "none" : "#202020",
-          transition: "background background-color 0.5s ease",
-          position: 'absolute',
-          top: 0,
-          left: 0,
-          width: '100%',
-          height: '100%',
-          filter: 'blur(96px) brightness(50%)',
-          zIndex: -1
+          backgroundImage: `url(${isPlaying ? imageSrc : "/snf.png"})`,
+          backgroundSize: 'cover',
+          backgroundPosition: 'center',
+          opacity: 0.1,
+          filter: 'blur(80px) saturate(180%)',
+          transition: 'all 0.5s ease',
         }}
       />
-    
-      <section className="flex flex-col md:flex-row items-center justify-between gap-3 w-full md:w-1/4">
-        <div className="flex items-center w-full md:w-1/2 justify-center">
+  
+      <section className="flex items-center w-full md:w-[30%] min-w-[300px]">
+        <div className="group relative w-14 h-14 md:w-[60px] md:h-[60px] flex-shrink-0">
+          <Image
+            alt={song.name}
+            src={imageSrc}
+            height={400}
+            width={400}
+            className="w-full h-full object-cover rounded-md shadow-lg 
+            transform transition-all duration-300 group-hover:scale-105"
+          />
+          <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 
+            transition-opacity duration-200 rounded-md flex items-center justify-center">
+            <button 
+              onClick={debouncedTogglePlayPause}
+              className="text-white transform scale-90 hover:scale-100 transition-transform duration-200"
+            >
+              {isPlaying ? <IconPause width={24} height={24} /> : <IconPlay width={24} height={24} />}
+            </button>
+          </div>
+        </div>
+  
+        <div className="ml-4 flex-grow min-w-0">
+          <p className="text-white font-medium truncate hover:text-white/80 transition-colors">
+            <Link href={`/album?id=${album.id}`}>{song.name}</Link>
+          </p>
+          <p className="text-sm text-gray-400 truncate">
+            <Link href={`/artist?id=${artist.id}`} className="hover:text-white/80 transition-colors">
+              {artist.name}
+            </Link>
+            {song.contributing_artist_ids?.map((id, index) => (
+              <span key={id}>
+                , <Link href={`/artist?id=${id}`} className="hover:text-white/80 transition-colors">
+                  {song.contributing_artists[index]}
+                </Link>
+              </span>
+            ))}
+          </p>
+        </div>
+      </section>
+  
+      <section className="flex flex-col items-center gap-2 w-full max-w-[45%] min-w-[400px] px-4">
+        <div className="flex items-center gap-6">
+          <button 
+            onClick={() => toggleLoopSong()}
+            className="text-gray-400 hover:text-white transition-colors"
+          >
+            <ArrowPath className={`w-5 h-5 ${onLoop ? 'text-white' : ''}`} />
+          </button>
+          <button 
+            onClick={() => playPreviousSong()}
+            className="text-gray-400 hover:text-white transition-colors"
+          >
+            <SkipBack className="w-5 h-5" />
+          </button>
+          <button 
+            onClick={() => togglePlayPause()}
+            className="bg-white rounded-full p-3 hover:scale-105 transition-transform duration-200"
+          >
+            {isPlaying ? 
+              <IconPause className="w-5 h-5 text-black" /> : 
+              <IconPlay className="w-5 h-5 text-black ml-0.5" />
+            }
+          </button>
+          <button 
+            onClick={() => playNextSong()}
+            className="text-gray-400 hover:text-white transition-colors"
+          >
+            <SkipForward className="w-5 h-5" />
+          </button>
+          <button className="text-gray-400 hover:text-white transition-colors">
+            <Shuffle className="w-5 h-5" />
+          </button>
+        </div>
+  
+        <div className="flex items-center gap-2 w-full">
+          <span className="text-xs text-gray-400 w-10 text-right">
+            {formatTime(currentTime)}
+          </span>
           <Slider
             min={0}
             max={duration}
             value={[currentTime]}
-            onValueChange={([values]) => {
-              handleTimeChange(Number(values));
-            }}
-            className="w-full group md:hidden"
+            onValueChange={([value]) => handleTimeChange(Number(value))}
+            className="w-full group"
           >
-            <SliderTrack className="h-1 bg-gray-400 cursor-pointer">
-              <SliderRange
-                className="bg-gray-500"
-                style={{ width: `${(bufferedTime / duration) * 100}%` }}
+            <SliderTrack className="h-1 bg-gray-800 rounded-full">
+              <SliderRange 
+                className="bg-gray-600 rounded-full" 
+                style={{ width: `${(bufferedTime / duration) * 100}%` }} 
               />
-              <SliderRange className="bg-black" />
+              <SliderRange className="bg-white rounded-full" />
             </SliderTrack>
-            <SliderThumb className="cursor-pointer bg-white hidden group-hover:block size-4" />
+            <SliderThumb className="w-3 h-3 bg-white opacity-0 group-hover:opacity-100 transition-all" />
           </Slider>
-        </div>
-        <div className="flex items-center justify-between w-full">
-          <div className="flex items-center gap-3">
-            <div className="w-full h-12 md:w-20 md:h-20 bg-gray-500 rounded-md">
-              <Image
-                alt={song.name + "Image"}
-                src={imageSrc}
-                height={400}
-                width={400}
-                className="w-full h-full object-fill rounded"
-                />
-            </div>
-            <div className="w-80 md:overflow-hidden">
-              <p
-                className={`${song.name.length > 30 && "whitespace-nowrap"} ${song.name.length > 30 ? "md:animate-marquee" : ""}`}
-                title={song.name.length > 30 ? song.name : ""}
-              >
-                <Link href={`/album?id=${album.id}`}>{song.name}</Link>
-              </p>
-              <p className="text-xs text-gray-400">
-                <Link href={`/artist?id=${artist.id}`}>{artist.name}</Link>
-                {song.contributing_artist_ids && song.contributing_artists.map((artist, index) => (
-                  <span key={index}>
-                    , <Link href={`/artist?id=${song.contributing_artist_ids[index]}`}>{artist}</Link>
-                  </span>
-                ))}
-              </p>
-            </div>
-          </div>
-          <div className="text-gray-400 hover:text-white transition-colors duration-300 md:hidden">
-            <button onClick={debouncedTogglePlayPause}>
-              {isPlaying ? <IconPause /> : <IconPlay />}
-            </button>
-          </div>
+          <span className="text-xs text-gray-400 w-10">
+            {formatTime(duration)}
+          </span>
         </div>
       </section>
   
-      <section className="md:flex flex-col items-center gap-2 w-full hidden">
-        <div className="flex items-center gap-4">
-          <button onClick={() => playPreviousSong()}><SkipBack className="w-5 h-5" /></button>
-          <button onClick={debouncedTogglePlayPause}>
-            {isPlaying ? <IconPause /> : <IconPlay />}
-          </button>
-          <button onClick={() => playNextSong()}><SkipForward className="w-5 h-5"/></button>
-          <button onClick={() => toggleLoopSong()}>
-            {onLoop ? <ArrowPath style={{ strokeWidth: 2, color: 'white' }} /> : <ArrowPath />}
-          </button>
-        </div>
-        <div className="flex items-center gap-2 w-full justify-center">
-          <span className="text-xs text-gray-400">{formatTime(currentTime)}</span>
-  
-        <Slider
-          min={0}
-          max={duration}
-          value={[currentTime]}
-          onValueChange={([values]) => {
-            handleTimeChange(Number(values))
-          }}
-          className="w-1/2 group"
-        >
-          <SliderTrack className="h-1 bg-gray-400 cursor-pointer">
-            <SliderRange className="bg-gray-500" style={{ width: `${(bufferedTime / duration) * 100}%` }} />
-            <SliderRange className="bg-black" />
-          </SliderTrack>
-  
-          <SliderThumb className="cursor-pointer bg-white hidden group-hover:block size-4" />
-        </Slider>
-            <span className="text-xs text-gray-400">{formatTime(duration)}</span>
-        </div>
-      </section>
-  
-      <section className="hidden md:flex items-center gap-2">
+      <section className="hidden md:flex items-center gap-4 w-[20%] justify-end pr-4">
         <ViewCommentsModal />
         <button
+          className={`transition-colors ${isLyricsClicked ? 'text-white' : 'text-gray-400 hover:text-white'}`}
           onClick={() => {
             toggleLyrics();
             setIsLyricsClicked(!isLyricsClicked);
           }}
         >
-          <MicVocal color={isLyricsClicked ? 'white' : 'gray'} />
+          <MicVocal className="w-5 h-5" />
         </button>
   
-        {song.music_video?.url && <VideoPlayerDialog url={song.music_video.url} /> }
+        {song.music_video?.url && <VideoPlayerDialog url={song.music_video.url} />}
   
         {process.env.NEXT_PUBLIC_AI_URL && (
           <button
+            className={`transition-colors ${isAIClicked ? 'text-white' : 'text-gray-400 hover:text-white'}`}
             onClick={() => {
               toggleAI();
               setIsAIClicked(!isAIClicked);
             }}
           >
-            <BookAudioIcon color={isAIClicked ? 'white' : 'gray'} />
+            <BookAudioIcon className="w-5 h-5" />
           </button>
         )}
   
         <button
+          className={`transition-colors ${isQueueClicked ? 'text-white' : 'text-gray-400 hover:text-white'}`}
           onClick={() => {
             togglePanel();
             setIsQueueClicked(!isQueueClicked);
           }}
         >
-          <IconQueue color={isQueueClicked ? 'white' : 'gray'} />
+          <IconQueue className="w-5 h-5" />
         </button>
-        {/* <Popover> */}
-          {/* <PopoverTrigger asChild> */}
-            <button
-              onClick={() => {
-                setReverb(!reverb)
-                setIsReverbClicked(!isReverbClicked);
-              }}
-            >
-              <AudioLines color={isReverbClicked ? 'white' : 'gray'} />
-            </button>
-          {/* </PopoverTrigger> */}
-          {/* <PopoverContent className="w-80"> */}
-            {/* <div className="grid gap-4">
-              <div className="space-y-2">
-                <h4 className="font-medium leading-none">Audio Effects</h4>
-                <p className="text-sm text-muted-foreground">
-                  Adjust the audio effects for the current track.
-                </p>
-              </div>
-              <div className="grid gap-2">
-                <div className="grid grid-cols-3 items-center gap-4">
-                  <Label htmlFor="slowed">Slowed</Label>
-                  <Input
-                    id="slowed"
-                    type="range"
-                    min="0.5"
-                    max="2"
-                    step="0.1"
-                    value={slowed}
-                    onInput={handleSlowedChange}
-                    className="col-span-2 h-8"
-                  />
-                </div>
-                <div className="grid grid-cols-3 items-center gap-4">
-                  <Label htmlFor="reverb">Reverb</Label>
-                  <Input
-                    id="reverb"
-                    type="range"
-                    min="0"
-                    max="10"
-                    step="0.1"
-                    value={reverbEffectValue}
-                    onInput={handleReverbChange}
-                    className="col-span-2 h-8"
-                  />
-                </div>
-                <div className="grid grid-cols-3 items-center gap-4">
-                  <Label htmlFor="pitch">Pitch</Label>
-                  <Input
-                    id="pitch"
-                    type="range"
-                    min="-12"
-                    max="12"
-                    step="1"
-                    value={pitch}
-                    onInput={handlePitchChange}
-                    className="col-span-2 h-8"
-                  />
-                </div>
-              </div>
-            </div>
-          </PopoverContent>
-        </Popover> */}
-        <div className="flex items-center gap-1">
+  
+        <div className="flex items-center gap-2 ml-2">
           <button
             onClick={() => toggleMute()}
-            onMouseEnter={() => setIsSpeakerHovered(true)}
-            onMouseLeave={() => setIsSpeakerHovered(false)}
+            className="text-gray-400 hover:text-white transition-colors"
           >
-            {muted || !volume ? (
-              <VolumeX color={isSpeakerHovered ? "white" : "gray"} />
-            ) : (
-              <Volume2 color={isSpeakerHovered ? "white" : "gray"} />
-            )}
+            {muted || !volume ? <VolumeX className="w-5 h-5" /> : <Volume2 className="w-5 h-5" />}
           </button>
           <Slider
             min={0}
             max={100}
             value={[volume * 100]}
-            onValueChange={([values]: number[]) => {
-              setAudioVolume(Number(values));
-            }}
-            className="group"
+            onValueChange={([value]) => setAudioVolume(Number(value))}
+            className="w-24 group"
           >
-            <SliderTrack className="h-1 w-20 bg-gray-400 cursor-pointer">
-              <SliderRange className="bg-black" />
+            <SliderTrack className="h-1 bg-gray-800 rounded-full">
+              <SliderRange className="bg-white rounded-full" />
             </SliderTrack>
-            <SliderThumb className="cursor-pointer bg-white hidden group-hover:block size-4" />
+            <SliderThumb className="w-3 h-3 bg-white opacity-0 group-hover:opacity-100 transition-all" />
           </Slider>
         </div>
       </section>

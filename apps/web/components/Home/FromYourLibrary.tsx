@@ -65,20 +65,27 @@ export default function FromYourLibrary({ genre }: FromYourLibraryProps) {
   if (isLoading) return null;
   if (!librarySongs || librarySongs.length === 0) return null;
 
+  const validSongs = librarySongs.filter((song): song is LibrarySong => 
+    !!song && 
+    !!song.id && 
+    !!song.album_object &&
+    !!song.artist_object
+  );
+
   return (
     <ScrollButtons heading="From Your Library" id="FromYourLibrary">
       <div className="flex flex-row pb-14">
-        {librarySongs.map((song) => (
+        {validSongs.map((song) => (
           <div className="mr-20" key={`${song.id}-${song.album_object.id}`}>
             <MemoizedSongCard 
-              album_cover={song.album_object.cover_url} 
+              album_cover={song.album_object.cover_url ?? ''} 
               album_id={song.album_object.id} 
-              album_name={song.album_object.name} 
+              album_name={song.album_object.name ?? 'Unknown Album'} 
               artist_id={song.artist_object.id} 
-              artist_name={song.artist} 
-              path={song.path} 
+              artist_name={song.artist ?? 'Unknown Artist'} 
+              path={song.path ?? ''} 
               song_id={song.id} 
-              song_name={song.name} 
+              song_name={song.name ?? 'Unknown Song'} 
             />
           </div>
         ))}

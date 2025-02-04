@@ -68,19 +68,27 @@ export default function RecommendedAlbums({ genre }: RecommendedAlbumsProps) {
   if (isLoading) return null;
   if (!librarySongs || librarySongs.length === 0) return null;
 
+  const validSongs = librarySongs.filter((song): song is LibrarySong => 
+    !!song && 
+    !!song.album_object &&
+    !!song.album_object.id &&
+    !!song.artist_object &&
+    !!song.artist_object.id
+  );
+
   return (
     <ScrollButtons heading="Recommended Albums" id="RecommendedAlbums">
       <div className="flex flex-row pb-16">
-        {librarySongs.map((song) => (
+        {validSongs.map((song) => (
           <div className="mr-20" key={`${song.album_object.id}-${song.id}`}>
             <MemoizedAlbumCard 
-              album_cover={song.album_object.cover_url}
+              album_cover={song.album_object.cover_url ?? ''}
               album_id={song.album_object.id}
-              album_name={song.album_object.name}
-              album_songs_count={song.album_object.songs.length}
+              album_name={song.album_object.name ?? 'Unknown Album'}
+              album_songs_count={song.album_object.songs?.length ?? 0}
               artist_id={song.artist_object.id}
-              artist_name={song.artist}
-              first_release_date={song.album_object.first_release_date}
+              artist_name={song.artist ?? 'Unknown Artist'}
+              first_release_date={song.album_object.first_release_date ?? ''}
             />
           </div>
         ))}

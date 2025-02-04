@@ -2,7 +2,7 @@ use std::fs;
 use std::process::Stdio;
 use std::time::Instant;
 
-use actix_web::http::header;
+use actix_web::http::header::{self, HeaderMap, HeaderValue};
 use actix_web::web::Bytes;
 use actix_web::{get, web, HttpRequest, HttpResponse, Responder};
 use futures::Stream;
@@ -89,12 +89,35 @@ async fn process_music_library(path: &str) -> Result<String, Box<dyn std::error:
             info!(log);
             log_to_ws(log).await;
 
-            for modified_album in new_album_entries.iter_mut() {
+                        for modified_album in new_album_entries.iter_mut() {
                 process_album(&client, modified_album.artist_name.clone(), &mut modified_album.album).await;
                 if let Some(artist) = current_library.iter_mut().find(|a| a.id == modified_album.artist_id) {
                     match artist.albums.iter_mut().find(|a| a.id == modified_album.album.id) {
-                        Some(existing_album) => *existing_album = modified_album.album.clone(),
-                        None => artist.albums.push(modified_album.album.clone()),
+                        Some(existing_album) => {
+                            for new_song in modified_album.album.songs.iter() {
+                                if let Some(existing_song) = existing_album.songs.iter_mut()
+                                    .find(|s| s.id == new_song.id) {
+                                    if existing_song.path != new_song.path {
+                                        info!("Updated song path: {} -> {}", existing_song.path, new_song.path);
+                                        log_to_ws(format!("Updated song path for: {}", new_song.name)).await;
+                                        existing_song.path = new_song.path.clone();
+                                    }
+                                }
+                            }
+
+                            if !modified_album.album.cover_url.is_empty() && 
+                               existing_album.cover_url != modified_album.album.cover_url {
+                                info!("Updated album cover: {} -> {}", 
+                                    existing_album.cover_url, modified_album.album.cover_url);
+                                log_to_ws(format!("Updated cover art for: {}", existing_album.name)).await;
+                                existing_album.cover_url = modified_album.album.cover_url.clone();
+                            }
+                        },
+                        None => {
+                            info!("Added new album: {}", modified_album.album.name);
+                            log_to_ws(format!("Added new album: {}", modified_album.album.name)).await;
+                            artist.albums.push(modified_album.album.clone());
+                        },
                     }
                     refresh_audio_db_info(artist);
                 }
@@ -186,7 +209,18 @@ pub async fn process_music_library_no_ws(path: &str) -> Result<String, Box<dyn s
                 process_album(&client, modified_album.artist_name.clone(), &mut modified_album.album).await;
                 if let Some(artist) = current_library.iter_mut().find(|a| a.id == modified_album.artist_id) {
                     match artist.albums.iter_mut().find(|a| a.id == modified_album.album.id) {
-                        Some(existing_album) => *existing_album = modified_album.album.clone(),
+                        Some(existing_album) => {
+                            for new_song in modified_album.album.songs.iter() {
+                                if let Some(existing_song) = existing_album.songs.iter_mut()
+                                    .find(|s| s.id == new_song.id) {
+                                    existing_song.path = new_song.path.clone();
+                                }
+                            }
+
+                            if !modified_album.album.cover_url.is_empty() {
+                                existing_album.cover_url = modified_album.album.cover_url.clone();
+                            }
+                        },
                         None => artist.albums.push(modified_album.album.clone()),
                     }
                     refresh_audio_db_info(artist);
@@ -307,7 +341,7 @@ async fn stream_song(
     let path = std::path::Path::new(&song);
 
     if !path.is_file() {
-        panic!("ERROR: Path is not a file!");
+        return HttpResponse::NotFound().finish();
     }
 
     let range = req.headers().get("Range").and_then(|v| v.to_str().ok());
@@ -325,30 +359,65 @@ async fn stream_song(
         None => (0, song_file_size - 1),
     };
 
-    let content_range = format!("bytes {}-{}/{}", start, end, song_file_size);
-
     if bitrate == 0 && !slowed_reverb {
-        let mut file = tokio::fs::File::open(&song).await.unwrap();
-        let mut buffer = vec![0; (end - start + 1) as usize];
-        file.seek(tokio::io::SeekFrom::Start(start)).await.unwrap();
-        file.read_exact(&mut buffer).await.unwrap();
-    
-        let extension = path.extension().and_then(std::ffi::OsStr::to_str);
-        let mime_type = match extension {
-            Some("mp3") => "audio/mpeg",
+        use tokio::io::AsyncSeekExt;
+        
+        let content_type = match path.extension().and_then(|ext| ext.to_str()) {
             Some("flac") => "audio/flac",
-            Some("wav") => "audio/wav",
-            Some("ogg") => "audio/ogg",
-            Some("aac") => "audio/aac",
+            Some("mp3") => "audio/mpeg",
+            Some("mp4") => "video/mp4",
+            Some("webm") => "video/webm", 
+            Some("mkv") => "video/x-matroska",
             _ => "application/octet-stream",
         };
-    
+
+        let mut file = match tokio::fs::File::open(&song).await {
+            Ok(file) => file,
+            Err(_) => return HttpResponse::NotFound().finish()
+        };
+
+        let (start, end) = if let Some(range_header) = &range {
+            if let Some(bytes_range) = range_header.trim().strip_prefix("bytes=") {
+                let parts: Vec<&str> = bytes_range.split('-').collect();
+                let start = parts
+                    .get(0)
+                    .and_then(|s| s.parse::<u64>().ok())
+                    .unwrap_or(0);
+                let end = match parts.get(1) {
+                    Some(s) if !s.is_empty() => s.parse::<u64>().unwrap_or(song_file_size - 1),
+                    _ => song_file_size - 1,
+                };
+                (start, end)
+            } else {
+                (0, song_file_size - 1)
+            }
+        } else {
+            (0, song_file_size - 1)
+        };
+
+        if let Err(_) = file.seek(std::io::SeekFrom::Start(start)).await {
+            return HttpResponse::InternalServerError().finish();
+        }
+
+        let stream = ReaderStream::with_capacity(
+            file.take(end - start + 1),
+            65536
+        );
+
         HttpResponse::PartialContent()
-            .append_header((header::CONTENT_TYPE, mime_type))
-            .append_header((header::CONTENT_RANGE, content_range))
-            .body(Bytes::from(buffer))
+            .insert_header((header::ACCEPT_RANGES, "bytes"))
+            .insert_header((header::CONTENT_TYPE, content_type))
+            .insert_header((header::CONTENT_RANGE, format!("bytes {}-{}/{}", start, end, song_file_size)))
+            .insert_header((header::CONTENT_LENGTH, (end - start + 1).to_string()))
+            .insert_header((header::CACHE_CONTROL, "public, max-age=31536000"))
+            .streaming(stream)
     } else {
-        let mut command: Command = Command::new("ffmpeg");
+        let mut command = Command::new("ffmpeg");
+
+        if start > 0 {
+            command.arg("-ss")
+                  .arg(format!("{}", start as f64 / 44100.0));
+        }
 
         if slowed_reverb {
             command.args(&[
@@ -356,6 +425,8 @@ async fn stream_song(
                 "-filter_complex", "asetrate=44100*0.8, atempo=0.9, aecho=0.8:0.88:60:0.4",
                 "-v", "0",
                 "-f", "mp3",
+                "-chunk_size", "65536",
+                "-movflags", "frag_keyframe+empty_moov",
                 "pipe:1",
             ]);
         } else {
@@ -365,27 +436,36 @@ async fn stream_song(
                 "-b:a", &format!("{}k", bitrate),
                 "-v", "0",
                 "-f", "mp3",
+                "-chunk_size", "65536",
+                "-movflags", "frag_keyframe+empty_moov",
                 "pipe:1",
             ]);
         }
 
-        let mut command = command.stdout(Stdio::piped()).spawn().expect("Failed to start ffmpeg process");
-
-        let stdout = command.stdout.take().expect("Failed to take stdout of ffmpeg");
-
-        let stream = ReaderStream::new(stdout);
-
-        let new_content_length = stream.size_hint().1.unwrap_or(0) as u64;
-        let new_content_range = if new_content_length > 0 {
-            let new_end = start + new_content_length - 1;
-            format!("bytes {}-{}/{}", start, new_end, new_content_length)
-        } else {
-            format!("bytes {}-{}", start, start)
+        let mut child = match command.stdout(Stdio::piped())
+                              .stderr(Stdio::piped())
+                              .spawn()
+                              .map_err(|e| {
+                                  eprintln!("Failed to start ffmpeg: {}", e);
+                                  HttpResponse::InternalServerError().finish()
+                              }) {
+            Ok(child) => child,
+            Err(response) => return response,
         };
+
+        let stdout = match child.stdout.take().ok_or_else(|| {
+            eprintln!("Failed to get stdout handle");
+            HttpResponse::InternalServerError()
+        }) {
+            Ok(stdout) => stdout,
+            Err(response) => return response.await.unwrap(),
+        };
+
+        let stream = ReaderStream::with_capacity(stdout, 65536);
 
         HttpResponse::PartialContent()
             .append_header((header::CONTENT_TYPE, "audio/mpeg"))
-            .append_header((header::CONTENT_RANGE, new_content_range))
+            .append_header((header::TRANSFER_ENCODING, "chunked"))
             .streaming(stream)
     }
 }

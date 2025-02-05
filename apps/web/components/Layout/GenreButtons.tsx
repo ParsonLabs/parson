@@ -59,7 +59,7 @@ function GenreButtons({ children }: GenreButtonsProps) {
 
   return (
     <>
-      <ScrollArea className="w-5/6 whitespace-nowrap rounded-md pb-10 z-50">
+      <ScrollArea className="w-5/6 whitespace-nowrap rounded-md pb-10 z-40">
         <div className="flex w-max space-x-4 p-4">
           {genres.map((genre) => (
             <MemoizedButton

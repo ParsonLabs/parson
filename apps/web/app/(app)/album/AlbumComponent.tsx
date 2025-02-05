@@ -20,6 +20,27 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 
+const getRelationshipIcon = (url: string) => {
+  switch (true) {
+    case url.includes("discogs"):
+      return { src: DiscogsLogo, alt: "Discogs Logo" };
+    case url.includes("wikidata"):
+      return { src: WikidataLogo, alt: "Wikidata Logo" };
+    case url.includes("wikipedia"):
+      return { src: WikipediaLogo, alt: "Wikipedia Logo" };
+    case url.includes("allmusic"):
+      return { src: AllmusicLogo, alt: "AllMusic Logo" };
+    case url.includes("rateyourmusic"):
+      return { src: RateyourmusicLogo, alt: "RateYourMusic Logo" };
+    case url.includes("pitchfork"):
+      return { src: PitchforkLogo, alt: "Pitchfork Logo" };
+    case url.includes("bbc"):
+      return { src: BBCLogo, alt: "BBC Logo" };
+    default:
+      return { src: MusicbrainzLogo, alt: "MusicBrainz Logo" };
+  }
+};
+
 export default function AlbumComponent() {
   const searchParams = useSearchParams();
   const id = searchParams?.get("id");
@@ -175,14 +196,16 @@ export default function AlbumComponent() {
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-[1fr,300px] gap-6">
-            <div className="bg-black/20 rounded-xl p-4">
-              <AlbumTable
-                album={album}
-                songs={album.songs}
-                artist={artist}
-                key={album.id}
-              />
-            </div>
+            {album.songs.length > 0 && (
+              <div className="bg-black/20 rounded-xl p-4">
+                <AlbumTable
+                  album={album}
+                  songs={album.songs}
+                  artist={artist}
+                  key={album.id}
+                />
+              </div>
+            )}
 
             <div className="space-y-6">
               {genres.length > 0 && (
@@ -210,65 +233,28 @@ export default function AlbumComponent() {
                     Links
                   </h3>
                   <div className="flex flex-wrap gap-2">
-                    {relationships.map((relationship) => (
-                      <Link
-                        key={relationship.musicbrainz_id}
-                        href={relationship.url}
-                        target="_blank"
-                      >
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-8 w-8 hover:bg-inherit m-1"
+                    {relationships.map((relationship) => {
+                      const icon = getRelationshipIcon(relationship.url);
+                      return (
+                        <Link
+                          key={relationship.musicbrainz_id}
+                          href={relationship.url}
+                          target="_blank"
                         >
-                          <Image
-                            src={
-                              relationship.url.includes("discogs")
-                                ? DiscogsLogo
-                                : relationship.url.includes("wikidata")
-                                  ? WikidataLogo
-                                  : relationship.url.includes("wikipedia")
-                                    ? WikipediaLogo
-                                    : relationship.url.includes("allmusic")
-                                      ? AllmusicLogo
-                                      : relationship.url.includes(
-                                            "rateyourmusic"
-                                          )
-                                        ? RateyourmusicLogo
-                                        : relationship.url.includes("pitchfork")
-                                          ? PitchforkLogo
-                                          : relationship.url.includes("bbc")
-                                            ? BBCLogo
-                                            : MusicbrainzLogo
-                            }
-                            alt={
-                              relationship.url.includes("discogs")
-                                ? "Discogs Logo"
-                                : relationship.url.includes("wikidata")
-                                  ? "Wikidata Logo"
-                                  : relationship.url.includes("wikipedia")
-                                    ? "Wikipedia Logo"
-                                    : relationship.url.includes("allmusic")
-                                      ? "AllMusic Logo"
-                                      : relationship.url.includes("musicmoz")
-                                        ? "MusicMoz Logo"
-                                        : relationship.url.includes(
-                                              "rateyourmusic"
-                                            )
-                                          ? "RateYourMusic Logo"
-                                          : relationship.url.includes(
-                                                "pitchfork"
-                                              )
-                                            ? "Pitchfork Logo"
-                                            : relationship.url.includes("bbc")
-                                              ? "BBC Logo"
-                                              : "MusicBrainz Logo"
-                            }
-                            className="w-8 h-8"
-                          />
-                        </Button>
-                      </Link>
-                    ))}
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 hover:bg-inherit m-1"
+                          >
+                            <Image
+                              src={icon.src}
+                              alt={icon.alt}
+                              className="w-8 h-8"
+                            />
+                          </Button>
+                        </Link>
+                      );
+                    })}
                   </div>
                 </div>
               )}
@@ -286,7 +272,9 @@ export default function AlbumComponent() {
                             src={
                               artist.icon_url.length === 0
                                 ? "/snf.png"
-                                : `${getBaseURL()}/image/${encodeURIComponent(artist.icon_url)}?raw=true`
+                                : `${getBaseURL()}/image/${encodeURIComponent(
+                                    artist.icon_url
+                                  )}?raw=true`
                             }
                             alt={artist.name}
                             height={40}

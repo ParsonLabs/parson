@@ -3,11 +3,9 @@ use std::process::Stdio;
 use std::time::Instant;
 
 use actix_web::http::header::{self, HeaderMap, HeaderValue};
-use actix_web::web::Bytes;
 use actix_web::{get, web, HttpRequest, HttpResponse, Responder};
-use futures::Stream;
 use serde::{Deserialize, Serialize};
-use tokio::io::{AsyncReadExt, AsyncSeekExt};
+use tokio::io::AsyncReadExt;
 use tokio::process::Command;
 use tokio_util::io::ReaderStream;
 use tracing::{error, info};
@@ -42,13 +40,55 @@ pub async fn songs_list(path: web::Path<String>) -> impl Responder {
     HttpResponse::Ok().body(message)
 }
 
+pub fn transfer_metadata(old_library: &[Artist], mut new_library: Vec<Artist>) -> Vec<Artist> {
+    for new_artist in new_library.iter_mut() {
+        if let Some(old_artist) = old_library.iter().find(|a| a.id == new_artist.id) {
+            new_artist.name = old_artist.name.clone();
+            new_artist.icon_url = old_artist.icon_url.clone();
+            new_artist.followers = old_artist.followers;
+            new_artist.featured_on_album_ids = old_artist.featured_on_album_ids.clone();
+            new_artist.description = old_artist.description.clone();
+            new_artist.tadb_music_videos = old_artist.tadb_music_videos.clone();
+
+            for new_album in new_artist.albums.iter_mut() {
+                if let Some(old_album) = old_artist.albums.iter().find(|a| a.id == new_album.id) {
+                    new_album.name = old_album.name.clone();
+                    new_album.first_release_date = old_album.first_release_date.clone();
+                    new_album.musicbrainz_id = old_album.musicbrainz_id.clone();
+                    new_album.wikidata_id = old_album.wikidata_id.clone();
+                    new_album.primary_type = old_album.primary_type.clone();
+                    new_album.description = old_album.description.clone();
+                    new_album.contributing_artists = old_album.contributing_artists.clone();
+                    new_album.contributing_artists_ids = old_album.contributing_artists_ids.clone();
+                    new_album.release_album = old_album.release_album.clone();
+                    new_album.release_group_album = old_album.release_group_album.clone();
+
+                    for new_song in new_album.songs.iter_mut() {
+                        if let Some(old_song) = old_album.songs.iter().find(|s| s.id == new_song.id) {
+                            new_song.name = old_song.name.clone();
+                            new_song.artist = old_song.artist.clone();
+                            new_song.contributing_artists = old_song.contributing_artists.clone();
+                            new_song.contributing_artist_ids = old_song.contributing_artist_ids.clone();
+                            new_song.track_number = old_song.track_number;
+                            new_song.duration = old_song.duration;
+                            new_song.music_video = old_song.music_video.clone();
+                        }
+                    }
+                }
+            }
+        }
+    }
+    new_library
+}
+
 async fn process_music_library(path: &str) -> Result<String, Box<dyn std::error::Error>> {
     let now = Instant::now();
     let library = index_library(path).await?;
 
     let client = reqwest::Client::builder()
         .user_agent("ParsonLabsMusic/0.1 (will@parsonlabs.com)")
-        .build()?;
+        .build()?; 
+    
     let config_data = get_config().await.unwrap_or_default();
     let mut current_library: Vec<Artist> = if config_data.is_empty() {
         Vec::new()
@@ -89,58 +129,32 @@ async fn process_music_library(path: &str) -> Result<String, Box<dyn std::error:
             info!(log);
             log_to_ws(log).await;
 
-                        for modified_album in new_album_entries.iter_mut() {
+            for modified_album in new_album_entries.iter_mut() {
                 process_album(&client, modified_album.artist_name.clone(), &mut modified_album.album).await;
-                if let Some(artist) = current_library.iter_mut().find(|a| a.id == modified_album.artist_id) {
-                    match artist.albums.iter_mut().find(|a| a.id == modified_album.album.id) {
-                        Some(existing_album) => {
-                            for new_song in modified_album.album.songs.iter() {
-                                if let Some(existing_song) = existing_album.songs.iter_mut()
-                                    .find(|s| s.id == new_song.id) {
-                                    if existing_song.path != new_song.path {
-                                        info!("Updated song path: {} -> {}", existing_song.path, new_song.path);
-                                        log_to_ws(format!("Updated song path for: {}", new_song.name)).await;
-                                        existing_song.path = new_song.path.clone();
-                                    }
-                                }
-                            }
-
-                            if !modified_album.album.cover_url.is_empty() && 
-                               existing_album.cover_url != modified_album.album.cover_url {
-                                info!("Updated album cover: {} -> {}", 
-                                    existing_album.cover_url, modified_album.album.cover_url);
-                                log_to_ws(format!("Updated cover art for: {}", existing_album.name)).await;
-                                existing_album.cover_url = modified_album.album.cover_url.clone();
-                            }
-                        },
-                        None => {
-                            info!("Added new album: {}", modified_album.album.name);
-                            log_to_ws(format!("Added new album: {}", modified_album.album.name)).await;
-                            artist.albums.push(modified_album.album.clone());
-                        },
-                    }
-                    refresh_audio_db_info(artist);
-                }
             }
         }
     }
 
-    let library_guard = library.lock().unwrap();
+    let final_data = if current_library.is_empty() {
+        library.lock().unwrap().clone()
+    } else {
+        let updated = {
+            let library_guard = library.lock().unwrap();
+            transfer_metadata(&current_library, library_guard.clone())
+        };
+        updated
+    };
+
     let elapsed = now.elapsed().as_secs();
     info!("Finished Indexing Library in {} seconds", elapsed);
     log_to_ws(format!("Finished Indexing Library in {} seconds", elapsed)).await;
 
-    let data_to_serialize = if current_library.is_empty() {
-        &*library_guard
-    } else {
-        &current_library
-    };
+    let json = serde_json::to_string(&final_data)?;
 
-    let json = serde_json::to_string(data_to_serialize)?;
     save_config(&json, true).await?;
     populate_search_data().await.expect("Could not Populate the Search Data");
     refresh_cache().await.expect("Could not Refresh Music Data Cache");
-
+    
     Ok(json)
 }
 

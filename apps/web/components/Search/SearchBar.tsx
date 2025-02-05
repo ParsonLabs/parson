@@ -53,7 +53,7 @@ export default function SearchBar({
 
   return (
     <div className="flex flex-col relative">
-      <div className="sticky top-0 z-10">
+      <div className="sticky top-0 z-50">
         <form
           onSubmit={handleSubmit}
           className={`${isSearchActive ? "w-full flex" : "hidden"} md:flex md:w-96`}

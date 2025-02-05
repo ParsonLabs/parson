@@ -102,7 +102,7 @@ export default function PlaylistComponent() {
         
         <div className="grid grid-cols-1 md:grid-cols-[auto,1fr,auto] gap-8 items-start">
           <div className="flex justify-center">
-            <Avatar className="w-48 h-48 rounded-lg shadow-2xl ring-2 ring-white/10">
+            <Avatar className="w-48 h-48 rounded-lg shadow-2xl">
               <AvatarFallback className="text-6xl bg-gradient-to-br from-neutral-700 to-neutral-900">
                 {playlist.users[0]?.username?.substring(0, 2).toUpperCase()}
               </AvatarFallback>

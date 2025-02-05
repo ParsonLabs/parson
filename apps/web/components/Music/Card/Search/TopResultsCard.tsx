@@ -101,118 +101,122 @@ export default function TopResultsCard({ result }: ResultCardProps) {
     }
   }
 
-  return (
-    <div 
-      className="relative w-full rounded-xl overflow-hidden transition-transform duration-200 hover:scale-[1.01] cursor-pointer"
-      onClick={() => {
-        if (result.item_type === "album" && album) {
-          window.location.href = `/album?id=${album.id}`;
-        } else if (result.item_type === "artist" && artist) {
-          window.location.href = `/artist?id=${artist.id}`;
-        }
-      }}
-    >
-      <div 
-        className="absolute inset-0 bg-cover bg-center opacity-30"
-        style={{
-          backgroundImage: `url(${imageSrc})`,
-          filter: 'blur(140px)',
-        }}
-      />
+  const getNavigationLink = () => {
+    if (result.item_type === "album" && album) {
+      return `/album?id=${album.id}`;
+    } else if (result.item_type === "artist" && artist) {
+      return `/artist?id=${artist.id}`;
+    }
+    return '#';
+  };
 
-      <div className="relative z-10 flex flex-col md:flex-row items-center p-8 gap-8">
-        <div className="relative flex-shrink-0">
-          <div className="relative w-48 md:w-[200px] aspect-square shadow-2xl">
-            <Image
-              src={imageSrc}
-              alt={result.name}
-              layout="fill"
-              className={`${result.item_type === "artist" ? "rounded-full" : "rounded-lg"} object-cover transition-all duration-300 group-hover:brightness-90`}
-              priority
-            />
+  return (
+    <Link href={getNavigationLink()}>
+      <div className="relative w-full rounded-xl overflow-hidden transition-transform duration-200 hover:scale-[1.01] cursor-pointer">
+        <div 
+          className="absolute inset-0 bg-cover bg-center opacity-30"
+          style={{
+            backgroundImage: `url(${imageSrc})`,
+            filter: 'blur(140px)',
+          }}
+        />
+
+        <div className="relative z-10 flex flex-col md:flex-row items-center p-8 gap-8">
+          <div className="relative flex-shrink-0">
+            <div className="relative w-48 md:w-[200px] aspect-square shadow-2xl">
+              <Image
+                src={imageSrc}
+                alt={result.name}
+                layout="fill"
+                className={`${result.item_type === "artist" ? "rounded-full" : "rounded-lg"} object-cover transition-all duration-300 group-hover:brightness-90`}
+                priority
+              />
+              {result.item_type === "song" && (
+                <button
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    handlePlay();
+                  }}
+                  className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 hover:opacity-100 transition-opacity"
+                >
+                  {playingSongID === song?.id ? (
+                    isPlaying ? (
+                      <Pause className="w-16 h-16 text-white" fill="white" strokeWidth={0} />
+                    ) : (
+                      <Play className="w-16 h-16 text-white" fill="white" strokeWidth={0} />
+                    )
+                  ) : (
+                    <Play className="w-16 h-16 text-white" fill="white" strokeWidth={0} />
+                  )}
+                </button>
+              )}
+            </div>
+          </div>
+
+          <div className="flex flex-col justify-center text-center md:text-left">
+            <h1 className="text-3xl md:text-5xl font-bold mb-4 text-white">
+              {result.name}
+            </h1>
+            
+            <div className="flex flex-wrap items-center justify-center md:justify-start gap-2 text-sm text-gray-300 mb-6">
+              {result.item_type === "song" && song && (
+                <>
+                  <span>Song</span>
+                  <span>•</span>
+                  <Link href={`/artist?id=${song.artist_object.id}`} className="hover:underline">
+                    {song.artist}
+                  </Link>
+                  <span>•</span>
+                  <Link href={`/album?id=${song.album_object.id}`} className="hover:underline">
+                    {song.album_object.name}
+                  </Link>
+                  <span>•</span>
+                  <span>{formatDuration(song.duration)}</span>
+                </>
+              )}
+              
+              {result.item_type === "album" && album && (
+                <>
+                  <span>Album</span>
+                  <span>•</span>
+                  <Link href={`/artist?id=${album.artist_object.id}`} className="hover:underline">
+                    {album.artist_object.name}
+                  </Link>
+                  <span>•</span>
+                  <span>{album.songs.length} Songs</span>
+                </>
+              )}
+              
+              {result.item_type === "artist" && artist && (
+                <>
+                  <span>Artist</span>
+                  <span>•</span>
+                  <span>{artist.followers.toLocaleString()} Followers</span>
+                </>
+              )}
+            </div>
+
             {result.item_type === "song" && (
               <button
                 onClick={(e) => {
+                  e.preventDefault();
                   e.stopPropagation();
                   handlePlay();
                 }}
-                className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 hover:opacity-100 transition-opacity"
+                className="inline-flex items-center justify-center px-8 py-3 rounded-full bg-white text-black font-medium hover:scale-105 transition-transform self-center md:self-start"
               >
-                {playingSongID === song?.id ? (
-                  isPlaying ? (
-                    <Pause className="w-16 h-16 text-white" fill="white" strokeWidth={0} />
-                  ) : (
-                    <Play className="w-16 h-16 text-white" fill="white" strokeWidth={0} />
-                  )
+                {playingSongID === song?.id && isPlaying ? (
+                  <Pause className="w-6 h-6 mr-2" />
                 ) : (
-                  <Play className="w-16 h-16 text-white" fill="white" strokeWidth={0} />
+                  <Play className="w-6 h-6 mr-2" fill="black" />
                 )}
+                {playingSongID === song?.id && isPlaying ? "Pause" : "Play"}
               </button>
             )}
           </div>
         </div>
-
-        <div className="flex flex-col justify-center text-center md:text-left">
-          <h1 className="text-3xl md:text-5xl font-bold mb-4 text-white">
-            {result.name}
-          </h1>
-          
-          <div className="flex flex-wrap items-center justify-center md:justify-start gap-2 text-sm text-gray-300 mb-6">
-            {result.item_type === "song" && song && (
-              <>
-                <span>Song</span>
-                <span>•</span>
-                <Link href={`/artist?id=${song.artist_object.id}`} className="hover:underline">
-                  {song.artist}
-                </Link>
-                <span>•</span>
-                <Link href={`/album?id=${song.album_object.id}`} className="hover:underline">
-                  {song.album_object.name}
-                </Link>
-                <span>•</span>
-                <span>{formatDuration(song.duration)}</span>
-              </>
-            )}
-            
-            {result.item_type === "album" && album && (
-              <>
-                <span>Album</span>
-                <span>•</span>
-                <Link href={`/artist?id=${album.artist_object.id}`} className="hover:underline">
-                  {album.artist_object.name}
-                </Link>
-                <span>•</span>
-                <span>{album.songs.length} Songs</span>
-              </>
-            )}
-            
-            {result.item_type === "artist" && artist && (
-              <>
-                <span>Artist</span>
-                <span>•</span>
-                <span>{artist.followers.toLocaleString()} Followers</span>
-              </>
-            )}
-          </div>
-
-          {result.item_type === "song" && (
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                handlePlay();
-              }}
-              className="inline-flex items-center justify-center px-8 py-3 rounded-full bg-white text-black font-medium hover:scale-105 transition-transform self-center md:self-start"
-            >
-              {playingSongID === song?.id && isPlaying ? (
-                <Pause className="w-6 h-6 mr-2" />
-              ) : (
-                <Play className="w-6 h-6 mr-2" fill="black" />
-              )}
-              {playingSongID === song?.id && isPlaying ? "Pause" : "Play"}
-            </button>
-          )}
-        </div>
       </div>
-    </div>
+    </Link>
   );
 }

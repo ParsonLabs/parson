@@ -15,6 +15,7 @@ import Image from "next/image";
 import ArtistMusicVideos from "./ArtistMusicVideos";
 import ArtistAlbumCard from "./ArtistAlbumCard";
 import SimilarArtists from "./SimilarArtists";
+import ArtistSongsInLibrary from "./ArtistSongsInLibrary";
 
 export default function ArtistComponent() {
   const searchParams = useSearchParams();
@@ -121,63 +122,72 @@ export default function ArtistComponent() {
             </div>
           )}
 
-          <div className="mb-8">
-            <h2 className="text-2xl font-bold text-white mb-4">Popular Songs</h2>
-            <div className="bg-black/20 backdrop-blur-sm rounded-xl p-4">
-              <div className="space-y-2">
-                {randomSongs.slice(0, 5).map((song, index) => (
-                  <SongRow
-                    key={song.id}
-                    song_name={song.name}
-                    song_id={song.id}
-                    artist_id={song.artist_object.id}
-                    artist_name={song.artist}
-                    album_id={song.album_object.id}
-                    album_name={song.album_object.name}
-                    album_cover={song.album_object.cover_url}
-                    path={song.path}
-                    duration={song.duration}
-                  />
-                ))}
+          {randomSongs.length > 0 && (
+            <div className="mb-8">
+              <h2 className="text-2xl font-bold text-white mb-4">Popular Songs</h2>
+              <div className="bg-black/20 backdrop-blur-sm rounded-xl p-4">
+                <div className="space-y-2">
+                  {randomSongs.slice(0, 5).map((song, index) => (
+                    <SongRow
+                      key={song.id}
+                      song_name={song.name}
+                      song_id={song.id}
+                      artist_id={song.artist_object.id}
+                      artist_name={song.artist}
+                      album_id={song.album_object.id}
+                      album_name={song.album_object.name}
+                      album_cover={song.album_object.cover_url}
+                      path={song.path}
+                      duration={song.duration}
+                    />
+                  ))}
+                </div>
               </div>
             </div>
-          </div>
+          )}
 
           <ArtistMusicVideos artistName={artist.name} />
 
-          <div>
-            <h2 className="text-2xl font-bold text-white mb-4">Albums</h2>
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
-              {albums
-                .sort((a, b) => {
-                  const dateA = new Date(a.first_release_date).getTime();
-                  const dateB = new Date(b.first_release_date).getTime();
-                  if (isNaN(dateA)) return 1;
-                  if (isNaN(dateB)) return -1;
-                  return dateB - dateA;
-                })
-                .map((album, index) => (
-                  <div key={index}>
-                    <ArtistAlbumCard
-                      album_id={album.id}
-                      album_name={album.name}
-                      album_cover={album.cover_url}
-                      first_release_date={album.first_release_date}
-                    />
-                  </div>
-                ))}
+          {albums.length > 0 && (
+            <div>
+              <h2 className="text-2xl font-bold text-white mb-4">Albums</h2>
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+                {albums
+                  .sort((a, b) => {
+                    const dateA = new Date(a.first_release_date).getTime();
+                    const dateB = new Date(b.first_release_date).getTime();
+                    if (isNaN(dateA)) return 1;
+                    if (isNaN(dateB)) return -1;
+                    return dateB - dateA;
+                  })
+                  .map((album, index) => (
+                    <div key={index}>
+                      <ArtistAlbumCard
+                        album_id={album.id}
+                        album_name={album.name}
+                        album_cover={album.cover_url}
+                        first_release_date={album.first_release_date}
+                      />
+                    </div>
+                  ))}
+              </div>
             </div>
-          </div>
+          )}
 
-          <SimilarArtists 
-            artistName={artist.name}
-            genres={albums.flatMap(album => 
-              [...(album.release_group_album?.genres || []), ...(album.release_album?.genres || [])]
-            ).map(g => g.name)}
-          />
+          {albums.some(album => 
+            (album.release_group_album?.genres || []).length > 0 ||
+            (album.release_album?.genres || []).length > 0
+          ) && (
+            <SimilarArtists 
+              artistName={artist.name}
+              genres={albums.flatMap(album => 
+                [...(album.release_group_album?.genres || []), ...(album.release_album?.genres || [])]
+              ).map(g => g.name)}
+            />
+          )}
 
           <Suspense>
-            <SongsInLibrary />
+            <ArtistSongsInLibrary />
           </Suspense>
         </div>
       </div>

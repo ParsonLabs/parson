@@ -28,7 +28,7 @@ export default function MusicVideoCard({ song }: MusicVideoCardProps) {
 
   useEffect(() => {
     async function fetchSongInfo() {
-      const fetchedSongInfo = await getSongInfo(song.id) as LibrarySong;
+      const fetchedSongInfo = await getSongInfo(song.id, false) as LibrarySong;
       setSongInfo(fetchedSongInfo);
     }
 

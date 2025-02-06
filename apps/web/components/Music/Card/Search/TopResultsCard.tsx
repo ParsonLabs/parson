@@ -42,12 +42,12 @@ export default function TopResultsCard({ result }: ResultCardProps) {
   useEffect(() => {
     async function fetchInfo() {
       if (result.item_type === "song") {
-        const song = await getSongInfo(result.id) as LibrarySong;
+        const song = await getSongInfo(result.id, false) as LibrarySong;
         setSong(song);
       }
 
       if (result.item_type === "album") {
-        const album = await getAlbumInfo(result.id) as LibraryAlbum;
+        const album = await getAlbumInfo(result.id, false) as LibraryAlbum;
         setAlbum(album);
       }
 

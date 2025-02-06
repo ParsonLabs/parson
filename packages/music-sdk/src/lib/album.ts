@@ -20,7 +20,7 @@ export async function getRandomAlbum(amount: number): Promise<LibraryAlbum[]> {
  * @param {boolean} [bare=false] - Whether to fetch bare album information.
  * @returns {Promise<LibraryAlbum | Album>} - A promise that resolves to the album information.
  */
-export async function getAlbumInfo(id: string, bare: boolean = false): Promise<LibraryAlbum | Album> {
+export async function getAlbumInfo(id: string, bare: boolean = true): Promise<LibraryAlbum | Album> {
   const response: AxiosResponse<{ Full?: LibraryAlbum; Bare?: Album }> = await axios.get(`/album/info/${id}`, {
     params: { bare }
   });

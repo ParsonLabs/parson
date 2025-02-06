@@ -52,7 +52,7 @@ export default function PlaylistComponent() {
       });
 
       const songsWithMetadataPromises = playlistData.song_infos.map(async (songInfo: { song_id: string, date_added: string }) => {
-        const songData = await getSongInfo(songInfo.song_id);
+        const songData = await getSongInfo(songInfo.song_id, false);
         return { ...songData, date_added: songInfo.date_added };
       });
 

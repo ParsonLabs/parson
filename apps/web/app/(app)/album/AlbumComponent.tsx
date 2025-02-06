@@ -53,7 +53,7 @@ export default function AlbumComponent() {
     if (!id || typeof id !== "string") return;
 
     const fetchAlbumInfo = async () => {
-      const album = (await getAlbumInfo(id)) as LibraryAlbum;
+      const album = (await getAlbumInfo(id, false)) as LibraryAlbum;
 
       const artistData = album.artist_object;
       const contributingArtistIds = album.contributing_artists_ids;

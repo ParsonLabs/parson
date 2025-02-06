@@ -19,7 +19,7 @@ export default function HistoryPage() {
 
       if (session) {
         const listenHistoryItems = await getListenHistory(Number(session.sub));
-        const songDetailsPromises = listenHistoryItems.reverse().map(item => getSongInfo(item.song_id));
+        const songDetailsPromises = listenHistoryItems.reverse().map(item => getSongInfo(item.song_id, false));
         const songDetails = await Promise.all(songDetailsPromises) as LibrarySong[];
         
         setListenHistorySongs(songDetails);

@@ -24,7 +24,7 @@ export async function getRandomSong(amount: number, genre?: string): Promise<Lib
  * @param {boolean} [bare=false] - Whether to fetch bare song information.
  * @returns {Promise<LibrarySong | BareSong>} - A promise that resolves to the song information.
  */
-export async function getSongInfo(id: string, bare: boolean = false): Promise<LibrarySong | BareSong> {
+export async function getSongInfo(id: string, bare: boolean = true): Promise<LibrarySong | BareSong> {
   const response: AxiosResponse<{ Full?: LibrarySong; Bare?: BareSong }> = await axios.get(`/song/info/${id}`, {
     params: { bare }
   });

@@ -178,7 +178,27 @@ export default function Player() {
     [togglePlayPause]
   );
 
-
+  useEffect(() => {
+    const handleKeyPress = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      const isFormElement = target.tagName === 'INPUT' || 
+                           target.tagName === 'TEXTAREA' || 
+                           target.contentEditable === 'true' ||
+                           target.isContentEditable;
+  
+      if (e.code === 'Space' && !isFormElement) {
+        e.preventDefault();
+        e.stopPropagation();
+        togglePlayPause();
+      }
+    };
+  
+    document.addEventListener('keydown', handleKeyPress, { capture: true });
+    
+    return () => {
+      document.removeEventListener('keydown', handleKeyPress, { capture: true });
+    };
+  }, [togglePlayPause]);
 
   const formatTime = (time: number) => {
     const minutes = Math.floor(time / 60);
@@ -220,7 +240,7 @@ export default function Player() {
           <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 
             transition-opacity duration-200 rounded-md flex items-center justify-center">
             <button 
-              onClick={debouncedTogglePlayPause}
+              onClick={() => togglePlayPause()}
               className="text-white transform scale-90 hover:scale-100 transition-transform duration-200"
             >
               {isPlaying ? <IconPause width={24} height={24} /> : <IconPlay width={24} height={24} />}

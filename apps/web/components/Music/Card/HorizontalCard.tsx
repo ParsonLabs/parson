@@ -47,7 +47,7 @@ export default function HorizontalCard({ item }: HorizontalCardProps) {
   async function handlePlay() {
     setImageSrc(imageUrl);
 
-    const song = await getSongInfo(item.id ?? "") as LibrarySong
+    const song = await getSongInfo(item.id ?? "", false) as LibrarySong
 
     setArtist(song.artist_object);
     setAlbum(song.album_object);

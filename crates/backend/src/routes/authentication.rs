@@ -42,7 +42,7 @@ pub struct ResponseAuthData {
 
 fn generate_access_token(user_id: i32, username: &str, bitrate: i32, role: &String) -> String {
     let expiration = chrono::Utc::now()
-        .checked_add_signed(chrono::Duration::minutes(60)) 
+        .checked_add_signed(chrono::Duration::days(7)) 
         .expect("valid timestamp")
         .timestamp() as usize;
 
@@ -61,7 +61,7 @@ fn generate_access_token(user_id: i32, username: &str, bitrate: i32, role: &Stri
 
 fn generate_refresh_token(user_id: i32, username: &str, role: &String) -> String {
     let expiration = Utc::now()
-        .checked_add_signed(chrono::Duration::days(30))  // 7 days
+        .checked_add_signed(chrono::Duration::days(30)) 
         .expect("valid timestamp")
         .timestamp() as usize;
 
@@ -171,7 +171,7 @@ pub async fn login(form: web::Json<AuthData>) -> impl Responder {
                     .http_only(false)
                     .same_site(SameSite::None)
                     .path("/")
-                    .max_age(cookie::time::Duration::minutes(60))
+                    .max_age(cookie::time::Duration::days(7))
                     .finish();
 
                 let refresh_cookie = Cookie::build("plm_refreshToken", generated_refresh_token.clone())
@@ -403,7 +403,7 @@ pub async fn refresh(req: HttpRequest) -> impl Responder {
                     .http_only(false)
                     .same_site(SameSite::None)
                     .path("/")
-                    .max_age(cookie::time::Duration::minutes(60))
+                    .max_age(cookie::time::Duration::days(7))
                     .finish();
 
                 HttpResponse::Ok()

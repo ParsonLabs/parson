@@ -113,11 +113,12 @@ export default function LyricsOverlay({ children }: QueuePanelProps) {
     const fetchLyrics = async () => {
       if (song.id) {
         const sanitizedSongName = song.name.replace(/\s*\(.*?\)\s*/g, '');
+        const sanitizedAlbumName = song.album_object.name.replace(/\s*\(.*?\)\s*/g, '');
         const capitalizeFirstLetter = (str: string) => str.charAt(0).toUpperCase() + str.slice(1).toLowerCase();
         const capitalizedArtistName = capitalizeFirstLetter(song.artist);
     
         const response = await fetch(
-          `https://lrclib.net/api/search?q=${encodeURIComponent(`${sanitizedSongName} ${capitalizedArtistName}`)}`
+          `https://lrclib.net/api/search?q=${encodeURIComponent(`${sanitizedSongName} ${sanitizedAlbumName} ${capitalizedArtistName}`)}`
         );
         const data: LyricsObjectResponse[] = await response.json();
         setCurrentLyrics(data[0]?.plainLyrics ?? "");

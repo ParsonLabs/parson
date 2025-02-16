@@ -60,7 +60,7 @@ export default function Sidebar({ children, sidebarContent }: SidebarProps) {
           ? "" 
           : "border-r border-gray-500 bg-black"} 
         ${isOpen ? "w-1/5 xl:w-[18%]" : "w-3 xl:w-20"} 
-        space-y-4 p-4 lg:block pt-20 transition-colors duration-100`}>
+        space-y-4 p-4 md:w-[9%] lg:block pt-20 transition-colors duration-100`}>
         
         {navigationItems.map((item) => (
           <Button 

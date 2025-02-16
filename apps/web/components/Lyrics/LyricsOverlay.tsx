@@ -7,6 +7,8 @@ import { useContext, useEffect, useRef, useState } from "react";
 import { usePlayer } from "../Music/Player/usePlayer";
 import { LyricsContext } from "./LyricsOverlayContext";
 import { useReverb } from "../Providers/SlowedReverbProvider";
+import { getSongInfo } from "@music/sdk";
+import { LibrarySong } from "@music/sdk/types";
 
 type QueuePanelProps = {
   children: React.ReactNode;
@@ -111,39 +113,50 @@ export default function LyricsOverlay({ children }: QueuePanelProps) {
     setBackgroundColour("");
 
     const fetchLyrics = async () => {
-      if (song.id) {
-        const sanitizedSongName = song.name.replace(/\s*\(.*?\)\s*/g, '');
-        const sanitizedAlbumName = song.album_object.name.replace(/\s*\(.*?\)\s*/g, '');
-        const capitalizeFirstLetter = (str: string) => str.charAt(0).toUpperCase() + str.slice(1).toLowerCase();
-        const capitalizedArtistName = capitalizeFirstLetter(song.artist);
+      if (!song?.id) return;
+
+      try {
+        const fullSongInfo = await getSongInfo(song.id, false) as LibrarySong;
+        if (!fullSongInfo?.name || !fullSongInfo?.artist || !fullSongInfo?.album_object?.name) {
+          console.error('Missing required song information');
+          setCurrentLyrics("");
+          return;
+        }
+
+        const sanitizedSongName = fullSongInfo.name.replace(/\s*\(.*?\)\s*/g, '');
+        const sanitizedAlbumName = fullSongInfo.album_object.name.replace(/\s*\(.*?\)\s*/g, '');
+        const capitalizedArtistName = fullSongInfo.artist;
+    
+        const params = new URLSearchParams({
+          track_name: sanitizedSongName,
+          artist_name: capitalizedArtistName,
+          album_name: sanitizedAlbumName,
+        });
     
         const response = await fetch(
-          `https://lrclib.net/api/search?q=${encodeURIComponent(`${sanitizedSongName} ${sanitizedAlbumName} ${capitalizedArtistName}`)}`
+          `https://lrclib.net/api/get?${params.toString()}`
         );
-        const data: LyricsObjectResponse[] = await response.json();
-        setCurrentLyrics(data[0]?.plainLyrics ?? "");
+        
+        if (!response.ok) {
+          setCurrentLyrics("");
+          return;
+        }
+    
+        const data: LyricsObjectResponse = await response.json();
+        setCurrentLyrics(data?.plainLyrics ?? "");
     
         const slowdownFactor = reverb ? 1 / 0.7 : 1;
-        let foundSyncedLyrics = false;
     
-        for (let i = 0; i < Math.min(data.length, 5); i++) {
-          if (data[i]?.syncedLyrics) {
-            setLyrics(parseLyrics(data[i]?.syncedLyrics ?? "", slowdownFactor));
-            setIsSyncedLyrics(true);
-            foundSyncedLyrics = true;
-            break;
-          }
+        if (data?.syncedLyrics) {
+          setLyrics(parseLyrics(data.syncedLyrics, slowdownFactor));
+          setIsSyncedLyrics(true);
+        } else if (data?.plainLyrics) {
+          setLyrics(parseLyrics(data.plainLyrics, slowdownFactor));
+          setIsSyncedLyrics(false);
         }
-    
-        if (!foundSyncedLyrics) {
-          for (let i = 0; i < Math.min(data.length, 5); i++) {
-            if (data[i]?.plainLyrics) {
-              setLyrics(parseLyrics(data[i]?.plainLyrics ?? "", slowdownFactor));
-              setIsSyncedLyrics(false);
-              break;
-            }
-          }
-        }
+      } catch (error) {
+        console.error('Error fetching song info or lyrics:', error);
+        setCurrentLyrics("");
       }
     };
 

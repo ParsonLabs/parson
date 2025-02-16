@@ -55,7 +55,7 @@ export default function MusicVideoCard({ song }: MusicVideoCardProps) {
   const thumbnailUrl = videoId ? `http://i3.ytimg.com/vi/${videoId}/hqdefault.jpg` : "";
 
   return (
-    <div className="w-96 pr-6 shadow-lg flex flex-col rounded-md overflow-y-hidden">
+    <div className="w-96 h-full pr-6 shadow-lg flex flex-col rounded-md overflow-y-hidden">
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
         <DialogTrigger asChild>
           <div

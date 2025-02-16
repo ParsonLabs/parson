@@ -178,6 +178,15 @@ export default function Player() {
     [togglePlayPause]
   );
 
+useEffect(() => {
+    let originalTitle = document.title;
+    if (isPlaying) {
+      document.title = `${song.name} | ParsonLabs Music`;
+    } else {
+      document.title = originalTitle;
+    }
+  }, [song, isPlaying])
+
   useEffect(() => {
     const handleKeyPress = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement;

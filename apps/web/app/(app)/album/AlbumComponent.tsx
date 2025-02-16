@@ -50,6 +50,16 @@ export default function AlbumComponent() {
   const [contributingArtists, setContributingArtists] = useState<Artist[]>([]);
 
   useEffect(() => {
+    if (album?.name && artist?.name) {
+      document.title = `${album?.name} by ${artist?.name} | ParsonLabs Music`;
+    }
+  
+      return () => {
+        document.title = "ParsonLabs Music";
+      }
+    }, [album, artist]);
+
+  useEffect(() => {
     if (!id || typeof id !== "string") return;
 
     const fetchAlbumInfo = async () => {

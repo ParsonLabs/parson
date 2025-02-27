@@ -27,7 +27,7 @@ WORKDIR /app/apps/web
 RUN yarn build
 
 # Stage 3: Build the Rust backend
-FROM rust:1.81 AS backend-builder
+FROM rust:1.76 AS backend-builder
 WORKDIR /usr/src
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -43,7 +43,7 @@ RUN wget https://www.nasm.us/pub/nasm/releasebuilds/2.16/nasm-2.16.tar.gz \
     && cd .. \
     && rm -rf nasm-2.16 nasm-2.16.tar.gz
     
-RUN cargo install diesel_cli --no-default-features --features sqlite
+RUN cargo install diesel_cli@2.1.1 --no-default-features --features sqlite
 
 COPY ./crates/backend /usr/src/crates/backend
 COPY ./diesel.toml /usr/src/diesel.toml
@@ -69,9 +69,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     ffmpeg \
     && rm -rf /var/lib/apt/lists/*
-
-# Change ownership of the /app directory to the root user
-# RUN chown -R root:root /app
 
 # Copy files as root
 COPY --from=backend-builder /usr/src/crates/backend/target/release/music-server /usr/local/bin/music-server

@@ -114,7 +114,7 @@ export default function LyricsOverlay({ children }: QueuePanelProps) {
 
     const fetchLyrics = async () => {
       if (!song?.id) return;
-
+    
       try {
         const fullSongInfo = await getSongInfo(song.id, false) as LibrarySong;
         if (!fullSongInfo?.name || !fullSongInfo?.artist || !fullSongInfo?.album_object?.name) {
@@ -122,7 +122,7 @@ export default function LyricsOverlay({ children }: QueuePanelProps) {
           setCurrentLyrics("");
           return;
         }
-
+    
         const sanitizedSongName = fullSongInfo.name.replace(/\s*\(.*?\)\s*/g, '');
         const sanitizedAlbumName = fullSongInfo.album_object.name.replace(/\s*\(.*?\)\s*/g, '');
         const capitalizedArtistName = fullSongInfo.artist;
@@ -133,33 +133,76 @@ export default function LyricsOverlay({ children }: QueuePanelProps) {
           album_name: sanitizedAlbumName,
         });
     
-        const response = await fetch(
-          `https://lrclib.net/api/get?${params.toString()}`
-        );
+        const getResponse = await fetch(`https://lrclib.net/api/get?${params.toString()}`);
         
-        if (!response.ok) {
-          setCurrentLyrics("");
-          return;
+        if (getResponse.ok) {
+          const getData: LyricsObjectResponse = await getResponse.json();
+          
+          if (getData?.syncedLyrics) {
+            setCurrentLyrics(getData.plainLyrics ?? "");
+            const slowdownFactor = reverb ? 1 / 0.8 : 1;
+            setLyrics(parseLyrics(getData.syncedLyrics, slowdownFactor));
+            setIsSyncedLyrics(true);
+            return;
+          }
+          
+          if (getData?.plainLyrics) {
+            const plainLyrics = getData.plainLyrics;
+            
+            const searchResponse = await fetch(`https://lrclib.net/api/search?${params.toString()}`);
+            
+            if (searchResponse.ok) {
+              const searchResults: LyricsObjectResponse[] = await searchResponse.json();
+              
+              const syncedResult = searchResults.find(result => result.syncedLyrics);
+              
+              if (syncedResult?.syncedLyrics) {
+                setCurrentLyrics(syncedResult.plainLyrics ?? plainLyrics);
+                const slowdownFactor = reverb ? 1 / 0.8 : 1;
+                setLyrics(parseLyrics(syncedResult.syncedLyrics, slowdownFactor));
+                setIsSyncedLyrics(true);
+                return;
+              }
+            }
+            
+            setCurrentLyrics(plainLyrics);
+            const slowdownFactor = reverb ? 1 / 0.8 : 1;
+            setLyrics(parseLyrics(plainLyrics, slowdownFactor));
+            setIsSyncedLyrics(false);
+            return;
+          }
         }
-    
-        const data: LyricsObjectResponse = await response.json();
-        setCurrentLyrics(data?.plainLyrics ?? "");
-    
-        const slowdownFactor = reverb ? 1 / 0.7 : 1;
-    
-        if (data?.syncedLyrics) {
-          setLyrics(parseLyrics(data.syncedLyrics, slowdownFactor));
-          setIsSyncedLyrics(true);
-        } else if (data?.plainLyrics) {
-          setLyrics(parseLyrics(data.plainLyrics, slowdownFactor));
-          setIsSyncedLyrics(false);
+        
+        const searchResponse = await fetch(`https://lrclib.net/api/search?${params.toString()}`);
+        
+        if (searchResponse.ok) {
+          const searchResults: LyricsObjectResponse[] = await searchResponse.json();
+          
+          const bestResult = searchResults.find(result => result.syncedLyrics) || searchResults[0];
+          
+          if (bestResult) {
+            setCurrentLyrics(bestResult.plainLyrics ?? "");
+            const slowdownFactor = reverb ? 1 / 0.8 : 1;
+            
+            if (bestResult.syncedLyrics) {
+              setLyrics(parseLyrics(bestResult.syncedLyrics, slowdownFactor));
+              setIsSyncedLyrics(true);
+            } else if (bestResult.plainLyrics) {
+              setLyrics(parseLyrics(bestResult.plainLyrics, slowdownFactor));
+              setIsSyncedLyrics(false);
+            }
+            return;
+          }
         }
+        
+        setCurrentLyrics("");
+        
       } catch (error) {
         console.error('Error fetching song info or lyrics:', error);
         setCurrentLyrics("");
       }
     };
-
+    
     fetchLyrics();
   }, [song, setCurrentLyrics, reverb]);
 

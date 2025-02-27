@@ -17,6 +17,9 @@
 
 <p align="center">ParsonLabs Music is the Self Hosted Audio streaming alternative to YouTube Music, Spotify & Apple Music, providing Unrestricted Access to your library in Uncompressed, Lossless Quality</p>
 
+<img width="1280" alt="plm-album" src="https://github.com/user-attachments/assets/14a27996-51d7-40a9-b1fd-a125f912630b" />
+<img width="1280" alt="PL Music Eminem" src="https://github.com/user-attachments/assets/3d8e6a70-5c2f-46e6-ad0f-0d69630e52a4" />
+
 ![home-w](https://github.com/user-attachments/assets/6e905e19-aca6-408e-a117-c077bf2be8e4)
 ![home-te](https://github.com/user-attachments/assets/24260d6e-fd56-4df5-86da-3f9cdf925611)
 ![explore-page](https://github.com/user-attachments/assets/dc913ca6-df90-40ea-9025-1180bb60655f)

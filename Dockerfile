@@ -27,7 +27,7 @@ WORKDIR /app/apps/web
 RUN yarn build
 
 # Stage 3: Build the Rust backend
-FROM rust:1.76 AS backend-builder
+FROM rust:latest AS backend-builder
 WORKDIR /usr/src
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -43,7 +43,7 @@ RUN wget https://www.nasm.us/pub/nasm/releasebuilds/2.16/nasm-2.16.tar.gz \
     && cd .. \
     && rm -rf nasm-2.16 nasm-2.16.tar.gz
     
-RUN cargo install diesel_cli@2.1.1 --no-default-features --features sqlite
+RUN cargo install diesel_cli@2.2.8 --no-default-features --features sqlite
 
 COPY ./crates/backend /usr/src/crates/backend
 COPY ./diesel.toml /usr/src/diesel.toml

@@ -2,7 +2,7 @@ use std::fs;
 use std::process::Stdio;
 use std::time::Instant;
 
-use actix_web::http::header::{self, HeaderMap, HeaderValue};
+use actix_web::http::header;
 use actix_web::{get, web, HttpRequest, HttpResponse, Responder};
 use serde::{Deserialize, Serialize};
 use tokio::io::AsyncReadExt;
@@ -359,7 +359,7 @@ async fn stream_song(
     }
 
     let range = req.headers().get("Range").and_then(|v| v.to_str().ok());
-    let (start, end) = match range {
+    let (start, _end) = match range {
         Some(range) => {
             let bytes = range.trim_start_matches("bytes=");
             let range_parts: Vec<&str> = bytes.split('-').collect();

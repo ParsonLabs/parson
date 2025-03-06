@@ -42,7 +42,7 @@ export default function Player() {
     currentTime,
     duration,
     togglePlayPause,
-    toggleLoopSong,
+    toggleLoop,
     muted,
     setAudioVolume,
     handleTimeChange,
@@ -56,6 +56,8 @@ export default function Player() {
     artist,
     album,
     setAudioSource,
+    isDraggingSeekBar,
+    setIsDraggingSeekBar
   } = usePlayer();
 
   const [isLyricsClicked, setIsLyricsClicked] = useState(false);
@@ -79,25 +81,16 @@ export default function Player() {
   }, []);
 
   useEffect(() => {
-    let songURL = `${getBaseURL()}/api/stream/${encodeURIComponent(song.path)}?bitrate=${session && session.bitrate || 0}`;
-    if (reverb) {
-      songURL += "&slowed_reverb=true";
+    const isYouTubeUrl = song?.path?.includes('youtube.com') || song?.path?.includes('youtu.be');
+    
+    if (isYouTubeUrl && !isPlaying) {
+      const timer = setTimeout(() => {
+        togglePlayPause();
+      }, 100);
+      
+      return () => clearTimeout(timer);
     }
-
-    setAudioSource(songURL)    
-    // player.current = new Tone.Player({
-    //   url: songURL,
-    //   onload: () => {
-    //     player.current?.connect(pitchShift.current!);
-    //     pitchShift.current?.connect(reverbEffect.current!);
-    //     setIsLoaded(true);
-    //     console.log('Player loaded');
-    //   },
-    //   onerror: (error) => {
-    //     console.error('Error loading player:', error);
-    //   }
-    // }).toDestination();
-  }, [reverb, song, setAudioSource, session]);
+  }, [song?.path]);
 
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -279,7 +272,7 @@ useEffect(() => {
       <section className="flex flex-col items-center gap-2 w-full max-w-[45%] min-w-[400px] px-4">
         <div className="flex items-center gap-6">
           <button 
-            onClick={() => toggleLoopSong()}
+            onClick={() => toggleLoop()}
             className="text-gray-400 hover:text-white transition-colors"
           >
             <ArrowPath className={`w-5 h-5 ${onLoop ? 'text-white' : ''}`} />
@@ -316,9 +309,14 @@ useEffect(() => {
           </span>
           <Slider
             min={0}
-            max={duration}
+            max={duration || 100}
             value={[currentTime]}
-            onValueChange={([value]) => handleTimeChange(Number(value))}
+            onValueChange={([value]) => handleTimeChange(value?.toString())}
+            onValueCommit={([value]) => {
+              handleTimeChange(value?.toString());
+            }}
+            onPointerDown={() => setIsDraggingSeekBar(true)}
+            onPointerUp={() => setIsDraggingSeekBar(false)}
             className="w-full group"
           >
             <SliderTrack className="h-1 bg-gray-800 rounded-full">

@@ -20,6 +20,8 @@ import {
 } from "@music/sdk";
 import { Album, Artist, Genre, LibrarySong, Song } from "@music/sdk/types";
 import { useSession } from "@/components/Providers/AuthProvider";
+import YouTubePlayer from "./YouTubePlayer";
+import ReactPlayer from "react-player";
 
 const isBrowser = typeof window !== "undefined";
 const audioElement = isBrowser ? new Audio() : null;
@@ -35,7 +37,7 @@ type PlayerContextType = {
   playedFromAlbum: boolean;
   setPlayedFromAlbum: Function;
   togglePlayPause: Function;
-  toggleLoopSong: Function;
+  toggleLoop: Function;
   playNextSong: Function;
   playPreviousSong: Function;
   setAudioVolume: Function;
@@ -43,6 +45,8 @@ type PlayerContextType = {
   handleTimeUpdate: Function;
   toggleMute: Function;
   setAudioSource: Function;
+  isDraggingSeekBar: boolean;
+  setIsDraggingSeekBar: Function
   setSong: Function;
   setArtist: Function;
   setAlbum: Function;
@@ -76,7 +80,7 @@ export function PlayerProvider({ children }: PlayerProviderProps) {
   const audio = audioRef.current as HTMLAudioElement;
 
   const [imageSrc, setImageSrc] = useState("");
-  const [audioSource, setAudioSource] = useState("");
+  const [audioSource, setAudioSourceState] = useState("");
   const [song, setSong] = useState<LibrarySong>({
     artist: "",
     contributing_artists: [],
@@ -150,12 +154,39 @@ export function PlayerProvider({ children }: PlayerProviderProps) {
   const [duration, setDuration] = useState(0);
   const [base64Image, setBase64Image] = useState("");
   const [bufferedTime, setBufferedTime] = useState(0);
+  
+  const [isDraggingSeekBar, setIsDraggingSeekBar] = useState(false);
 
   const lastAddedSongIdRef = useRef<string | null>(null);
 
   let bitrate = 0;
 
   const { session } = useSession()
+
+  const [isYouTubeUrl, setIsYouTubeUrl] = useState(false);
+  const youTubePlayerRef = useRef<HTMLDivElement>(null);
+
+  const isUserSeeking = useRef(false);
+  const lastReportedTime = useRef(0);
+
+  useEffect(() => {
+    return () => {
+      if (isYouTubeUrl) {
+        setIsYouTubeUrl(false);
+      }
+    };
+  }, [song?.id]);
+
+const handleDirectSeek = useCallback((seconds: number) => {
+  if (isYouTubeUrl) {
+    setCurrentTime(seconds);
+  } else {
+    if (audioRef.current) {
+      audioRef.current.currentTime = seconds;
+      setCurrentTime(seconds);
+    }
+  }
+}, [isYouTubeUrl]);
 
   useEffect(() => {
     if (song.id && lastAddedSongIdRef.current != String(song.id)) {
@@ -185,35 +216,86 @@ export function PlayerProvider({ children }: PlayerProviderProps) {
     setQueueState(newQueue);
   }, []);
 
+  const setAudioSource = useCallback((source: string) => {
+    const isYT = source.includes('youtube.com') || source.includes('youtu.be');
+    setIsYouTubeUrl(isYT);
+    
+    setAudioSourceState(source);
+  }, []);
+
+  useEffect(() => {
+    const isYT = audioSource.includes('youtube.com') || audioSource.includes('youtu.be');
+    
+    if (isYT) {
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current.src = '';
+      }
+    } else {
+      if (audioRef.current) {
+        const formattedSource = audioSource.startsWith('http') ? 
+          audioSource : 
+          `${getBaseURL()}/api/stream/${encodeURIComponent(audioSource)}?bitrate=${bitrate}`;
+          
+        audioRef.current.src = formattedSource;
+        audioRef.current.load();
+        
+        if (isPlaying) {
+          audioRef.current.play().catch(err => {
+            console.error("Error playing audio:", err);
+          });
+        }
+      }
+    }
+  }, [audioSource, isPlaying, bitrate]);
+
   const setSongCallback = useCallback(
     async (song: LibrarySong, artist: Artist, album: Album) => {
+      const wasPlaying = isPlaying;
+      
       setSong(song);
       setArtist(artist);
       setAlbum(album);
+      
       if (album.cover_url.length === 0) {
         setBase64Image("/snf.png");
         setImageSrc("/snf.png");
       } else {
-        // imageToBase64(album.cover_url).then((base64) => {
-        //   const base64Data = `data:image/jpg;base64,${base64}`;
-        //   setBase64Image(base64Data);
-        // });
         setImageSrc(
           `${getBaseURL()}/image/${encodeURIComponent(album.cover_url)}`
         );
       }
-      setAudioSource(
-        `${getBaseURL()}/api/stream/${encodeURIComponent(song.path)}?bitrate=${bitrate}`
-      );
-
+      
+      const isYouTubeUrl = song.path.includes('youtube.com') || 
+                            song.path.includes('youtu.be');
+      
+      if (isYouTubeUrl) {
+        setAudioSource(song.path);
+        
+        if (wasPlaying) {
+          if (audioRef.current) {
+            audioRef.current.pause();
+          }
+          
+          setIsPlaying(false);
+          
+          setTimeout(() => {
+            setIsPlaying(true);
+          }, 300);
+        }
+      } else {
+        setAudioSource(
+          `${getBaseURL()}/api/stream/${encodeURIComponent(song.path)}?bitrate=${bitrate}`
+        );
+      }
+  
       const index = queueRef.current.findIndex((q) => q.song.id === song.id);
       if (index !== -1) {
         setCurrentSongIndex(index);
       }
     },
-    [setSong, bitrate]
+    [bitrate, isPlaying]
   );
-
   const playNextSong = useCallback(async () => {
     if (playedFromAlbum && album) {
       let nextSongIndex = album.songs.findIndex(albumSong => String(albumSong.id) === String(song.id)) + 1;
@@ -332,6 +414,25 @@ export function PlayerProvider({ children }: PlayerProviderProps) {
 
   useEffect(() => {
     if (audioRef.current) {
+      const audio = audioRef.current;
+      
+      if (isYouTubeUrl) {
+        audio.pause();
+        audio.src = '';
+      } else {
+        audio.src = audioSource;
+        audio.load();
+        audio.oncanplaythrough = () => {
+          if (isPlaying) {
+            audio.play();
+          }
+        };
+      }
+    }
+  }, [audioSource, isPlaying, isYouTubeUrl]);
+
+  useEffect(() => {
+    if (audioRef.current) {
       audioRef.current.src = audioSource;
     }
 
@@ -408,18 +509,25 @@ export function PlayerProvider({ children }: PlayerProviderProps) {
   }, [muted]);
 
   const togglePlayPause = useCallback(() => {
-    const audio = audioRef.current;
-    if (audio) {
-      if (isPlaying) {
-        audio.pause();
-      } else {
-        audio.play();
-      }
+    if (isYouTubeUrl) {
       setIsPlaying(!isPlaying);
+    } else {
+      if (audioRef.current) {
+        if (isPlaying) {
+          audioRef.current.pause();
+          setIsPlaying(false);
+        } else {
+          audioRef.current.play().catch(err => {
+            console.error("Error playing audio:", err);
+            setIsPlaying(false);
+          });
+          setIsPlaying(true);
+        }
+      }
     }
-  }, [isPlaying]);
+  }, [isPlaying, isYouTubeUrl]);
 
-  const toggleLoopSong = useCallback(() => {
+  const toggleLoop = useCallback(() => {
     const audio = audioRef.current;
     if (audio) {
       audio.loop = !onLoop;
@@ -437,13 +545,29 @@ export function PlayerProvider({ children }: PlayerProviderProps) {
   }, []);
 
   const handleTimeChange = useCallback((value: string) => {
-    let newTime = parseFloat(value);
-    const audio = audioRef.current;
-    if (audio) {
-      audio.currentTime = newTime;
+    const newTime = parseFloat(value);
+    
+    isUserSeeking.current = true;
+    
+    if (isYouTubeUrl) {
+      setCurrentTime(newTime);
+      
+      if (playerRef.current?.seekTo) {
+        playerRef.current.seekTo(newTime, 'seconds');
+      }
+    } else {
+      if (audioRef.current) {
+        audioRef.current.currentTime = newTime;
+      }
       setCurrentTime(newTime);
     }
-  }, []);
+    
+    setTimeout(() => {
+      isUserSeeking.current = false;
+    }, 250);
+  }, [isYouTubeUrl]);
+
+  const playerRef = useRef<ReactPlayer>(null)
 
   const handleTimeUpdate = useCallback(() => {
     const audio = audioRef.current;
@@ -491,7 +615,7 @@ export function PlayerProvider({ children }: PlayerProviderProps) {
             toggleMute();
             break;
           case "l":
-            toggleLoopSong();
+            toggleLoop();
             break;
         }
       };
@@ -522,7 +646,7 @@ export function PlayerProvider({ children }: PlayerProviderProps) {
   }, [
     handleTimeUpdate,
     handleTimeUpdateThrottled,
-    toggleLoopSong,
+    toggleLoop,
     toggleMute,
     togglePlayPause,
     audio,
@@ -541,7 +665,7 @@ export function PlayerProvider({ children }: PlayerProviderProps) {
         currentTime,
         duration,
         togglePlayPause,
-        toggleLoopSong,
+        toggleLoop,
         setAudioVolume,
         playedFromAlbum,
         setPlayedFromAlbum,
@@ -560,12 +684,38 @@ export function PlayerProvider({ children }: PlayerProviderProps) {
         setSongCallback,
         addToQueue,
         bufferedTime,
+        isDraggingSeekBar,
+        setIsDraggingSeekBar,
         setBufferedTime,
         queue,
         setQueue,
       }}
     >
       {children}
+      
+      <div ref={youTubePlayerRef} className="hidden">
+        {isYouTubeUrl && (
+          <YouTubePlayer
+            ref={playerRef}
+            url={audioSource}
+            isPlaying={isPlaying}
+            volume={volume}
+            currentTime={currentTime}
+            onProgress={(state) => {
+              if (!isDraggingSeekBar && !isUserSeeking.current) {
+                const timeDiff = Math.abs(state.playedSeconds - lastReportedTime.current);
+                if (timeDiff > 0.5) { // Only update when more than half a second has passed
+                  setCurrentTime(state.playedSeconds);
+                  setBufferedTime(state.loadedSeconds);
+                  lastReportedTime.current = state.playedSeconds;
+                }
+              }
+            }}
+            onDuration={(duration) => setDuration(duration)}
+            onEnded={playNextSong}
+          />
+        )}
+      </div>
     </PlayerContext.Provider>
   );
 }

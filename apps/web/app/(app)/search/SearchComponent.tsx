@@ -13,6 +13,9 @@ import { DialogContent, DialogTrigger } from "@radix-ui/react-dialog";
 import { YoutubeIcon } from "lucide-react";
 import Image from "next/image";
 import ReactPlayer from "react-player";
+import { usePlayer } from "@/components/Music/Player/usePlayer";
+import { Play, Pause } from "lucide-react";
+import YouTubeMiniPlayer from "@/components/Music/Player/YouTubeMiniPlayer";
 
 interface YouTubeVideo {
   id: string;
@@ -25,52 +28,105 @@ interface YouTubeVideo {
 }
 
 function YoutubeResultCard({ video }: { video: YouTubeVideo }) {
-  const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
+  const {
+    setImageSrc,
+    setSong,
+    setArtist,
+    setAlbum,
+    setAudioSource,
+    isPlaying,
+    song: currentSong,
+    togglePlayPause
+  } = usePlayer();
+  
+  const videoId = video.url.split('v=')[1] || video.id;
+  const isCurrentlyPlaying = currentSong?.id === `youtube-${videoId}` && isPlaying;
+
+  const handlePlayYouTube = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    if (currentSong?.id === `youtube-${videoId}`) {
+      togglePlayPause();
+      return;
+    }
+
+    setImageSrc(video.thumbnail);
+    
+    const youtubeSong = {
+      id: `youtube-${videoId}`,
+      name: video.title,
+      artist: video.channel.name,
+      path: video.url,
+      duration: 0,
+      music_video: { url: video.url },
+      album_object: {
+        cover_url: video.thumbnail,
+        name: "YouTube",
+        id: "youtube"
+      },
+      artist_object: {
+        name: video.channel.name,
+        id: "youtube",
+      }
+    };
+    
+    setSong(youtubeSong);
+    setArtist({
+      name: video.channel.name,
+      id: "youtube",
+      icon_url: video.thumbnail
+    });
+    setAlbum({
+      name: "YouTube",
+      id: "youtube",
+      cover_url: video.thumbnail
+    });
+    
+    setAudioSource(video.url);
+    
+    if (!isPlaying) {
+      setTimeout(() => togglePlayPause(), 100);
+    }
+  };
 
   return (
-    <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-      <DialogTrigger asChild>
-        <div
-          className="flex items-center p-4 hover:bg-gray-800 rounded-lg cursor-pointer"
-          onMouseEnter={() => setIsHovered(true)}
-          onMouseLeave={() => setIsHovered(false)}
-        >
-          <Image
-            src={video.thumbnail}
-            alt={video.title}
-            width={1920}
-            height={1080}
-            className={`w-24 h-16 object-cover rounded transition-filter duration-300 ${
-              isHovered ? "brightness-50" : ""
-            }`}
-            onError={(e) => {
-              e.currentTarget.src = "/fallback-thumbnail.png";
-            }}
-          />
-          <div className="ml-4 overflow-hidden">
-            <p className="text-sm text-white truncate">{video.title}</p>
-            <p className="text-xs text-gray-400 truncate">
-              {video.channel.name}
-            </p>
-          </div>
+    <div
+      className="flex items-center p-4 hover:bg-gray-800 rounded-lg cursor-pointer relative group"
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+      onClick={handlePlayYouTube}
+    >
+      <div className="relative">
+        <Image
+          src={video.thumbnail}
+          alt={video.title}
+          width={1920}
+          height={1080}
+          className={`w-24 h-16 object-cover rounded transition-all duration-300 ${
+            isHovered || isCurrentlyPlaying ? "brightness-50" : ""
+          }`}
+          onError={(e) => {
+            e.currentTarget.src = "/fallback-thumbnail.png";
+          }}
+        />
+        <div className={`absolute inset-0 flex items-center justify-center transition-opacity duration-300 ${
+          isHovered || isCurrentlyPlaying ? 'opacity-100' : 'opacity-0'
+        }`}>
+          {isCurrentlyPlaying ? 
+            <Pause className="w-8 h-8 text-white" /> : 
+            <Play className="w-8 h-8 text-white" />
+          }
         </div>
-      </DialogTrigger>
-
-      <DialogContent className="fixed inset-0 z-50 max-w-[1000px] h-[80vh] mx-auto bg-zinc-950 text-white rounded-3xl overflow-hidden">
-        <div className="flex items-center space-x-2 h-full rounded-sm overflow-hidden">
-          <ReactPlayer
-            controls
-            width="100%"
-            height="70vh"
-            pip={true}
-            playing={isDialogOpen}
-            url={video.url}
-          />
-        </div>
-        <DialogFooter className="sm:justify-start"></DialogFooter>
-      </DialogContent>
-    </Dialog>
+      </div>
+      <div className="ml-4 overflow-hidden">
+        <p className="text-sm text-white truncate">{video.title}</p>
+        <p className="text-xs text-gray-400 truncate">
+          {video.channel.name}
+        </p>
+      </div>
+    </div>
   );
 }
 
@@ -85,6 +141,7 @@ export default function SearchComponent() {
   const [error, setError] = useState<string | null>(null);
   const [youtubeLoading, setYoutubeLoading] = useState<boolean>(true);
   const [youtubeError, setYoutubeError] = useState<string | null>(null);
+  const [activeYouTubeVideo, setActiveYouTubeVideo] = useState<YouTubeVideo | null>(null);
 
   useEffect(() => {
     async function getSearchResults() {
@@ -219,6 +276,13 @@ export default function SearchComponent() {
           </div>
         </div>
       </div>
+
+      {activeYouTubeVideo && (
+        <YouTubeMiniPlayer 
+          video={activeYouTubeVideo} 
+          onClose={() => setActiveYouTubeVideo(null)}
+        />
+      )}
     </div>
   );
 }

@@ -22,7 +22,8 @@ export default function VideoPlayerDialog({ url }: VideoPlayerDialogProps) {
   const videoTimeRef = useRef<number>(currentTime);
   const wasPlayingRef = useRef(false);
   const playerRef = useRef<ReactPlayer>(null);
-  const lastKnownTimeRef = useRef<number>(currentTime);
+  const dialogClosedRef = useRef(false);
+  const timeSetRef = useRef(false);
 
   const validateTime = (time: number, duration: number): number => {
     if (isNaN(time) || time < 0) return 0;
@@ -31,19 +32,29 @@ export default function VideoPlayerDialog({ url }: VideoPlayerDialogProps) {
   };
 
   useEffect(() => {
-    if (isDialogOpen && isPlaying) {
-      wasPlayingRef.current = true;
-      togglePlayPause();
+    if (isDialogOpen) {
+      dialogClosedRef.current = false;
+      timeSetRef.current = false;
+      
+      if (isPlaying) {
+        wasPlayingRef.current = true;
+        togglePlayPause();
+      }
     }
   }, [isDialogOpen, isPlaying, togglePlayPause]);
 
   useEffect(() => {
-    if (!isDialogOpen) {
-      if (videoTimeRef.current !== undefined) {
+    if (!isDialogOpen && !dialogClosedRef.current) {
+      dialogClosedRef.current = true;
+      
+      if (videoTimeRef.current !== undefined && !timeSetRef.current) {
         const duration = playerRef.current?.getDuration() ?? 0;
         const validTime = validateTime(videoTimeRef.current, duration);
-        handleTimeChange(validTime.toString());
-        videoTimeRef.current = 0;
+        
+        if (validTime > 0) {
+          timeSetRef.current = true;
+          handleTimeChange(validTime.toString());
+        }
         
         if (wasPlayingRef.current) {
           setTimeout(() => {
@@ -54,6 +65,12 @@ export default function VideoPlayerDialog({ url }: VideoPlayerDialogProps) {
       }
     }
   }, [isDialogOpen, handleTimeChange, togglePlayPause]);
+  
+  useEffect(() => {
+    if (!isDialogOpen) {
+      videoTimeRef.current = currentTime;
+    }
+  }, [currentTime, isDialogOpen]);
 
   const handleReady = () => {
     if (playerRef.current && isDialogOpen) {
@@ -70,12 +87,11 @@ export default function VideoPlayerDialog({ url }: VideoPlayerDialogProps) {
   const handleProgress = ({ playedSeconds }: { playedSeconds: number }) => {
     if (!isNaN(playedSeconds) && isDialogOpen) {
       videoTimeRef.current = playedSeconds;
-      lastKnownTimeRef.current = playedSeconds;
     }
   };
 
   const handlePause = () => {
-    if (playerRef.current) {
+    if (playerRef.current && isDialogOpen) {
       videoTimeRef.current = playerRef.current.getCurrentTime();
     }
   };

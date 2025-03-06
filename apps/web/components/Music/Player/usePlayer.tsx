@@ -412,13 +412,39 @@ export function PlayerProvider({ children }: PlayerProviderProps) {
     if (audio) {
       if (isPlaying) {
         audio.pause();
+        setIsPlaying(false);
       } else {
-        audio.play();
+        if (audio.src && audio.src !== audioSource && audio.readyState === 0) {
+          const currentPosition = audio.currentTime;
+          audio.src = audioSource;
+          audio.load();
+          audio.oncanplaythrough = () => {
+            if (currentPosition > 0) {
+              audio.currentTime = currentPosition;
+            }
+            audio.play()
+              .then(() => setIsPlaying(true))
+              .catch(err => {
+                console.error("Error playing audio:", err);
+                if (err.name === 'NotAllowedError') {
+                  console.log("Autoplay prevented - user interaction required");
+                }
+              });
+          };
+        } else {
+          audio.play()
+            .then(() => setIsPlaying(true))
+            .catch(err => {
+              console.error("Error playing audio:", err);
+              if (err.name === 'NotAllowedError') {
+                console.log("Autoplay prevented - user interaction required");
+              }
+            });
+        }
       }
-      setIsPlaying(!isPlaying);
     }
-  }, [isPlaying]);
-
+  }, [isPlaying, audioSource]);  
+  
   const toggleLoopSong = useCallback(() => {
     const audio = audioRef.current;
     if (audio) {

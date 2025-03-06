@@ -7,3 +7,5 @@ pub mod hash;
 pub mod library;
 pub mod metadata;
 pub mod websocket;
+
+pub mod format_test;

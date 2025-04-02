@@ -58,7 +58,7 @@ export default function ArtistMusicVideoCard({ song }: ArtistMusicVideoCardProps
               className="rounded-lg object-cover transition-all duration-300 group-hover:brightness-75"
             />
             <div className={`absolute inset-0 flex items-center justify-center transition-opacity duration-300 ${isHovered ? 'opacity-100' : 'opacity-0'}`}>
-              <Play className="w-12 h-12 text-white" fill="white" strokeWidth={0} />
+              <Play className="w-12 h-12 text-white fill-white" fill="white" strokeWidth={0} />
             </div>
           </div>
           <div className="space-y-1">

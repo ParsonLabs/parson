@@ -16,6 +16,7 @@ import ArtistMusicVideos from "./ArtistMusicVideos";
 import ArtistAlbumCard from "./ArtistAlbumCard";
 import SimilarArtists from "./SimilarArtists";
 import ArtistSongsInLibrary from "./ArtistSongsInLibrary";
+import { motion } from "framer-motion";
 
 export default function ArtistComponent() {
   const searchParams = useSearchParams();
@@ -81,8 +82,11 @@ export default function ArtistComponent() {
     <div className="relative min-h-screen">
       <div className="fixed inset-0 bg-neutral-900" />
       
-      <div 
-        className="fixed inset-0 opacity-30"
+      <motion.div 
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 0.3 }}
+        transition={{ duration: 1.5 }}
+        className="fixed inset-0"
         style={{
           backgroundImage: `url(${artistIconURL})`,
           backgroundSize: 'cover',
@@ -90,42 +94,76 @@ export default function ArtistComponent() {
           filter: 'blur(140px)',
         }}
       />
-
-      <div className="relative z-10 px-4 md:px-8 pt-8 pb-16">
+  
+      <div className="relative z-10 px-4 md:px-8 pt-20 pb-16">
         <div className="max-w-8xl mx-auto">
-          <div className="flex flex-col md:flex-row gap-6 mb-8">
+          <motion.div 
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.6 }}
+            className="flex flex-col md:flex-row gap-6 mb-12"
+          >
             <div className="flex-shrink-0 flex justify-center md:justify-start">
-              <div className="relative w-64 md:w-[300px] aspect-square shadow-2xl">
+              <motion.div 
+                initial={{ scale: 0.9, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                transition={{ duration: 0.8 }}
+                className="relative w-64 md:w-[300px] aspect-square shadow-2xl"
+              >
+                <div className="absolute inset-0 rounded-full bg-gradient-to-br from-purple-500/20 to-blue-500/20 blur-xl -z-10 transform scale-110" />
                 <Image
                   src={artistIconURL}
                   alt={artist.name}
                   layout="fill"
-                  className="rounded-full object-cover"
+                  className="rounded-full object-cover ring-2 ring-white/10"
                   priority
                 />
-              </div>
+              </motion.div>
             </div>
-
+  
             <div className="flex flex-col justify-end text-center md:text-left">
-              <h1 className="text-4xl md:text-7xl font-bold mb-4 text-white">
+              <motion.h1 
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.6, delay: 0.3 }}
+                className="text-4xl md:text-7xl font-bold mb-4 text-white bg-clip-text text-transparent bg-gradient-to-r from-white to-gray-300"
+              >
                 {artist.name}
-              </h1>
-              <div className="text-gray-300 text-lg">
+              </motion.h1>
+              <motion.div 
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ duration: 0.6, delay: 0.5 }}
+                className="text-gray-300 text-lg font-medium"
+              >
                 {formatFollowers(artist.followers)} Followers
-              </div>
+              </motion.div>
             </div>
-          </div>
-
+          </motion.div>
+  
           {artist.description && (
-            <div className="bg-black/20 backdrop-blur-sm rounded-xl p-6 mb-8">
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.5, delay: 0.4 }}
+              className="bg-black/30 backdrop-blur-md rounded-xl p-6 mb-12 border border-white/5 shadow-xl"
+            >
               <Description description={artist.description} />
-            </div>
+            </motion.div>
           )}
-
+  
           {randomSongs.length > 0 && (
-            <div className="mb-8">
-              <h2 className="text-2xl font-bold text-white mb-4">Popular Songs</h2>
-              <div className="bg-black/20 backdrop-blur-sm rounded-xl p-4">
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.5, delay: 0.5 }}
+              className="mb-12"
+            >
+              <h2 className="text-2xl font-bold mb-4 text-white flex items-center gap-2">
+                <span className="w-1.5 h-6 bg-gradient-to-b from-purple-500 to-blue-500 rounded-full inline-block" />
+                Popular Songs
+              </h2>
+              <div className="bg-black/30 backdrop-blur-md rounded-xl p-6 border border-white/5 shadow-xl">
                 <div className="space-y-2">
                   {randomSongs.slice(0, 5).map((song, index) => (
                     <SongRow
@@ -143,15 +181,29 @@ export default function ArtistComponent() {
                   ))}
                 </div>
               </div>
-            </div>
+            </motion.div>
           )}
-
-          <ArtistMusicVideos artistName={artist.name} />
-
+  
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5, delay: 0.6 }}
+          >
+            <ArtistMusicVideos artistName={artist.name} />
+          </motion.div>
+  
           {albums.length > 0 && (
-            <div>
-              <h2 className="text-2xl font-bold text-white mb-4">Albums</h2>
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.5, delay: 0.7 }}
+              className="mb-12"
+            >
+              <h2 className="text-2xl font-bold mb-4 text-white flex items-center gap-2">
+                <span className="w-1.5 h-6 bg-gradient-to-b from-purple-500 to-blue-500 rounded-full inline-block" />
+                Albums
+              </h2>
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-6">
                 {albums
                   .sort((a, b) => {
                     const dateA = new Date(a.first_release_date).getTime();
@@ -161,33 +213,52 @@ export default function ArtistComponent() {
                     return dateB - dateA;
                   })
                   .map((album, index) => (
-                    <div key={index}>
+                    <motion.div 
+                      key={index}
+                      initial={{ opacity: 0, scale: 0.9 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      transition={{ duration: 0.4, delay: 0.1 * Math.min(index, 5) }}
+                      whileHover={{ y: -5 }}
+                      className="transform transition-all duration-300 hover:shadow-lg"
+                    >
                       <ArtistAlbumCard
                         album_id={album.id}
                         album_name={album.name}
                         album_cover={album.cover_url}
                         first_release_date={album.first_release_date}
                       />
-                    </div>
+                    </motion.div>
                   ))}
               </div>
-            </div>
+            </motion.div>
           )}
-
+  
           {albums.some(album => 
             (album.release_group_album?.genres || []).length > 0 ||
             (album.release_album?.genres || []).length > 0
           ) && (
-            <SimilarArtists 
-              artistName={artist.name}
-              genres={albums.flatMap(album => 
-                [...(album.release_group_album?.genres || []), ...(album.release_album?.genres || [])]
-              ).map(g => g.name)}
-            />
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.5, delay: 0.8 }}
+            >
+              <SimilarArtists 
+                artistName={artist.name}
+                genres={albums.flatMap(album => 
+                  [...(album.release_group_album?.genres || []), ...(album.release_album?.genres || [])]
+                ).map(g => g.name)}
+              />
+            </motion.div>
           )}
-
-          <Suspense>
-            <ArtistSongsInLibrary />
+  
+          <Suspense fallback={<div className="h-20 w-full bg-black/20 rounded-xl animate-pulse"></div>}>
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.5, delay: 0.9 }}
+            >
+              <ArtistSongsInLibrary />
+            </motion.div>
           </Suspense>
         </div>
       </div>

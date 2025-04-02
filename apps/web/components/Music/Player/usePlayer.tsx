@@ -37,7 +37,7 @@ type PlayerContextType = {
   playedFromAlbum: boolean;
   setPlayedFromAlbum: Function;
   togglePlayPause: Function;
-  toggleLoop: Function;
+  toggleLoopSong: Function;
   playNextSong: Function;
   playPreviousSong: Function;
   setAudioVolume: Function;
@@ -46,7 +46,7 @@ type PlayerContextType = {
   toggleMute: Function;
   setAudioSource: Function;
   isDraggingSeekBar: boolean;
-  setIsDraggingSeekBar: Function
+  setIsDraggingSeekBar: Function;
   setSong: Function;
   setArtist: Function;
   setAlbum: Function;
@@ -98,7 +98,7 @@ export function PlayerProvider({ children }: PlayerProviderProps) {
       icon_url: "",
       id: "",
       name: "",
-      featured_on_album_ids: []
+      featured_on_album_ids: [],
     },
     album_object: {
       cover_url: "",
@@ -124,7 +124,7 @@ export function PlayerProvider({ children }: PlayerProviderProps) {
     icon_url: "",
     description: "",
     featured_on_album_ids: [],
-    tadb_music_videos: undefined
+    tadb_music_videos: undefined,
   });
   const [album, setAlbum] = useState<Album>({
     cover_url: "",
@@ -142,7 +142,7 @@ export function PlayerProvider({ children }: PlayerProviderProps) {
 
   const [isPlaying, setIsPlaying] = useState(false);
   const [queue, setQueueState] = useState<Queue[]>([]);
-  const [playedFromAlbum, setPlayedFromAlbum] = useState(false)
+  const [playedFromAlbum, setPlayedFromAlbum] = useState(false);
 
   const queueRef = useRef<Queue[]>([]);
 
@@ -154,14 +154,14 @@ export function PlayerProvider({ children }: PlayerProviderProps) {
   const [duration, setDuration] = useState(0);
   const [base64Image, setBase64Image] = useState("");
   const [bufferedTime, setBufferedTime] = useState(0);
-  
+
   const [isDraggingSeekBar, setIsDraggingSeekBar] = useState(false);
 
   const lastAddedSongIdRef = useRef<string | null>(null);
 
   let bitrate = 0;
 
-  const { session } = useSession()
+  const { session } = useSession();
 
   const [isYouTubeUrl, setIsYouTubeUrl] = useState(false);
   const youTubePlayerRef = useRef<HTMLDivElement>(null);
@@ -175,18 +175,21 @@ export function PlayerProvider({ children }: PlayerProviderProps) {
         setIsYouTubeUrl(false);
       }
     };
-  }, [song?.id]);
+  }, [song?.id, isYouTubeUrl]);
 
-const handleDirectSeek = useCallback((seconds: number) => {
-  if (isYouTubeUrl) {
-    setCurrentTime(seconds);
-  } else {
-    if (audioRef.current) {
-      audioRef.current.currentTime = seconds;
-      setCurrentTime(seconds);
-    }
-  }
-}, [isYouTubeUrl]);
+  const handleDirectSeek = useCallback(
+    (seconds: number) => {
+      if (isYouTubeUrl) {
+        setCurrentTime(seconds);
+      } else {
+        if (audioRef.current) {
+          audioRef.current.currentTime = seconds;
+          setCurrentTime(seconds);
+        }
+      }
+    },
+    [isYouTubeUrl]
+  );
 
   useEffect(() => {
     if (song.id && lastAddedSongIdRef.current != String(song.id)) {
@@ -200,63 +203,249 @@ const handleDirectSeek = useCallback((seconds: number) => {
   }, [song.id, session]);
 
   const playAudioSource = useCallback(() => {
-    if (audio) {
-      audio.pause();
-      audio.currentTime = 0;
-      audio.src = audioSource;
-      audio.oncanplaythrough = () => {
-        audio.play();
-        setIsPlaying(true);
-      };
+    audio.currentTime = 0;
+    if (isYouTubeUrl) {
+      setIsPlaying(true);
+      return;
     }
-  }, [audioSource, audio]);
+
+    if (!audio) {
+      console.error("Audio element is not available");
+      return;
+    }
+
+    const cleanupEvents = () => {
+      audio.oncanplaythrough = null;
+      audio.onloadeddata = null;
+      audio.onloadedmetadata = null;
+      audio.onprogress = null;
+      audio.onerror = null;
+      audio.onloadstart = null;
+    };
+
+    cleanupEvents();
+
+    audio.pause();
+    audio.currentTime = 0;
+
+    if (!audioSource) {
+      console.error("No audio source provided");
+      return;
+    }
+
+    const sourceUrl = audioSource.startsWith("http")
+      ? audioSource
+      : `${getBaseURL()}/api/stream/${encodeURIComponent(
+          audioSource
+        )}?bitrate=${session?.bitrate || 0}`;
+
+    const loadStartTime = Date.now();
+    let playbackAttempted = false;
+
+    audio.src = sourceUrl;
+    audio.load();
+
+    const attemptPlay = () => {
+      if (playbackAttempted) return;
+      playbackAttempted = true;
+
+      audio
+        .play()
+        .then(() => {
+          setIsPlaying(true);
+          cleanupEvents();
+        })
+        .catch((err) => {
+          console.error("Play attempt failed:", err.name || err);
+          playbackAttempted = false;
+
+          setTimeout(() => {
+            audio
+              .play()
+              .then(() => {
+                setIsPlaying(true);
+                cleanupEvents();
+              })
+              .catch((finalErr) => {
+                console.error(
+                  "Final play attempt failed:",
+                  finalErr.name || finalErr
+                );
+
+                if (session?.bitrate && session.bitrate > 0) {
+                  const lowerBitrate = Math.floor(session.bitrate * 0.75);
+                  const fallbackUrl = audioSource.startsWith("http")
+                    ? audioSource
+                    : `${getBaseURL()}/api/stream/${encodeURIComponent(
+                        audioSource
+                      )}?bitrate=${lowerBitrate}`;
+
+                  audio.src = fallbackUrl;
+                  audio.load();
+
+                  const fallbackPlayHandler = () => {
+                    audio
+                      .play()
+                      .then(() => {
+                        setIsPlaying(true);
+                        audio.removeEventListener(
+                          "loadeddata",
+                          fallbackPlayHandler
+                        );
+                      })
+                      .catch(() => {
+                        audio.removeEventListener(
+                          "loadeddata",
+                          fallbackPlayHandler
+                        );
+                      });
+                  };
+
+                  audio.addEventListener("loadeddata", fallbackPlayHandler);
+                }
+              });
+          }, 800);
+        });
+    };
+
+
+    audio.onloadeddata = () => {
+      if (!playbackAttempted && audio.readyState >= 2) {
+        attemptPlay();
+      }
+    };
+
+    audio.oncanplaythrough = () => {
+      attemptPlay();
+    };
+
+    audio.onloadedmetadata = () => {
+      if (!playbackAttempted && audio.readyState >= 3) {
+        attemptPlay();
+      }
+    };
+
+    const timeoutId = setTimeout(() => {
+      if (!playbackAttempted) {
+        attemptPlay();
+      }
+    }, 2500);
+
+    audio.onerror = (e) => {
+      clearTimeout(timeoutId);
+      cleanupEvents();
+
+      const errorInfo = {
+        code: audio.error?.code,
+        message: audio.error?.message,
+      };
+      console.error("Audio loading error:", errorInfo);
+
+      if (session?.bitrate && session.bitrate > 0) {
+        const lowerBitrate = Math.floor(session.bitrate * 0.75);
+        const fallbackUrl = audioSource.startsWith("http")
+          ? audioSource
+          : `${getBaseURL()}/api/stream/${encodeURIComponent(
+              audioSource
+            )}?bitrate=${lowerBitrate}`;
+
+        audio.src = fallbackUrl;
+        audio.load();
+
+        audio.onloadeddata = attemptPlay;
+      }
+    };
+
+    return () => {
+      clearTimeout(timeoutId);
+      cleanupEvents();
+    };
+  }, [audioSource, audio, isYouTubeUrl, session?.bitrate]);
 
   const setQueue = useCallback((newQueue: Queue[]) => {
     queueRef.current = newQueue;
     setQueueState(newQueue);
   }, []);
 
-  const setAudioSource = useCallback((source: string) => {
-    const isYT = source.includes('youtube.com') || source.includes('youtu.be');
-    setIsYouTubeUrl(isYT);
-    
-    setAudioSourceState(source);
-  }, []);
+  const setAudioSource = useCallback(
+    (source: string) => {
+      const isYT =
+        source.includes("youtube.com") || source.includes("youtu.be");
 
+      if (isYT !== isYouTubeUrl) {
+        if (audioRef.current) {
+          audioRef.current.pause();
+        }
+        setIsPlaying(false);
+      }
+
+      setIsYouTubeUrl(isYT);
+
+      if (!isYT && !source.startsWith("http")) {
+        source = `${getBaseURL()}/api/stream/${encodeURIComponent(
+          source
+        )}?bitrate=${session?.bitrate || 0}`;
+      }
+
+      setAudioSourceState(source);
+    },
+    [isYouTubeUrl, session?.bitrate]
+  );
   useEffect(() => {
-    const isYT = audioSource.includes('youtube.com') || audioSource.includes('youtu.be');
-    
+    if (!audioSource) return;
+
+    const isYT =
+      audioSource.includes("youtube.com") || audioSource.includes("youtu.be");
+    setIsYouTubeUrl(isYT);
+
     if (isYT) {
       if (audioRef.current) {
         audioRef.current.pause();
-        audioRef.current.src = '';
+        audioRef.current.removeAttribute("src");
+        audioRef.current.load();
       }
     } else {
-      if (audioRef.current) {
-        const formattedSource = audioSource.startsWith('http') ? 
-          audioSource : 
-          `${getBaseURL()}/api/stream/${encodeURIComponent(audioSource)}?bitrate=${bitrate}`;
-          
+      const formattedSource = audioSource.startsWith("http")
+        ? audioSource
+        : `${getBaseURL()}/api/stream/${encodeURIComponent(
+            audioSource
+          )}?bitrate=${bitrate}`;
+
+      if (audioRef.current && audioRef.current.src !== formattedSource) {
+        const wasPlaying = !audioRef.current.paused;
+
         audioRef.current.src = formattedSource;
         audioRef.current.load();
-        
-        if (isPlaying) {
-          audioRef.current.play().catch(err => {
-            console.error("Error playing audio:", err);
-          });
+
+        audioRef.current.oncanplaythrough = null;
+
+        if (wasPlaying) {
+          audioRef.current.oncanplaythrough = function oncePlayable() {
+            audioRef.current!.oncanplaythrough = null;
+
+            audioRef.current!
+              .play()
+              .then(() => {
+                console.log("Audio resumed after source change");
+              })
+              .catch((err) => {
+                console.error("Failed to resume after source change:", err);
+                setIsPlaying(false);
+              });
+          };
         }
       }
     }
-  }, [audioSource, isPlaying, bitrate]);
+  }, [audioSource, bitrate]);
 
   const setSongCallback = useCallback(
     async (song: LibrarySong, artist: Artist, album: Album) => {
       const wasPlaying = isPlaying;
-      
+
       setSong(song);
       setArtist(artist);
       setAlbum(album);
-      
+
       if (album.cover_url.length === 0) {
         setBase64Image("/snf.png");
         setImageSrc("/snf.png");
@@ -265,45 +454,48 @@ const handleDirectSeek = useCallback((seconds: number) => {
           `${getBaseURL()}/image/${encodeURIComponent(album.cover_url)}`
         );
       }
-      
-      const isYouTubeUrl = song.path.includes('youtube.com') || 
-                            song.path.includes('youtu.be');
-      
+
+      const isYouTubeUrl =
+        song.path.includes("youtube.com") || song.path.includes("youtu.be");
+
       if (isYouTubeUrl) {
         setAudioSource(song.path);
-        
+
         if (wasPlaying) {
           if (audioRef.current) {
             audioRef.current.pause();
           }
-          
+
           setIsPlaying(false);
-          
+
           setTimeout(() => {
             setIsPlaying(true);
           }, 300);
         }
       } else {
         setAudioSource(
-          `${getBaseURL()}/api/stream/${encodeURIComponent(song.path)}?bitrate=${bitrate}`
+          `${getBaseURL()}/api/stream/${encodeURIComponent(song.path)}?bitrate=${
+            bitrate
+          }`
         );
       }
-  
+
       const index = queueRef.current.findIndex((q) => q.song.id === song.id);
       if (index !== -1) {
         setCurrentSongIndex(index);
       }
     },
-    [bitrate, isPlaying]
+    [bitrate, isPlaying, setAudioSource]
   );
   const playNextSong = useCallback(async () => {
     if (playedFromAlbum && album) {
-      let nextSongIndex = album.songs.findIndex(albumSong => String(albumSong.id) === String(song.id)) + 1;
-  
+      let nextSongIndex =
+        album.songs.findIndex((albumSong) => String(albumSong.id) === String(song.id)) + 1;
+
       if (nextSongIndex >= album.songs.length) {
         nextSongIndex = 0;
       }
-  
+
       const nextSong = album.songs[nextSongIndex];
       if (nextSong) {
         setSongCallback(nextSong, artist, album);
@@ -311,18 +503,17 @@ const handleDirectSeek = useCallback((seconds: number) => {
         return;
       }
     }
-  
-  
+
     let nextSongIndex = currentSongIndex + 1;
     if (nextSongIndex >= queueRef.current.length) {
       nextSongIndex = 0;
     }
     setCurrentSongIndex(nextSongIndex);
     const next = queueRef.current[nextSongIndex];
-  
+
     if (next) {
       const { song: nextSong, artist: nextArtist, album: nextAlbum } = next;
-  
+
       if (nextSong) {
         setSongCallback(nextSong, nextArtist, nextAlbum);
         playAudioSource();
@@ -334,14 +525,14 @@ const handleDirectSeek = useCallback((seconds: number) => {
       } else if (song.album_object?.release_group_album?.genres) {
         songGenres = song.album_object.release_group_album.genres;
       }
-  
+
       let recommendedSong = null;
       for (let i = 0; i < songGenres.length; i++) {
         const genre = songGenres[i];
         if (genre?.name) {
           const recommendedSongs = await getSongsByGenres([genre.name]);
           const shuffledRecommendedSongs = [...recommendedSongs];
-  
+
           for (let i = shuffledRecommendedSongs.length - 1; i > 0; i--) {
             const j = Math.floor(Math.random() * (i + 1));
             [
@@ -349,18 +540,18 @@ const handleDirectSeek = useCallback((seconds: number) => {
               shuffledRecommendedSongs[j] as any,
             ] = [shuffledRecommendedSongs[j], shuffledRecommendedSongs[i]];
           }
-  
+
           for (let shuffledSong of shuffledRecommendedSongs) {
             if (shuffledSong.name !== song.name) {
-              recommendedSong = await getSongInfo(shuffledSong.id) as LibrarySong;
+              recommendedSong = (await getSongInfo(shuffledSong.id)) as LibrarySong;
               break;
             }
           }
-  
+
           if (recommendedSong) break;
         }
       }
-  
+
       if (recommendedSong) {
         const {
           artist_object: recommendedArtist,
@@ -414,77 +605,17 @@ const handleDirectSeek = useCallback((seconds: number) => {
 
   useEffect(() => {
     if (audioRef.current) {
-      const audio = audioRef.current;
-      
-      if (isYouTubeUrl) {
-        audio.pause();
-        audio.src = '';
-      } else {
-        audio.src = audioSource;
-        audio.load();
-        audio.oncanplaythrough = () => {
-          if (isPlaying) {
-            audio.play();
-          }
-        };
-      }
-    }
-  }, [audioSource, isPlaying, isYouTubeUrl]);
-
-  useEffect(() => {
-    if (audioRef.current) {
       audioRef.current.src = audioSource;
     }
 
     if (audio) {
-      audio.src = audioSource;
-      audio.load();
-      audio.oncanplaythrough = () => {
-        audio.play();
-        setIsPlaying(true);
-      };
       audio.addEventListener("ended", playNextSong);
 
-      if ("mediaSession" in navigator) {
-        // Normalizing the path is necessary to remove the Windows long path prefix ("\\?\") if present.
-        // This prefix allows Windows applications to handle paths longer than the MAX_PATH limit (260 characters),
-        // but it's not recognized by web browsers or servers. Removing it ensures the path can be used in URLs
-        // More Here:
-        // https://learn.microsoft.com/en-us/windows/win32/fileio/maximum-file-path-limitation?tabs=registry
-        let normalisedAlbumPath = album.cover_url.startsWith("\\\\?\\")
-          ? album.cover_url.substring(4)
-          : album.cover_url;
-        let albumPath = `${getBaseURL()}/image/${encodeURIComponent(normalisedAlbumPath)}?raw=true`;
-
-        navigator.mediaSession.metadata = new MediaMetadata({
-          title: song.name,
-          artist: song.artist,
-          album: album.name,
-          artwork: [{ src: albumPath, type: "image/jpeg" }],
-        });
-        navigator.mediaSession.setActionHandler("play", () => audio.play());
-        navigator.mediaSession.setActionHandler("pause", () => audio.pause());
-        navigator.mediaSession.setActionHandler(
-          "previoustrack",
-          playPreviousSong
-        );
-        navigator.mediaSession.setActionHandler("nexttrack", playNextSong);
-      }
+      return () => {
+        audio.removeEventListener("ended", playNextSong);
+      };
     }
-
-    return () => {
-      audio.removeEventListener("ended", playNextSong);
-    };
-  }, [
-    audioSource,
-    audio,
-    song,
-    playNextSong,
-    album.name,
-    imageSrc,
-    playPreviousSong,
-    album.cover_url,
-  ]);
+  }, [audioSource, playNextSong, audio]);
 
   const removeFromQueue = useCallback((index: number) => {
     const newQueue = [...queueRef.current];
@@ -508,44 +639,48 @@ const handleDirectSeek = useCallback((seconds: number) => {
     setMuted(!muted);
   }, [muted]);
 
-  const togglePlayPause = useCallback(() => {
-    const audio = audioRef.current;
-    if (audio) {
-      if (isPlaying) {
-        audio.pause();
-        setIsPlaying(false);
+    const togglePlayPause = useCallback(() => {
+      if (audio.paused) {
+        audio.play()
+        setIsPlaying(true)
       } else {
-        if (audio.src && audio.src !== audioSource && audio.readyState === 0) {
-          const currentPosition = audio.currentTime;
-          audio.src = audioSource;
-          audio.load();
-          audio.oncanplaythrough = () => {
-            if (currentPosition > 0) {
-              audio.currentTime = currentPosition;
-            }
-            audio.play()
-              .then(() => setIsPlaying(true))
-              .catch(err => {
-                console.error("Error playing audio:", err);
-                if (err.name === 'NotAllowedError') {
-                  console.log("Autoplay prevented - user interaction required");
-                }
-              });
-          };
-        } else {
-          audio.play()
-            .then(() => setIsPlaying(true))
-            .catch(err => {
-              console.error("Error playing audio:", err);
-              if (err.name === 'NotAllowedError') {
-                console.log("Autoplay prevented - user interaction required");
-              }
-            });
-        }
+
+        audio.pause()
+        setIsPlaying(false)
       }
+  }, [audio]);
+
+  useEffect(() => {
+    if (audio && "mediaSession" in navigator) {
+      let normalisedAlbumPath = album.cover_url.startsWith("\\\\?\\")
+        ? album.cover_url.substring(4)
+        : album.cover_url;
+      let albumPath = `${getBaseURL()}/image/${encodeURIComponent(
+        normalisedAlbumPath
+      )}?raw=true`;
+
+      navigator.mediaSession.metadata = new MediaMetadata({
+        title: song.name,
+        artist: song.artist,
+        album: album.name,
+        artwork: [{ src: albumPath, type: "image/jpeg" }],
+      });
+      navigator.mediaSession.setActionHandler("play", () => togglePlayPause());
+      navigator.mediaSession.setActionHandler("pause", () => togglePlayPause());
+      navigator.mediaSession.setActionHandler("previoustrack", playPreviousSong);
+      navigator.mediaSession.setActionHandler("nexttrack", playNextSong);
     }
-  }, [isPlaying, audioSource]);  
-  
+  }, [
+    song.name,
+    song.artist,
+    album.name,
+    album.cover_url,
+    playNextSong,
+    playPreviousSong,
+    togglePlayPause,
+    audio
+  ]);
+
   const toggleLoopSong = useCallback(() => {
     const audio = audioRef.current;
     if (audio) {
@@ -563,30 +698,33 @@ const handleDirectSeek = useCallback((seconds: number) => {
     }
   }, []);
 
-  const handleTimeChange = useCallback((value: string) => {
-    const newTime = parseFloat(value);
-    
-    isUserSeeking.current = true;
-    
-    if (isYouTubeUrl) {
-      setCurrentTime(newTime);
-      
-      if (playerRef.current?.seekTo) {
-        playerRef.current.seekTo(newTime, 'seconds');
-      }
-    } else {
-      if (audioRef.current) {
-        audioRef.current.currentTime = newTime;
-      }
-      setCurrentTime(newTime);
-    }
-    
-    setTimeout(() => {
-      isUserSeeking.current = false;
-    }, 250);
-  }, [isYouTubeUrl]);
+  const handleTimeChange = useCallback(
+    (value: string) => {
+      const newTime = parseFloat(value);
 
-  const playerRef = useRef<ReactPlayer>(null)
+      isUserSeeking.current = true;
+
+      if (isYouTubeUrl) {
+        setCurrentTime(newTime);
+
+        if (playerRef.current?.seekTo) {
+          playerRef.current.seekTo(newTime, "seconds");
+        }
+      } else {
+        if (audioRef.current) {
+          audioRef.current.currentTime = newTime;
+        }
+        setCurrentTime(newTime);
+      }
+
+      setTimeout(() => {
+        isUserSeeking.current = false;
+      }, 250);
+    },
+    [isYouTubeUrl]
+  );
+
+  const playerRef = useRef<ReactPlayer>(null);
 
   const handleTimeUpdate = useCallback(() => {
     const audio = audioRef.current;
@@ -634,7 +772,7 @@ const handleDirectSeek = useCallback((seconds: number) => {
             toggleMute();
             break;
           case "l":
-            toggleLoop();
+            toggleLoopSong();
             break;
         }
       };
@@ -665,7 +803,7 @@ const handleDirectSeek = useCallback((seconds: number) => {
   }, [
     handleTimeUpdate,
     handleTimeUpdateThrottled,
-    toggleLoop,
+    toggleLoopSong,
     toggleMute,
     togglePlayPause,
     audio,
@@ -684,7 +822,7 @@ const handleDirectSeek = useCallback((seconds: number) => {
         currentTime,
         duration,
         togglePlayPause,
-        toggleLoop,
+        toggleLoopSong,
         setAudioVolume,
         playedFromAlbum,
         setPlayedFromAlbum,
@@ -711,7 +849,7 @@ const handleDirectSeek = useCallback((seconds: number) => {
       }}
     >
       {children}
-      
+
       <div ref={youTubePlayerRef} className="hidden">
         {isYouTubeUrl && (
           <YouTubePlayer
@@ -722,8 +860,10 @@ const handleDirectSeek = useCallback((seconds: number) => {
             currentTime={currentTime}
             onProgress={(state) => {
               if (!isDraggingSeekBar && !isUserSeeking.current) {
-                const timeDiff = Math.abs(state.playedSeconds - lastReportedTime.current);
-                if (timeDiff > 0.5) { // Only update when more than half a second has passed
+                const timeDiff = Math.abs(
+                  state.playedSeconds - lastReportedTime.current
+                );
+                if (timeDiff > 0.5) {
                   setCurrentTime(state.playedSeconds);
                   setBufferedTime(state.loadedSeconds);
                   lastReportedTime.current = state.playedSeconds;

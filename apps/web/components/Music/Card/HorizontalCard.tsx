@@ -27,6 +27,7 @@ export default function HorizontalCard({ item }: HorizontalCardProps) {
   const {
     setImageSrc,
     setAudioSource,
+    playAudioSource,
     setSong,
     setArtist,
     setAlbum,
@@ -54,6 +55,7 @@ export default function HorizontalCard({ item }: HorizontalCardProps) {
     setSong(song);
     session && setAudioSource(`${getBaseURL()}/api/stream/${encodeURIComponent(song?.path ?? "")}?bitrate=${session.bitrate ?? 0}`);
     setPlayedFromAlbum(false)
+    playAudioSource()
   }
     
   const imageUrl = imagePath ? `${getBaseURL()}/image/${encodeURIComponent(imagePath)}` : '/snf.png';

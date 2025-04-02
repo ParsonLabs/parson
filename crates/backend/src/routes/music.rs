@@ -349,34 +349,38 @@ async fn stream_song(
     let bitrate = query.bitrate;
     let slowed_reverb: bool = query.slowed_reverb.unwrap_or(false);
 
-    let file = tokio::fs::metadata(&song).await.unwrap();
-    let song_file_size = file.len();
-
-    let path = std::path::Path::new(&song);
-
-    if !path.is_file() {
+    let path_obj = std::path::Path::new(&song);
+    if !path_obj.is_file() {
         return HttpResponse::NotFound().finish();
     }
 
+    let file = match tokio::fs::metadata(&song).await {
+        Ok(metadata) => metadata,
+        Err(_) => return HttpResponse::NotFound().finish()
+    };
+    let song_file_size = file.len();
+
     let range = req.headers().get("Range").and_then(|v| v.to_str().ok());
-    let (start, _end) = match range {
-        Some(range) => {
-            let bytes = range.trim_start_matches("bytes=");
-            let range_parts: Vec<&str> = bytes.split('-').collect();
-            let start = range_parts[0].parse::<u64>().unwrap_or(0);
-            let end = range_parts
-                .get(1)
-                .and_then(|s| s.parse::<u64>().ok())
-                .unwrap_or(song_file_size - 1);
-            (start, end)
+    let (start, end) = if let Some(range_header) = range {
+        if let Some(bytes_range) = range_header.trim().strip_prefix("bytes=") {
+            let parts: Vec<&str> = bytes_range.split('-').collect();
+            let start = parts.get(0).and_then(|s| s.parse::<u64>().ok()).unwrap_or(0);
+            let end = match parts.get(1) {
+                Some(s) if !s.is_empty() => s.parse::<u64>().ok().unwrap_or(song_file_size - 1),
+                _ => song_file_size - 1,
+            };
+            (start, end.min(song_file_size - 1))
+        } else {
+            (0, song_file_size - 1)
         }
-        None => (0, song_file_size - 1),
+    } else {
+        (0, song_file_size - 1)
     };
 
     if bitrate == 0 && !slowed_reverb {
         use tokio::io::AsyncSeekExt;
         
-        let content_type = match path.extension().and_then(|ext| ext.to_str()) {
+        let content_type = match path_obj.extension().and_then(|ext| ext.to_str()) {
             Some("flac") => "audio/flac",
             Some("mp3") => "audio/mpeg",
             Some("mp4") => "video/mp4",
@@ -390,32 +394,16 @@ async fn stream_song(
             Err(_) => return HttpResponse::NotFound().finish()
         };
 
-        let (start, end) = if let Some(range_header) = &range {
-            if let Some(bytes_range) = range_header.trim().strip_prefix("bytes=") {
-                let parts: Vec<&str> = bytes_range.split('-').collect();
-                let start = parts
-                    .get(0)
-                    .and_then(|s| s.parse::<u64>().ok())
-                    .unwrap_or(0);
-                let end = match parts.get(1) {
-                    Some(s) if !s.is_empty() => s.parse::<u64>().unwrap_or(song_file_size - 1),
-                    _ => song_file_size - 1,
-                };
-                (start, end)
-            } else {
-                (0, song_file_size - 1)
+        if start > 0 {
+            if let Err(_) = file.seek(std::io::SeekFrom::Start(start)).await {
+                return HttpResponse::InternalServerError().finish();
             }
-        } else {
-            (0, song_file_size - 1)
-        };
-
-        if let Err(_) = file.seek(std::io::SeekFrom::Start(start)).await {
-            return HttpResponse::InternalServerError().finish();
         }
 
+        let file_metadata = file.metadata().await.unwrap();
         let stream = ReaderStream::with_capacity(
             file.take(end - start + 1),
-            65536
+            131072
         );
 
         HttpResponse::PartialContent()
@@ -423,63 +411,61 @@ async fn stream_song(
             .insert_header((header::CONTENT_TYPE, content_type))
             .insert_header((header::CONTENT_RANGE, format!("bytes {}-{}/{}", start, end, song_file_size)))
             .insert_header((header::CONTENT_LENGTH, (end - start + 1).to_string()))
-            .insert_header((header::CACHE_CONTROL, "public, max-age=31536000"))
+            .insert_header((header::ETAG, format!("\"{}-{}\"", song.replace("\\", "/"), file_metadata.modified().unwrap().duration_since(std::time::SystemTime::UNIX_EPOCH).unwrap().as_secs())))
+            .insert_header((header::CACHE_CONTROL, "public, max-age=604800"))
             .streaming(stream)
     } else {
         let mut command = Command::new("ffmpeg");
-
+        
+        command.args(&["-i", &song]);
+        
         if start > 0 {
-            command.arg("-ss")
-                  .arg(format!("{}", start as f64 / 44100.0));
+            let seconds = start as f64 / 44100.0;
+            command = Command::new("ffmpeg");
+            command.args(&["-ss", &format!("{:.3}", seconds), "-i", &song]);
         }
 
         if slowed_reverb {
             command.args(&[
-                "-i", &song,
-                "-filter_complex", "asetrate=44100*0.8, atempo=0.9, aecho=0.8:0.88:60:0.4",
-                "-v", "0",
+                "-filter_complex", "asetrate=44100*0.8,atempo=0.9,aecho=0.8:0.88:60:0.4",
                 "-f", "mp3",
-                "-chunk_size", "65536",
                 "-movflags", "frag_keyframe+empty_moov",
+                "-threads", "2",
                 "pipe:1",
             ]);
         } else {
             command.args(&[
-                "-i", &song,
                 "-map", "0:a:0",
                 "-b:a", &format!("{}k", bitrate),
-                "-v", "0",
                 "-f", "mp3",
-                "-chunk_size", "65536",
-                "-movflags", "frag_keyframe+empty_moov",
+                "-c:a", "aac", 
+                "-chunk_size", "131072",
+                "-threads", "2",
                 "pipe:1",
             ]);
         }
 
-        let mut child = match command.stdout(Stdio::piped())
-                              .stderr(Stdio::piped())
-                              .spawn()
-                              .map_err(|e| {
-                                  eprintln!("Failed to start ffmpeg: {}", e);
-                                  HttpResponse::InternalServerError().finish()
-                              }) {
-            Ok(child) => child,
-            Err(response) => return response,
+        command.arg("-v").arg("error");
+
+        let mut child = match command
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn() {
+                Ok(child) => child,
+                Err(_) => return HttpResponse::InternalServerError().finish(),
+            };
+
+        let stdout = match child.stdout.take() {
+            Some(stdout) => stdout,
+            None => return HttpResponse::InternalServerError().finish(),
         };
 
-        let stdout = match child.stdout.take().ok_or_else(|| {
-            eprintln!("Failed to get stdout handle");
-            HttpResponse::InternalServerError()
-        }) {
-            Ok(stdout) => stdout,
-            Err(response) => return response.await.unwrap(),
-        };
-
-        let stream = ReaderStream::with_capacity(stdout, 65536);
+        let stream = ReaderStream::with_capacity(stdout, 131072);
 
         HttpResponse::PartialContent()
             .append_header((header::CONTENT_TYPE, "audio/mpeg"))
             .append_header((header::TRANSFER_ENCODING, "chunked"))
+            .append_header((header::CACHE_CONTROL, "public, max-age=3600"))
             .streaming(stream)
     }
 }

@@ -21,19 +21,22 @@ argon2 = "0.5.3"
 audiotags = "0.5"
 bytes = "1.9.0"
 chrono = { version = "0.4.38", features = ["serde"] }
-diesel = { version = "2.2.2", features = ["chrono", "numeric", "r2d2", "sqlite"]}
+diesel = { version = "2.2.8", default-features = false, features = ["chrono", "numeric", "r2d2", "sqlite"] }
+diesel_cli = { version = "2.2.8", default-features = false, features = ["sqlite"] }
 diesel_migrations = { version = "2.2.0", features = ["sqlite"] }
 dirs = "5.0.1"
 dotenvy = "0.15.0"
 fancy-regex = "0.13.0"
 futures = "0.3.31"
 image = "0.25.5"
+itertools = "0.14.0"
 jsonwebtoken = "9.3.0"
 lazy_static = "1.5.0"
 levenshtein = "1.0.5"
-libsqlite3-sys = { version = "0.29.0", features = ["bundled"] }
+libsqlite3-sys = { version = "0.30.0", features = ["bundled"] }
 lofty = "0.18.2"
 lru = "0.13.0"
+lru_time_cache = "0.11.11"
 mime_guess = "2.0.5"
 notify = "7.0.0"
 parking_lot = "0.12.3"

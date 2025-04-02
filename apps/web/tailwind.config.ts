@@ -41,6 +41,10 @@ const config = {
           '0%': { opacity: "1" },
           '100%': { opacity: "0" },
         },
+        fadeIn: {
+          '0%': { opacity: '0', transform: 'translateY(10px)' },
+          '100%': { opacity: '1', transform: 'translateY(0)' },
+        },
       },
       animation: {
         "accordion-down": "accordion-down 0.2s ease-out",
@@ -48,6 +52,7 @@ const config = {
         "marquee": 'marquee 50s linear infinite alternate',
         "shine": "shine 8s ease-in-out infinite",
         "background-fade": "backgroundFade 3s ease-in-out infinite alternate",
+        'fadeIn': 'fadeIn 0.5s ease-in-out',
       },
       "shine": {
         from: { backgroundPosition: '200% 0' },

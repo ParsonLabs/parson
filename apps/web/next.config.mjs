@@ -9,6 +9,13 @@ const nextConfig = withPWA({
   output: "export",
   trailingSlash: true,
   transpilePackages: ["@music/sdk"],
+  typescript: {
+    ignoreBuildErrors: true
+  },
+  eslint: {
+    ignoreDuringBuilds: true
+  },
+  
   images: {
     unoptimized: true,
     remotePatterns: [

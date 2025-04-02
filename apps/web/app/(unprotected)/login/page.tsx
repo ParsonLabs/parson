@@ -54,7 +54,7 @@ export default function Login() {
     };
 
     fetchServerInfo();
-  }, []);
+  }, [push]);
 
   const { handleSubmit } = form;
 

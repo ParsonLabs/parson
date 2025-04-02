@@ -14,6 +14,7 @@ import { LayoutConfigProvider } from "./LayoutConfigContext";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 // import { createAuthMiddleware } from "../Authentication/AuthMiddleware";
 import AuthProvider from "./AuthProvider";
+import { TooltipProvider } from "@music/ui/components/tooltip";
 
 interface ProvidersProps {
   children: ReactNode;
@@ -49,7 +50,9 @@ export default function Providers({ children }: ProvidersProps) {
                   <PlayerProvider>
                     <PanelProvider>
                       <LyricsOverlayProvider>
-                        <AIOverlayProvider>{children}</AIOverlayProvider>
+                        <TooltipProvider>
+                          <AIOverlayProvider>{children}</AIOverlayProvider>
+                        </TooltipProvider>
                       </LyricsOverlayProvider>
                     </PanelProvider>
                   </PlayerProvider>

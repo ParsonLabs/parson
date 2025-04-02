@@ -1,4 +1,3 @@
-// components/Music/Player/YouTubePlayer.tsx
 "use client"
 
 import { useState, useRef, useImperativeHandle, forwardRef, useEffect, useCallback } from "react"
@@ -28,20 +27,7 @@ const YouTubePlayer = forwardRef(({
   const skipProgressRef = useRef<boolean>(false);
   const lastSeekTime = useRef<number>(0);
   
-  useImperativeHandle(ref, () => ({
-    seekTo: (time: number, type: 'seconds' | 'fraction' = 'seconds') => {
-      if (playerRef.current) {
-        playerRef.current.seekTo(time, type);
-        lastSeekTime.current = time;
-        skipProgressRef.current = true;
-        setTimeout(() => {
-          skipProgressRef.current = false;
-        }, 500);
-      }
-    },
-    getDuration: getPlayerDuration,
-    getCurrentTime: () => playerRef.current?.getCurrentTime() || 0
-  }), []);
+
   
   useEffect(() => {
     const currentPlayerTime = playerRef.current?.getCurrentTime() || 0;
@@ -75,6 +61,21 @@ const YouTubePlayer = forwardRef(({
     }
     return lastDuration;
   }, [lastDuration]);
+
+  useImperativeHandle(ref, () => ({
+    seekTo: (time: number, type: 'seconds' | 'fraction' = 'seconds') => {
+      if (playerRef.current) {
+        playerRef.current.seekTo(time, type);
+        lastSeekTime.current = time;
+        skipProgressRef.current = true;
+        setTimeout(() => {
+          skipProgressRef.current = false;
+        }, 500);
+      }
+    },
+    getDuration: getPlayerDuration,
+    getCurrentTime: () => playerRef.current?.getCurrentTime() || 0
+  }), [getPlayerDuration]);
   
   const handleProgress = (state: { playedSeconds: number; loadedSeconds: number }) => {
     if (skipProgressRef.current) return;
@@ -123,8 +124,6 @@ const YouTubePlayer = forwardRef(({
   );
 });
 
-// Important: Set display name
 YouTubePlayer.displayName = "YouTubePlayer";
 
-// Export the component
 export default YouTubePlayer;

@@ -27,11 +27,15 @@ export const LayoutConfigProvider: React.FC<{ children: React.ReactNode }> = ({ 
       setComponents([
         { id: "LandingCarousel", name: "Landing Carousel", visible: true, pinned: false },
         { id: "ListenAgain", name: "Listen Again", visible: true, pinned: false },
+        { id: "SpeedDial", name: "Speed Dial", visible: true, pinned: false },
         { id: "SimilarTo", name: "Similar To", visible: true, pinned: false },
         { id: "RecommendedAlbums", name: "Recommended Albums", visible: true, pinned: false },
         { id: "RandomSongs", name: "Random Songs", visible: true, pinned: false },
         { id: "FromYourLibrary", name: "From Your Library", visible: true, pinned: false },
         { id: "MusicVideos", name: "Music Videos", visible: true, pinned: false },
+        { id: "PopularGenres", name: "Popular Genres", visible: true, pinned: false },
+        { id: "RecentlyAddedAlbums", name: "Recently Added Albums", visible: true, pinned: false },
+        { id: "Top Artists", name: "Top Artists", visible: true, pinned: false },
       ]);
     }
   }, []);

@@ -10,14 +10,14 @@
     "ui:add": "yarn --filter @music/ui ui:add"
   },
   "devDependencies": {
-    "@tauri-apps/cli": "^1.6.0",
-    "prettier": "^3.2.5",
-    "turbo": "latest"
+    "@tauri-apps/cli": "2.3.1",
+    "prettier": "3.5.3",
+    "turbo": "2.4.4"
   },
   "engines": {
     "node": ">=18"
   },
-  "packageManager": "yarn@1.22.22",
+  "packageManager": "bun@1.2.5",
   "workspaces": [
     "apps/*",
     "packages/*"
@@ -26,5 +26,11 @@
     "core-js-pure",
     "electron",
     "esbuild"
-  ]
+  ],
+  "dependencies": {
+    "eslint-config-next": "^15.2.4",
+    "next": "^15.2.4",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0"
+  }
 }

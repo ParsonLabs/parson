@@ -6,6 +6,7 @@ import { FastAverageColor } from "fast-average-color";
 import Image from "next/image";
 import Link from "next/link";
 import { useState, useEffect } from "react";
+import { motion } from "framer-motion";
 
 type AlbumCardProps = {
   artist_id: string;
@@ -26,17 +27,26 @@ export default function AlbumCard({
   album_songs_count,
   first_release_date,
 }: AlbumCardProps) {
-  const albumCoverURL = (!album_cover || album_cover.length === 0) ? "/snf.png" : `${getBaseURL()}/image/${encodeURIComponent(album_cover)}`;
+  const albumCoverURL = (!album_cover || album_cover.length === 0) 
+    ? "/snf.png" 
+    : `${getBaseURL()}/image/${encodeURIComponent(album_cover)}`;
+    
   let releaseDate = new Date(first_release_date).toLocaleString('default', { year: 'numeric' });
 
   const { setGradient } = useGradientHover();
   const [dominantColor, setDominantColor] = useState<string | null>(null);
+  const [isHovered, setIsHovered] = useState(false);
+  const [imageLoaded, setImageLoaded] = useState(false);
 
   useEffect(() => {
     const fac = new FastAverageColor();
     const getColor = async () => {
-      const color = await fac.getColorAsync(albumCoverURL);
-      setDominantColor(color.hex);
+      try {
+        const color = await fac.getColorAsync(albumCoverURL);
+        setDominantColor(color.hex);
+      } catch (error) {
+        console.error("Failed to get dominant color:", error);
+      }
     };
     getColor();
   }, [albumCoverURL]);
@@ -44,30 +54,78 @@ export default function AlbumCard({
   function handleMouseEnter() {
     if (dominantColor) {
       setGradient(dominantColor);
+      setIsHovered(true);
     }
   }
 
   return (
-    <div className="w-44 h-44 relative group" onMouseEnter={handleMouseEnter}>
+    <motion.div 
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.3 }}
+      className="relative group w-[250px]"
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={() => setIsHovered(false)}
+    >
       {dominantColor && (
         <div
-          className="relative top-0 w-11/12 justify-center h-2 rounded-t-lg z-10 group-hover:brightness-50 duration-300 transition-filter"
-          style={{ backgroundColor: dominantColor, margin: '0 auto', marginBottom: '2px' }}
+          className="relative top-0 w-11/12 justify-center h-2 rounded-t-lg z-10 transition-all duration-300"
+          style={{ 
+            backgroundColor: dominantColor, 
+            margin: '0 auto', 
+            marginBottom: '2px',
+            opacity: isHovered ? 1 : 0.7
+          }}
         />
       )}
+      
       <Link href={`/album?id=${album_id}`}>
-        <Image src={albumCoverURL} alt={`${album_name} Image`} height={256} width={256} className="rounded cursor-pointer transition-filter duration-300 group-hover:brightness-50 object-fill w-full h-40" style={{ height: "167px" }}/>
-        <div className="mt-3 font-bold text-white flex justify-between overflow-hidden">
-          <p className="overflow-hidden text-ellipsis whitespace-nowrap" title={album_name}>{album_name}</p>
-          <p className="ml-2 font-light text-gray-400 whitespace-nowrap" style={dominantColor ? { color: `${dominantColor}` } : undefined}>{album_songs_count}</p>        
+        <div className="relative w-full aspect-square overflow-hidden rounded-2xl shadow-xl bg-black/20 backdrop-blur-sm transform transition-all duration-300 hover:-translate-y-1">
+          {!imageLoaded && (
+            <div className="absolute inset-0 bg-gradient-to-br from-zinc-800 to-zinc-900 animate-pulse"></div>
+          )}
+          
+          <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+          
+          <Image 
+            src={albumCoverURL} 
+            alt={`${album_name} Image`} 
+            height={800} 
+            width={800} 
+            onLoad={() => setImageLoaded(true)}
+            className={`object-cover w-full h-full transition-all duration-500 ${
+              isHovered ? "scale-110 brightness-90" : "scale-100 brightness-95"
+            }`}
+          />
+          
+          <div className="absolute top-3 right-3 bg-black/50 backdrop-blur-md px-2 py-1 rounded-full text-xs font-medium">
+            {album_songs_count} {album_songs_count === 1 ? 'song' : 'songs'}
           </div>
+        </div>
       </Link>
-  
-      <Link href={`/artist?id=${artist_id}`}>
-        <p className="text-gray-400">
-          {artist_name} {releaseDate == "Invalid Date" ? "" : "• " + releaseDate}
+      
+      <div className="mt-4 w-full px-1 overflow-hidden">
+        <p className="font-semibold text-base text-white truncate" title={album_name}>
+          <Link href={`/album?id=${album_id}`} className="hover:underline underline-offset-2 transition-all">
+            {album_name}
+          </Link>
         </p>
-      </Link>
-    </div>
+        
+        <div className="flex items-center justify-between mt-0.5">
+          <Link 
+            href={`/artist?id=${artist_id}`} 
+            className="text-sm text-gray-400 hover:text-white transition-colors truncate block"
+          >
+            {artist_name}
+          </Link>
+          
+          {releaseDate !== "Invalid Date" && (
+            <span className="text-xs text-gray-500 whitespace-nowrap ml-1">
+              • {releaseDate}
+            </span>
+          )}
+        </div>
+      </div>
+    </motion.div>
   );
 }

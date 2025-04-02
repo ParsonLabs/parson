@@ -17,6 +17,7 @@ import { Input } from "@music/ui/components/input"
 import { Label } from "@music/ui/components/label"
 import { Loader2 } from "lucide-react"
 import { useState, useTransition } from "react"
+import { useQueryClient } from "@tanstack/react-query"
 
 type CreatePlaylistDialog = {
   children: React.ReactNode
@@ -27,14 +28,30 @@ export default function CreatePlaylistDialog({ children }: CreatePlaylistDialog)
   const [openDialog, setOpenDialog] = useState(false)
   const [isPending, startTransition] = useTransition()
   const { session } = useSession()
+  const queryClient = useQueryClient()
 
   const username = session?.username
 
   const open = () => setOpenDialog(true)
   const close = () => setOpenDialog(false)
 
+  const handleCreatePlaylist = async () => {
+    if (!playlistName.trim() || !session?.sub) return
+    
+    startTransition(async () => {
+      try {
+        await createPlaylist(Number(session.sub), playlistName)
+        queryClient.invalidateQueries({ queryKey: ['userPlaylists', session.sub] })
+        setPlaylistName("")
+        close()
+      } catch (error) {
+        console.error("Failed to create playlist:", error)
+      }
+    })
+  }
+
   return (
-    <Dialog open={openDialog} onOpenChange={() => setOpenDialog(!openDialog)}>
+    <Dialog open={openDialog} onOpenChange={setOpenDialog}>
       <DialogTrigger asChild>
         {children}
       </DialogTrigger>
@@ -60,6 +77,11 @@ export default function CreatePlaylistDialog({ children }: CreatePlaylistDialog)
               className="bg-zinc-800 border-zinc-700 text-white placeholder:text-zinc-500 
                 focus:ring-2 focus:ring-purple-500 focus:border-transparent
                 transition-all duration-200"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && playlistName.trim() && !isPending) {
+                  handleCreatePlaylist();
+                }
+              }}
             />
           </div>
         </div>
@@ -67,7 +89,7 @@ export default function CreatePlaylistDialog({ children }: CreatePlaylistDialog)
           <Button
             type="submit"
             disabled={isPending || !playlistName.trim()}
-            onClick={() => createPlaylist(Number(session?.sub), playlistName).then(close)}
+            onClick={handleCreatePlaylist}
             className="bg-purple-600 hover:bg-purple-700 text-white font-medium
               px-6 py-2 rounded-md transition-colors duration-200
               disabled:opacity-50 disabled:cursor-not-allowed"

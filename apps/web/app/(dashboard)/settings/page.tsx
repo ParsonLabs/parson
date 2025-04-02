@@ -6,6 +6,7 @@ import getSession from "@/lib/Authentication/JWT/getSession"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { uploadProfilePicture, getProfilePicture } from "@music/sdk"
 import { Button } from "@music/ui/components/button"
+import { Camera, User as UserIcon } from "lucide-react"
 import Image from "next/image"
 import {
   Form,
@@ -15,11 +16,11 @@ import {
   FormMessage,
 } from "@music/ui/components/form"
 import { Input } from "@music/ui/components/input"
-import { Avatar, AvatarImage, AvatarFallback } from "@radix-ui/react-avatar"
 import { useState, useEffect } from "react"
 import { useForm } from "react-hook-form"
 import { z } from "zod"
 import { useSession } from "@/components/Providers/AuthProvider"
+import { motion } from "framer-motion"
 
 const FormSchema = z.object({
   picture: z.instanceof(File).optional(),
@@ -35,6 +36,7 @@ export default function SettingsPage() {
 
   const [file, setFile] = useState(null)
   const [message, setMessage] = useState<string | null>(null)
+  const [messageType, setMessageType] = useState<'success' | 'error'>('error')
   const [profilePicture, setProfilePicture] = useState<string | null>(null)
   const [username, setUsername] = useState<string>("")
   const { session } = useSession()
@@ -60,11 +62,15 @@ export default function SettingsPage() {
     if (file) {
       try {
         await uploadProfilePicture(userId, file)
-        setMessage("Profile picture uploaded successfully")
+        setMessageType('success')
+        setMessage("Profile picture updated successfully")
+        setTimeout(() => setMessage(null), 3000)
       } catch (error: any) {
+        setMessageType('error')
         setMessage(`Error uploading profile picture: ${error.message}`)
       }
     } else {
+      setMessageType('error')
       setMessage("No file selected. Please select a file to upload.")
     }
   }
@@ -84,57 +90,93 @@ export default function SettingsPage() {
   }
 
   return (
-    <>
-      <div className="flex flex-col justify-center items-center min-h-screen bg-zinc-950 ml-1/4">
-        <div className="w-1/2">
-          <Form {...form}>
-            <form onSubmit={(e) => { e.preventDefault(); handleSubmit(); }} className="space-y-6 text-white">
-              <FormItem>
-                <FormLabel htmlFor="picture" className="block text-2xl font-medium text-white">Profile Picture</FormLabel>
-                <div className="flex items-center space-x-4">
-                  <FormControl>
-                    <div>
-                      <input
-                        id="picture"
-                        type="file"
-                        accept="image/*"
-                        onChange={handleFileChange}
-                        className="hidden"
-                      />
-                      <label htmlFor="picture" className="cursor-pointer">
-                        <div className="mr-4 w-16 h-16 rounded-full overflow-hidden flex-shrink-0">
-                          {profilePicture ? (
-                            <Image
-                              src={profilePicture}
-                              alt="User Profile Picture"
-                              width={64}
-                              height={64}
-                              className="w-full h-full object-cover rounded-full"
-                            />
-                          ) : (
-                            <div className="w-full h-full flex items-center justify-center bg-gray-600 text-white rounded-full">
-                              {username.substring(0, 2).toUpperCase()}
+    <div className="space-y-12">
+      <div>
+        <h1 className="text-2xl font-semibold text-white mb-6">Profile Settings</h1>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+          <div>
+            <h2 className="text-xl font-medium text-white mb-4">Profile Picture</h2>
+            <Form {...form}>
+              <form onSubmit={(e) => { e.preventDefault(); handleSubmit(); }} className="space-y-6">
+                <FormItem>
+                  <div className="flex flex-col items-center space-y-4">
+                    <FormControl>
+                      <div className="relative group">
+                        <input
+                          id="picture"
+                          type="file"
+                          accept="image/*"
+                          onChange={handleFileChange}
+                          className="hidden"
+                        />
+                        <label htmlFor="picture" className="cursor-pointer block">
+                          <div className="w-32 h-32 rounded-full overflow-hidden relative group">
+                            {profilePicture ? (
+                              <Image
+                                src={profilePicture}
+                                alt="User Profile"
+                                width={128}
+                                height={128}
+                                className="w-full h-full object-cover"
+                              />
+                            ) : (
+                              <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-indigo-800/70 to-purple-700/70 text-white">
+                                <UserIcon size={48} />
+                              </div>
+                            )}
+                            <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity duration-200">
+                              <Camera className="w-8 h-8 text-white" />
                             </div>
-                          )}
-                        </div>
-                      </label>
+                          </div>
+                        </label>
+                      </div>
+                    </FormControl>
+                    <div>
+                      <p className="text-gray-300 text-center text-sm">Click to upload a new profile picture</p>
                     </div>
-                  </FormControl>
+                  </div>
+                  <FormMessage className="text-sm text-red-500 text-center" />
+                </FormItem>
+                
+                {message && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className={`p-3 rounded-md text-center text-sm ${
+                      messageType === 'success' ? 'bg-green-900/40 text-green-300' : 'bg-red-900/40 text-red-300'
+                    }`}
+                  >
+                    {message}
+                  </motion.div>
+                )}
+                
+                <div className="flex justify-center">
+                  <Button 
+                    type="submit" 
+                    className="px-6 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700"
+                  >
+                    Update Profile Picture
+                  </Button>
                 </div>
-                <FormMessage className="text-sm text-red-600" />
-              </FormItem>
-              {message && <p className="text-center text-red-600">{message}</p>}
-              <Button type="submit" className="w-1/3 px-4 py-2 mt-6 text-white bg-indigo-800 rounded-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">Upload</Button>
-            </form>
-          </Form>
-          <div className="mt-6">
-            <ChangeBitrate />
+              </form>
+            </Form>
           </div>
-          <div className="mt-6">
-            <ChangePassword />
+          <div>
+            <h2 className="text-xl font-medium text-white mb-4">Account Settings</h2>
+            <div className="space-y-6">
+              <div className="p-5 bg-zinc-800/50 rounded-lg border border-zinc-700/50 shadow-inner">
+                <h3 className="text-md font-medium text-white mb-4">Audio Quality</h3>
+                <ChangeBitrate />
+              </div>
+              
+              <div className="p-5 bg-zinc-800/50 rounded-lg border border-zinc-700/50 shadow-inner">
+                <h3 className="text-md font-medium text-white mb-4">Security</h3>
+                <ChangePassword />
+              </div>
+            </div>
           </div>
         </div>
       </div>
-    </>
+    </div>
   );
 }

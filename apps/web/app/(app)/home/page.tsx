@@ -13,14 +13,19 @@ import { useGradientHover } from "@/components/Providers/GradientHoverProvider";
 import { hasConfig } from "@music/sdk";
 import { Button } from "@music/ui/components/button";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useLayoutConfig } from "@/components/Providers/LayoutConfigContext";
+import TopArtists from "@/components/Home/TopArtists";
+import RecentlyAddedAlbums from "@/components/Home/RecentlyAddedAlbums";
+import PopularGenres from "@/components/Home/PopularGenres";
+import { Settings } from "lucide-react";
 
 export default function Home() {
   const [configExists, setConfigExists] = useState(true);
   const { components, setComponents } = useLayoutConfig();
-  const { setGradient } = useGradientHover();
+  const { setGradient, gradient } = useGradientHover();
   const [isMobile, setIsMobile] = useState(false);
+  const [showMobileCustomize, setShowMobileCustomize] = useState(false);
 
   useEffect(() => {
     async function checkConfig() {
@@ -74,39 +79,96 @@ export default function Home() {
 
   const renderComponent = (component: ComponentConfig): JSX.Element | null => {
     if (!component.visible) return null;
-    switch (component.id) {
-      case "LandingCarousel":
-        return <LandingCarousel key="LandingCarousel" />;
-      case "ListenAgain":
-        return <ListenAgain key="ListenAgain" />;
-      case "SimilarTo":
-        return <SimilarTo key="SimilarTo" />;
-      case "RecommendedAlbums":
-        return <RecommendedAlbums key="RecommendedAlbums" />;
-      case "RandomSongs":
-        return <RandomSongs key="RandomSongs" />;
-      case "FromYourLibrary":
-        return <FromYourLibrary key="FromYourLibrary" />;
-      case "MusicVideos":
-        return <MusicVideos key="MusicVideos" />;
-      default:
-        return null;
-    }
+    
+    const componentElement = (() => {
+      switch (component.id) {
+        case "LandingCarousel":
+          return <LandingCarousel />;
+        case "ListenAgain":
+          return <ListenAgain />;
+        case "SimilarTo":
+          return <SimilarTo />;
+        case "RecommendedAlbums":
+          return <RecommendedAlbums />;
+        case "RandomSongs":
+          return <RandomSongs />;
+        case "FromYourLibrary":
+          return <FromYourLibrary />;
+        case "MusicVideos":
+          return <MusicVideos />;
+        case "PopularGenres":
+          return <PopularGenres />;
+        case "RecentlyAddedAlbums":
+          return <RecentlyAddedAlbums />;
+        case "TopArtists":
+          return <TopArtists />;
+        default:
+          return null;
+      }
+    })();
+    
+    if (!componentElement) return null;
+    
+    return (
+      <div 
+        key={component.id}
+        className="animate-fadeIn motion-reduce:animate-none"
+      >
+        {componentElement}
+      </div>
+    );
   };
 
   return configExists ? (
-    <div className="min-h-screen pt-4 pb-20">
-      <div className={`relative ${isMobile ? 'pt-4' : 'pr-32 pt-8'} z-10 top top-14 flex flex-col items-end`}>
-        {!isMobile && <CustomiseFeed />}
+    <div 
+      className="min-h-screen pb-28 pt-4 bg-gradient-to-b from-background to-background/95"
+      style={{
+        backgroundImage: `radial-gradient(circle at top right, ${gradient}15, transparent 70%)`,
+      }}
+    >
+      <div className="max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="space-y-12">
+          <section className="mb-8">
+            {components
+              .filter(component => component.pinned && component.visible)
+              .map(renderComponent)}
+          </section>
+          
+          <Suspense>
+            <GenreButtons>
+              <div className="grid grid-cols-1 gap-y-10">
+                {components
+                  .filter(component => !component.pinned && component.visible)
+                  .map(renderComponent)}
+              </div>
+            </GenreButtons>
+          </Suspense>
+        </div>
       </div>
-      <GenreButtons>
-        {components
-          .filter((component) => component.pinned)
-          .map(renderComponent)}
-        {components
-          .filter((component) => !component.pinned)
-          .map(renderComponent)}
-      </GenreButtons>
+      {isMobile && (
+        <>
+          <button
+            onClick={() => setShowMobileCustomize(true)}
+            className="fixed bottom-24 right-4 z-20 bg-white/10 backdrop-blur-lg p-3 rounded-full shadow-lg border border-white/20"
+          >
+            <Settings className="w-6 h-6" />
+          </button>
+          
+          {showMobileCustomize && (
+            <div 
+              className="fixed inset-0 z-30 bg-black/60 backdrop-blur-sm"
+              onClick={() => setShowMobileCustomize(false)}
+            >
+              <div 
+                className="absolute bottom-0 left-0 right-0 bg-zinc-900 rounded-t-xl p-6"
+                onClick={e => e.stopPropagation()}
+              >
+                <div className="w-12 h-1 bg-white/20 mx-auto mb-6 rounded-full"></div>
+              </div>
+            </div>
+          )}
+        </>
+      )}
     </div>
   ) : (
     <div className="min-h-screen flex flex-col justify-center items-center space-y-4">

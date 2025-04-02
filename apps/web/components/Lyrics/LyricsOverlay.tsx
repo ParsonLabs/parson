@@ -86,7 +86,7 @@ export default function LyricsOverlay({ children }: QueuePanelProps) {
         });
       }
     }
-  }, [currentLyricIndex, isUserScrolling]);
+  }, [currentLyricIndex, isUserScrolling, areLyricsVisible]);
 
   function handleScroll() {
     setIsUserScrolling(true);

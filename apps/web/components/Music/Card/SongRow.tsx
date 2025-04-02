@@ -3,10 +3,11 @@
 import { usePlayer } from "@/components/Music/Player/usePlayer";
 import getBaseURL from "@/lib/Server/getBaseURL";
 import { getSongInfo } from "@music/sdk";
-import { Play, Pause, Volume2 } from "lucide-react";
+import { Play, Pause, HeadphonesIcon } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { useState } from "react";
+import { motion } from "framer-motion";
 
 type SongRowProps = {
   song_name: string;
@@ -34,6 +35,7 @@ export default function SongRow({
   const {
     setImageSrc,
     setAudioSource,
+    playAudioSource,
     setSong,
     setArtist,
     setAlbum,
@@ -47,6 +49,7 @@ export default function SongRow({
   const [isVolumeHovered, setIsVolumeHovered] = useState(false);
 
   const playingSongID = song?.id;
+  const isCurrentSong = playingSongID === song_id;
   const imageSrc = album_cover?.length === 0 ? "/snf.png" : `${getBaseURL()}/image/${encodeURIComponent(album_cover)}`;
 
   function formatDuration(duration: number) {
@@ -61,56 +64,90 @@ export default function SongRow({
     setAlbum({ id: album_id, name: album_name, cover_url: album_cover });
     const songInfo = await getSongInfo(song_id);
     setSong(songInfo);
-    setAudioSource(`${getBaseURL()}/api/stream/${encodeURIComponent(path)}`);
+    setAudioSource(`${getBaseURL()}/api/stream/${encodeURIComponent(path)}?bitrate=0`);
+    playAudioSource()
   }
 
   return (
-    <div 
-      className="grid grid-cols-[auto,1fr,auto] gap-4 items-center p-2 rounded-lg group hover:bg-white/10 transition-colors"
+    <motion.div 
+      className={`grid grid-cols-[auto,1fr,auto] gap-4 items-center p-2.5 rounded-lg transition-all duration-200 ${
+        isCurrentSong ? 'bg-white/15 backdrop-blur-sm' : 'hover:bg-white/10'
+      }`}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
+      whileHover={{ x: 2 }}
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ duration: 0.2 }}
     >
-      <div className="relative w-12 h-12">
+      <div className="relative w-12 h-12 overflow-hidden rounded-md shadow-lg group">
+        <div className={`absolute inset-0 bg-gradient-to-br from-purple-500/30 to-blue-500/30 ${isCurrentSong ? 'opacity-100' : 'opacity-0'} transition-opacity duration-300`}></div>
+        
         <Image
           src={imageSrc}
           alt={album_name}
           width={48}
           height={48}
-          className="rounded object-cover"
+          className={`rounded-md object-cover transition-all duration-300 ${
+            (isHovered || isCurrentSong) ? 'scale-110 brightness-75' : ''
+          }`}
         />
-        {(isHovered || playingSongID === song_id) && (
-          <button
-            onClick={() => playingSongID === song_id ? togglePlayPause() : handlePlay()}
-            className="absolute inset-0 flex items-center justify-center bg-black/40"
+        
+        <motion.button
+          initial={{ opacity: 0 }}
+          animate={{ opacity: (isHovered || isCurrentSong) ? 1 : 0 }}
+          transition={{ duration: 0.2 }}
+          onClick={() => isCurrentSong ? togglePlayPause() : handlePlay()}
+          className="absolute inset-0 flex items-center justify-center bg-black/30 backdrop-blur-sm"
+          whileTap={{ scale: 0.95 }}
+        >
+          <motion.div 
+            className="w-8 h-8 rounded-full bg-white flex items-center justify-center shadow-lg"
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
           >
-            {playingSongID === song_id ? (
+            {isCurrentSong ? (
               isPlaying ? (
-                <Pause className="w-6 h-6 text-white" />
+                <Pause className="w-4 h-4 text-black fill-black" />
               ) : (
-                <Play className="w-6 h-6 text-white" />
+                <Play className="w-4 h-4 text-black fill-black translate-x-[1px]" />
               )
             ) : (
-              <Play className="w-6 h-6 text-white" />
+              <Play className="w-4 h-4 text-black fill-black translate-x-[1px]" />
             )}
-          </button>
-        )}
+          </motion.div>
+        </motion.button>
       </div>
 
-      <div className="min-w-0">
-        <div className="text-white font-medium truncate">
+      <div className="min-w-0 flex flex-col">
+        <div className={`font-medium truncate transition-colors duration-300 ${isCurrentSong ? 'text-white' : 'text-gray-200 group-hover:text-white'}`}>
           {song_name}
+          {isCurrentSong && isPlaying && (
+            <span className="inline-flex ml-2 items-center">
+              <HeadphonesIcon className="h-3 w-3 text-purple-400 animate-pulse" />
+            </span>
+          )}
         </div>
-        <Link 
-          href={`/album?id=${album_id}`}
-          className="text-sm text-gray-400 hover:underline truncate block"
-        >
-          {album_name}
-        </Link>
+        <div className="flex items-center space-x-2 text-sm">
+          <Link 
+            href={`/artist?id=${artist_id}`}
+            className="text-gray-400 hover:text-gray-200 hover:underline truncate transition-colors duration-200"
+          >
+            {artist_name}
+          </Link>
+          <span className="text-gray-600">•</span>
+          <Link 
+            href={`/album?id=${album_id}`}
+            className="text-gray-400 hover:text-gray-200 hover:underline truncate transition-colors duration-200"
+          >
+            {album_name}
+          </Link>
+        </div>
       </div>
 
-      <div className="text-sm text-gray-400">
+      <div className="text-sm text-gray-400 font-medium tabular-nums">
         {formatDuration(duration)}
       </div>
-    </div>
+    </motion.div>
   );
 }

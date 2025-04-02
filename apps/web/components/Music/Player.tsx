@@ -25,6 +25,7 @@ import { usePlayer } from "./Player/usePlayer";
 import VideoPlayerDialog from "./Player/VideoPlayerDialog";
 import { PanelContext } from "./Queue/QueuePanelContext";
 import ViewCommentsModal from "./Player/ViewComments";
+import { motion } from "framer-motion";
 
 export default function Player() {
   const [liked, setLiked] = useState(false);
@@ -42,7 +43,7 @@ export default function Player() {
     currentTime,
     duration,
     togglePlayPause,
-    toggleLoop,
+    toggleLoopSong,
     muted,
     setAudioVolume,
     handleTimeChange,
@@ -90,7 +91,7 @@ export default function Player() {
       
       return () => clearTimeout(timer);
     }
-  }, [song?.path]);
+  }, [song?.path, isPlaying, togglePlayPause]);
 
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -203,6 +204,7 @@ useEffect(() => {
   }, [togglePlayPause]);
 
   const formatTime = (time: number) => {
+    if (!time) return `0:00`
     const minutes = Math.floor(time / 60);
     const seconds = Math.floor(time % 60);
     return `${minutes}:${seconds < 10 ? "0" : ""}${seconds}`;
@@ -210,57 +212,76 @@ useEffect(() => {
 
   return song.id && (
     <footer 
-      className="z-50 fixed bottom-0 backdrop-blur-xl border-t border-white/5 px-3 py-2 
-      flex flex-col md:flex-row items-center justify-between gap-3 w-full"
+      className="z-50 fixed bottom-0 px-3 py-2 
+      flex flex-col md:flex-row items-center justify-between gap-3 w-full
+      border-t border-white/10 backdrop-blur-xl"
       style={{ 
-        background: 'rgba(18, 18, 18, 0.98)',
+        background: 'rgba(15, 15, 15, 0.85)',
         height: "80px",
         transition: 'all 0.3s ease',
       }}>
       <div 
-        className="absolute inset-0 z-[-1]"
+        className="absolute inset-0 z-[-1] overflow-hidden"
         style={{
           backgroundImage: `url(${isPlaying ? imageSrc : "/snf.png"})`,
           backgroundSize: 'cover',
           backgroundPosition: 'center',
-          opacity: 0.1,
-          filter: 'blur(80px) saturate(180%)',
-          transition: 'all 0.5s ease',
+          opacity: 0.07,
+          filter: 'blur(100px) saturate(180%)',
+          transition: 'all 0.8s ease',
         }}
       />
-  
+      
+      <div className="absolute inset-0 z-[-1] bg-gradient-to-t from-black/90 to-transparent opacity-90" />
+      
+      <div className="absolute top-0 left-0 right-0 h-[1px] bg-gradient-to-r from-purple-500/30 via-blue-500/40 to-indigo-500/30" />
+
       <section className="flex items-center w-full md:w-[30%] min-w-[300px]">
         <div className="group relative w-14 h-14 md:w-[60px] md:h-[60px] flex-shrink-0">
-          <Image
-            alt={song.name}
-            src={imageSrc}
-            height={400}
-            width={400}
-            className="w-full h-full object-cover rounded-md shadow-lg 
-            transform transition-all duration-300 group-hover:scale-105"
-          />
-          <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 
-            transition-opacity duration-200 rounded-md flex items-center justify-center">
-            <button 
-              onClick={() => togglePlayPause()}
-              className="text-white transform scale-90 hover:scale-100 transition-transform duration-200"
-            >
-              {isPlaying ? <IconPause width={24} height={24} /> : <IconPlay width={24} height={24} />}
-            </button>
-          </div>
+          <motion.div
+            whileHover={{ scale: 1.05 }}
+            transition={{ type: "spring", stiffness: 400, damping: 10 }}
+          >
+            <Image
+              alt={song.name}
+              src={imageSrc}
+              height={400}
+              width={400}
+              className="w-full h-full object-cover rounded-md shadow-lg"
+            />
+            
+            {isPlaying && (
+              <div className="absolute inset-0 rounded-md ring-2 ring-white/20 animate-pulse" />
+            )}
+            
+            <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 
+              transition-opacity duration-200 rounded-md flex items-center justify-center backdrop-blur-sm">
+              <motion.button 
+                onClick={() => togglePlayPause()}
+                className="text-white p-1.5 rounded-full bg-white/20"
+                whileHover={{ scale: 1.1 }}
+                whileTap={{ scale: 0.95 }}
+              >
+                {isPlaying ? <IconPause width={20} height={20} /> : <IconPlay width={20} height={20} />}
+              </motion.button>
+            </div>
+          </motion.div>
         </div>
-  
+
         <div className="ml-4 flex-grow min-w-0">
-          <p className="text-white font-medium truncate hover:text-white/80 transition-colors">
-            <Link href={`/album?id=${album.id}`}>{song.name}</Link>
+          <p className="text-white font-medium truncate group">
+            <Link href={`/album?id=${album.id}`} className="group-hover:text-purple-300 transition-colors">
+              {song.name}
+            </Link>
           </p>
-          <p className="text-sm text-gray-400 truncate">
-            <Link href={`/artist?id=${artist.id}`} className="hover:text-white/80 transition-colors">
+          <p className="text-sm text-gray-400 truncate flex gap-1 items-center">
+            <Link href={`/artist?id=${artist.id}`} className="hover:text-white transition-colors">
               {artist.name}
             </Link>
             {song.contributing_artist_ids?.map((id, index) => (
               <span key={id}>
-                , <Link href={`/artist?id=${id}`} className="hover:text-white/80 transition-colors">
+                <span className="text-gray-600 mx-1">•</span>
+                <Link href={`/artist?id=${id}`} className="hover:text-white transition-colors">
                   {song.contributing_artists[index]}
                 </Link>
               </span>
@@ -268,127 +289,182 @@ useEffect(() => {
           </p>
         </div>
       </section>
-  
-      <section className="flex flex-col items-center gap-2 w-full max-w-[45%] min-w-[400px] px-4">
-        <div className="flex items-center gap-6">
-          <button 
-            onClick={() => toggleLoop()}
-            className="text-gray-400 hover:text-white transition-colors"
+
+      <section className="flex flex-col items-center gap-1.5 w-full max-w-[45%] min-w-[400px] px-2">
+        <div className="flex items-center gap-5">
+          <motion.button 
+            whileHover={{ scale: 1.15, rotate: 15 }}
+            whileTap={{ scale: 0.95 }}
+            onClick={() => toggleLoopSong()}
+            className={`text-gray-400 hover:text-white transition-all rounded-full p-1.5 ${onLoop ? 'text-white bg-white/10' : ''}`}
+            title="Repeat"
           >
-            <ArrowPath className={`w-5 h-5 ${onLoop ? 'text-white' : ''}`} />
-          </button>
-          <button 
+            <ArrowPath className={`w-4.5 h-4.5 ${onLoop ? 'text-white' : ''}`} />
+          </motion.button>
+          
+          <motion.button 
+            whileHover={{ scale: 1.15 }}
+            whileTap={{ scale: 0.95 }}
             onClick={() => playPreviousSong()}
-            className="text-gray-400 hover:text-white transition-colors"
+            className="text-gray-300 hover:text-white transition-all rounded-full p-1.5"
+            title="Previous"
           >
             <SkipBack className="w-5 h-5" />
-          </button>
-          <button 
+          </motion.button>
+          
+          <motion.button 
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
             onClick={() => togglePlayPause()}
-            className="bg-white rounded-full p-3 hover:scale-105 transition-transform duration-200"
+            className="bg-white rounded-full p-3 hover:shadow-lg hover:shadow-white/10 transition-all duration-200"
+            title={isPlaying ? "Pause" : "Play"}
           >
             {isPlaying ? 
               <IconPause className="w-5 h-5 text-black" /> : 
               <IconPlay className="w-5 h-5 text-black ml-0.5" />
             }
-          </button>
-          <button 
+          </motion.button>
+          
+          <motion.button 
+            whileHover={{ scale: 1.15 }}
+            whileTap={{ scale: 0.95 }}
             onClick={() => playNextSong()}
-            className="text-gray-400 hover:text-white transition-colors"
+            className="text-gray-300 hover:text-white transition-all rounded-full p-1.5"
+            title="Next"
           >
             <SkipForward className="w-5 h-5" />
-          </button>
-          <button className="text-gray-400 hover:text-white transition-colors">
-            <Shuffle className="w-5 h-5" />
-          </button>
+          </motion.button>
+          
+          <motion.button 
+            whileHover={{ scale: 1.15, rotate: -15 }}
+            whileTap={{ scale: 0.95 }}
+            className="text-gray-400 hover:text-white transition-all rounded-full p-1.5"
+            title="Shuffle"
+          >
+            <Shuffle className="w-4.5 h-4.5" />
+          </motion.button>
         </div>
-  
+
         <div className="flex items-center gap-2 w-full">
-          <span className="text-xs text-gray-400 w-10 text-right">
+          <span className="text-xs text-gray-400 w-10 text-right font-mono">
             {formatTime(currentTime)}
           </span>
-          <Slider
-            min={0}
-            max={duration || 100}
-            value={[currentTime]}
-            onValueChange={([value]) => handleTimeChange(value?.toString())}
-            onValueCommit={([value]) => {
-              handleTimeChange(value?.toString());
-            }}
-            onPointerDown={() => setIsDraggingSeekBar(true)}
-            onPointerUp={() => setIsDraggingSeekBar(false)}
-            className="w-full group"
-          >
-            <SliderTrack className="h-1 bg-gray-800 rounded-full">
-              <SliderRange 
-                className="bg-gray-600 rounded-full" 
-                style={{ width: `${(bufferedTime / duration) * 100}%` }} 
-              />
-              <SliderRange className="bg-white rounded-full" />
-            </SliderTrack>
-            <SliderThumb className="w-3 h-3 bg-white opacity-0 group-hover:opacity-100 transition-all" />
-          </Slider>
-          <span className="text-xs text-gray-400 w-10">
+          
+          <div className="relative w-full group">
+            <Slider
+              min={0}
+              max={duration || 100}
+              value={[currentTime]}
+              onValueChange={([value]) => handleTimeChange(value?.toString())}
+              onValueCommit={([value]) => {
+                handleTimeChange(value?.toString());
+              }}
+              onPointerDown={() => setIsDraggingSeekBar(true)}
+              onPointerUp={() => setIsDraggingSeekBar(false)}
+              className="w-full group"
+            >
+              <SliderTrack className="h-1.5 bg-gray-800 group-hover:bg-gray-700 rounded-full transition-colors">
+                <div 
+                  className="absolute h-full bg-white/20 rounded-full transition-all" 
+                  style={{ width: `${(bufferedTime / duration) * 100}%` }} 
+                />
+                
+                <SliderRange className="bg-gradient-to-r from-purple-500 to-indigo-500 rounded-full" />
+              </SliderTrack>
+              
+              <SliderThumb className="w-3 h-3 bg-white shadow-sm shadow-purple-500/30 opacity-0 group-hover:opacity-100 transition-all" />
+            </Slider>
+            
+            {isDraggingSeekBar && (
+              <div className="absolute bottom-full mb-2 left-1/2 transform -translate-x-1/2 bg-black/80 px-2 py-1 rounded text-xs text-white">
+                {formatTime(currentTime)}
+              </div>
+            )}
+          </div>
+          
+          <span className="text-xs text-gray-400 w-10 font-mono">
             {formatTime(duration)}
           </span>
         </div>
       </section>
-  
-      <section className="hidden md:flex items-center gap-4 w-[20%] justify-end pr-4">
-        <ViewCommentsModal />
-        <button
-          className={`transition-colors ${isLyricsClicked ? 'text-white' : 'text-gray-400 hover:text-white'}`}
-          onClick={() => {
-            toggleLyrics();
-            setIsLyricsClicked(!isLyricsClicked);
-          }}
-        >
-          <MicVocal className="w-5 h-5" />
-        </button>
-  
-        {song.music_video?.url && <VideoPlayerDialog url={song.music_video.url} />}
-  
-        {process.env.NEXT_PUBLIC_AI_URL && (
-          <button
-            className={`transition-colors ${isAIClicked ? 'text-white' : 'text-gray-400 hover:text-white'}`}
+
+      <section className="hidden md:flex items-center gap-3 w-[20%] justify-end pr-2">
+        <div className="flex items-center gap-3">
+          <ViewCommentsModal />
+          
+          <motion.button
+            whileHover={{ scale: 1.1 }}
+            whileTap={{ scale: 0.95 }}
+            className={`transition-all p-1.5 rounded-full ${isLyricsClicked ? 'text-white bg-white/10' : 'text-gray-400 hover:text-white'}`}
             onClick={() => {
-              toggleAI();
-              setIsAIClicked(!isAIClicked);
+              toggleLyrics();
+              setIsLyricsClicked(!isLyricsClicked);
             }}
+            title="Lyrics"
           >
-            <BookAudioIcon className="w-5 h-5" />
-          </button>
-        )}
-  
-        <button
-          className={`transition-colors ${isQueueClicked ? 'text-white' : 'text-gray-400 hover:text-white'}`}
-          onClick={() => {
-            togglePanel();
-            setIsQueueClicked(!isQueueClicked);
-          }}
-        >
-          <IconQueue className="w-5 h-5" />
-        </button>
-  
-        <div className="flex items-center gap-2 ml-2">
-          <button
+            <MicVocal className="w-4.5 h-4.5" />
+          </motion.button>
+      
+          {song.music_video?.url && <VideoPlayerDialog url={song.music_video.url} />}
+      
+          {process.env.NEXT_PUBLIC_AI_URL && (
+            <motion.button
+              whileHover={{ scale: 1.1 }}
+              whileTap={{ scale: 0.95 }}
+              className={`transition-all p-1.5 rounded-full ${isAIClicked ? 'text-white bg-white/10' : 'text-gray-400 hover:text-white'}`}
+              onClick={() => {
+                toggleAI();
+                setIsAIClicked(!isAIClicked);
+              }}
+              title="AI Analysis"
+            >
+              <BookAudioIcon className="w-4.5 h-4.5" />
+            </motion.button>
+          )}
+      
+          <motion.button
+            whileHover={{ scale: 1.1 }}
+            whileTap={{ scale: 0.95 }}
+            className={`transition-all p-1.5 rounded-full ${isQueueClicked ? 'text-white bg-white/10' : 'text-gray-400 hover:text-white'}`}
+            onClick={() => {
+              togglePanel();
+              setIsQueueClicked(!isQueueClicked);
+            }}
+            title="Queue"
+          >
+            <IconQueue className="w-4.5 h-4.5" />
+          </motion.button>
+        </div>
+        
+        <div className="flex items-center gap-2 ml-1 border-l border-white/10 pl-3">
+          <motion.button
+            whileHover={{ scale: 1.1 }}
+            whileTap={{ scale: 0.95 }}
             onClick={() => toggleMute()}
-            className="text-gray-400 hover:text-white transition-colors"
+            className={`text-gray-400 hover:text-white transition-all p-1.5 rounded-full ${muted || !volume ? 'text-gray-500' : ''}`}
+            title={muted || !volume ? "Unmute" : "Mute"}
           >
-            {muted || !volume ? <VolumeX className="w-5 h-5" /> : <Volume2 className="w-5 h-5" />}
-          </button>
-          <Slider
-            min={0}
-            max={100}
-            value={[volume * 100]}
-            onValueChange={([value]) => setAudioVolume(Number(value))}
-            className="w-24 group"
-          >
-            <SliderTrack className="h-1 bg-gray-800 rounded-full">
-              <SliderRange className="bg-white rounded-full" />
-            </SliderTrack>
-            <SliderThumb className="w-3 h-3 bg-white opacity-0 group-hover:opacity-100 transition-all" />
-          </Slider>
+            {muted || !volume ? <VolumeX className="w-4.5 h-4.5" /> : <Volume2 className="w-4.5 h-4.5" />}
+          </motion.button>
+          
+          <div className="w-24 group transition-all">
+            <Slider
+              min={0}
+              max={100}
+              value={[volume * 100]}
+              onValueChange={([value]) => setAudioVolume(Number(value))}
+              className="group"
+            >
+              <SliderTrack className="h-1 bg-gray-800 group-hover:bg-gray-700 rounded-full transition-colors">
+                <SliderRange className="bg-gradient-to-r from-purple-500 to-indigo-500 rounded-full" />
+              </SliderTrack>
+              <SliderThumb className="w-2.5 h-2.5 bg-white shadow-sm shadow-purple-500/30 opacity-0 group-hover:opacity-100 transition-all" />
+            </Slider>
+            
+            <div className="opacity-0 group-hover:opacity-100 transition-opacity absolute -top-5 right-0 text-xs text-gray-400">
+              {Math.round(volume * 100)}%
+            </div>
+          </div>
         </div>
       </section>
     </footer>

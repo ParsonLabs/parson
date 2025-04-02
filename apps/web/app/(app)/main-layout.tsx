@@ -33,7 +33,9 @@ export default function MainLayout({ children }: any) {
       <Providers>
         <TopGradient />
         <div className="fixed top-0 left-0 z-50 w-full">
-          <NavBar />
+          <Suspense>
+            <NavBar />
+          </Suspense>
         </div>
 
         <Sidebar

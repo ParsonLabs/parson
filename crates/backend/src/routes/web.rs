@@ -130,6 +130,18 @@ async fn fetch_listen_history_songs(user_id: u32) -> Result<Vec<SongInfo>, ()> {
 }
 
 async fn fetch_similar_albums(user_id: u32) -> Result<(Vec<AlbumCardProps>, String), ()> {
+    let listen_history_result = fetch_albums_from_history(user_id).await;
+    
+    if let Ok((albums, genre)) = listen_history_result {
+        if !albums.is_empty() {
+            return Ok((albums, genre));
+        }
+    }
+    
+    fetch_fallback_albums().await
+}
+
+async fn fetch_albums_from_history(user_id: u32) -> Result<(Vec<AlbumCardProps>, String), ()> {
     let listen_history_songs = fetch_listen_history_songs(user_id).await?;
     
     let last_10_songs: Vec<_> = listen_history_songs.iter().take(10).collect();
@@ -143,21 +155,36 @@ async fn fetch_similar_albums(user_id: u32) -> Result<(Vec<AlbumCardProps>, Stri
         None => return Err(()),
     };
     
+    let song_genres = get_genre_info_by_song(&random_song.song_id).await.unwrap_or_default();
     
-    let song_genres = get_genre_info_by_song(&random_song.song_id).await?;
-    let song_genre = song_genres.into_iter().next().unwrap_or(Genre {
+    let mut song_genre = Genre {
         musicbrainz_id: String::new(),
         disambiguation: String::new(),
         name: String::new(),
         count: 0,
-    });
-
-    if song_genre.name.is_empty() {
-        return Err(());
+    };
+    
+    for genre in song_genres {
+        if !genre.name.is_empty() {
+            song_genre = genre;
+            break;
+        }
     }
 
-    let similar_albums = fetch_albums_by_genres(vec![song_genre.name.clone()]).await.unwrap();
+    if song_genre.name.is_empty() {
+        song_genre.name = "rock".to_string();
+    }
+
+    let similar_albums = match fetch_albums_by_genres(vec![song_genre.name.clone()]).await {
+        Ok(albums) => albums,
+        Err(_) => return Err(()),
+    };
+    
     let similar_albums: Vec<_> = similar_albums.into_iter().take(30).collect();
+    
+    if similar_albums.is_empty() {
+        return Err(());
+    }
 
     let album_ids: Vec<String> = similar_albums.into_iter().map(|album| album.id).collect();
     let albums_info: Vec<ResponseAlbum> = fetch_albums_info(album_ids).await?;
@@ -175,6 +202,62 @@ async fn fetch_similar_albums(user_id: u32) -> Result<(Vec<AlbumCardProps>, Stri
     }).collect();
 
     Ok((album_card_props, song_genre.name))
+}
+
+async fn fetch_fallback_albums() -> Result<(Vec<AlbumCardProps>, String), ()> {
+    let library = fetch_library().await.map_err(|_| ())?;
+    
+    let mut eligible_albums: Vec<(&Artist, &Album)> = Vec::new();
+    
+    for artist in library.iter() {
+        for album in artist.albums.iter() {
+            if !album.cover_url.is_empty() && album.songs.len() >= 3 {
+                eligible_albums.push((artist, album));
+            }
+        }
+    }
+    
+    if eligible_albums.is_empty() {
+        return Ok((Vec::new(), "Recommended".to_string()));
+    }
+    
+    eligible_albums.shuffle(&mut rand::thread_rng());
+    
+    let selected_albums: Vec<_> = eligible_albums.into_iter().take(30).collect();
+    
+    let album_card_props: Vec<AlbumCardProps> = selected_albums.into_iter().map(|(artist, album)| {
+        AlbumCardProps {
+            artist_id: artist.id.clone(),
+            artist_name: artist.name.clone(),
+            album_id: album.id.clone(),
+            album_name: album.name.clone(),
+            album_cover: album.cover_url.clone(),
+            album_songs_count: album.songs.len(),
+            first_release_date: album.first_release_date.clone(),
+        }
+    }).collect();
+    
+    Ok((album_card_props, "Recommended".to_string()))
+}
+
+#[get("/similar_to/{user_id}")]
+async fn get_similar_albums(user_id: web::Path<u32>) -> HttpResponse {
+    let user_id = user_id.into_inner();
+    match fetch_similar_albums(user_id).await {
+        Ok((albums, genre)) => {
+            if albums.is_empty() {
+                HttpResponse::Ok().json((Vec::<AlbumCardProps>::new(), "Recommendations".to_string()))
+            } else {
+                HttpResponse::Ok().json((albums, genre))
+            }
+        },
+        Err(_) => {
+            match fetch_fallback_albums().await {
+                Ok((albums, genre)) => HttpResponse::Ok().json((albums, genre)),
+                Err(_) => HttpResponse::Ok().json((Vec::<AlbumCardProps>::new(), "Recommendations".to_string()))
+            }
+        }
+    }
 }
 
 async fn fetch_albums_info(album_ids: Vec<String>) -> Result<Vec<ResponseAlbum>, ()> {
@@ -210,15 +293,6 @@ async fn fetch_albums_info(album_ids: Vec<String>) -> Result<Vec<ResponseAlbum>,
     }
 
     Ok(albums_info)
-}
-
-#[get("/similar_to/{user_id}")]
-async fn get_similar_albums(user_id: web::Path<u32>) -> HttpResponse {
-    let user_id = user_id.into_inner();
-    match fetch_similar_albums(user_id).await {
-        Ok((albums, genre)) => HttpResponse::Ok().json((albums, genre)),
-        Err(_) => HttpResponse::InternalServerError().json("Failed to fetch similar albums"),
-    }
 }
 
 async fn fetch_listen_again_songs(user_id: u32) -> Result<Vec<SongInfo>, ()> {

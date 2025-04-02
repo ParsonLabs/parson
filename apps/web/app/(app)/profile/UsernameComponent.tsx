@@ -3,7 +3,6 @@
 import FollowButton from "@/components/Friends/FollowButton";
 import ArtistCard from "@/components/Music/Artist/ArtistCard";
 import { useSession } from "@/components/Providers/AuthProvider";
-import { getCache } from "@/lib/Caching/cache";
 import {
   getListenHistory,
   getProfilePicture,
@@ -19,155 +18,184 @@ import {
 } from "@music/ui/components/avatar";
 import { ScrollArea, ScrollBar } from "@music/ui/components/scroll-area";
 import { useSearchParams } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useMemo } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { Play } from "lucide-react";
+import { Play, Loader2 } from "lucide-react";
 import getBaseURL from "@/lib/Server/getBaseURL";
+import { useQuery } from "@tanstack/react-query";
 
 export default function UsernameComponent() {
   const searchParams = useSearchParams();
   const username = searchParams?.get("username");
-
-  const [user, setUser] = useState<any>(null);
-  const [topArtists, setTopArtists] = useState<(Artist & { count: number })[]>(
-    []
-  );
-  const [topAlbums, setTopAlbums] = useState<
-    (LibraryAlbum & { count: number; artist: Artist })[]
-  >([]);
-  const [topSongs, setTopSongs] = useState<(LibrarySong & { count: number })[]>(
-    []
-  );
-  const [profilePicture, setProfilePicture] = useState<string | null>(null);
   const { session } = useSession();
+
+  const {
+    data: user,
+    isLoading: isUserLoading,
+    error: userError
+  } = useQuery({
+    queryKey: ["userInfo", username],
+    queryFn: () => getUserInfo(username as string),
+    enabled: !!username,
+  });
+
+  const {
+    data: listenHistory,
+    isLoading: isHistoryLoading,
+    error: historyError
+  } = useQuery({
+    queryKey: ["listenHistory", user?.id],
+    queryFn: async () => {
+      if (!user?.id) throw new Error('User ID is required');
+      return getListenHistory(user.id);
+    },
+    enabled: !!user?.id,
+  });
+
+  const {
+    data: songsInfo,
+    isLoading: isSongsLoading,
+    error: songsError
+  } = useQuery({
+    queryKey: ["songsInfo", listenHistory],
+    queryFn: async () => {
+      if (!listenHistory?.length) return [];
+      const songPromises = listenHistory.map((history: { song_id: string }) => 
+        getSongInfo(history.song_id)
+      );
+      return Promise.all(songPromises);
+    },
+    enabled: !!listenHistory?.length,
+  });
+
+  const {
+    data: profilePictureBlob,
+    isLoading: isPictureLoading,
+  } = useQuery({
+    queryKey: ["profilePicture", user?.id],
+    queryFn: async () => {
+      if (!user?.id) throw new Error('User ID is required');
+      return getProfilePicture(user.id);
+    },
+    enabled: !!user?.id,
+  });
+
+  const profilePicture = useMemo(() => {
+    if (profilePictureBlob) {
+      return URL.createObjectURL(profilePictureBlob);
+    }
+    return null;
+  }, [profilePictureBlob]);
 
   function formatPlayCount(count: number) {
     return `${count} ${count === 1 ? "play" : "plays"}`;
   }
 
-  useEffect(() => {
-    async function fetchData() {
-      const userCacheKey = `userInfo_${username}`;
-      const listenHistoryCacheKey = `listenHistory_${username}`;
-      const songInfoCacheKey = `songInfo_${username}`;
+  const { topArtists, topAlbums, topSongs } = useMemo(() => {
+    if (!songsInfo?.length) {
+      return { topArtists: [], topAlbums: [], topSongs: [] };
+    }
 
-      let userInfo = getCache(userCacheKey);
-      if (!userInfo) {
-        userInfo = await getUserInfo(username as string);
-      }
-      setUser(userInfo);
-
-      let listenHistory = getCache(listenHistoryCacheKey);
-      if (!listenHistory) {
-        listenHistory = await getListenHistory(userInfo.id);
-      }
-
-      const songInfoPromises = listenHistory.map(
-        async (history: { song_id: string }) => {
-          const songCacheKey = `${songInfoCacheKey}_${history.song_id}`;
-          let songInfo = getCache(songCacheKey);
-          if (!songInfo) {
-            songInfo = await getSongInfo(history.song_id);
-          }
-          return songInfo;
-        }
-      );
-      const songsInfo = await Promise.all(songInfoPromises);
-
-      const artistFrequency: Record<string, { count: number; info: Artist }> =
-        songsInfo.reduce((acc, song) => {
+    const artistFrequency: Record<string, { count: number; info: Artist }> = 
+      songsInfo.reduce((acc: { [key: string]: { count: number; info: Artist } }, song) => {
+        if ('artist_object' in song) {
           const artistId = song.artist_object.id;
           if (!acc[artistId]) {
             acc[artistId] = { count: 0, info: song.artist_object };
           }
           acc[artistId].count++;
-          return acc;
-        }, {});
+        }
+        return acc;
+      }, {});
 
-      const albumFrequency: Record<
-        string,
-        { count: number; info: LibraryAlbum; artist: Artist }
-      > = songsInfo.reduce((acc, song) => {
+    const albumFrequency: Record<
+      string,
+      { count: number; info: LibraryAlbum; artist: Artist }
+    > = songsInfo.reduce((acc: Record<string, { count: number; info: LibraryAlbum; artist: Artist }>, song) => {
+      if ('album_object' in song && 'artist_object' in song) {
         const albumId = song.album_object.id;
         if (!acc[albumId]) {
           acc[albumId] = {
             count: 0,
-            info: song.album_object,
+            info: { ...song.album_object, artist_object: song.artist_object },
             artist: song.artist_object,
           };
         }
         acc[albumId].count++;
-        return acc;
-      }, {});
-
-      const songFrequency: Record<
-        string,
-        { count: number; info: LibrarySong }
-      > = songsInfo.reduce((acc, song) => {
-        const songId = song.id;
-        if (!acc[songId]) {
-          acc[songId] = { count: 0, info: song };
-        }
-        acc[songId].count++;
-        return acc;
-      }, {});
-
-      const sortedArtists = Object.values(artistFrequency)
-        .sort((a, b) => b.count - a.count)
-        .map((artist) => ({
-          ...artist.info,
-          count: artist.count,
-          playCount: formatPlayCount(artist.count),
-        }));
-
-      const sortedAlbums = Object.values(albumFrequency)
-        .sort((a, b) => b.count - a.count)
-        .map((album) => ({
-          ...album.info,
-          artist: album.artist,
-          count: album.count,
-          playCount: formatPlayCount(album.count),
-          cover_url:
-            album.info.cover_url.length === 0
-              ? "/snf.png"
-              : `${getBaseURL()}/image/${encodeURIComponent(album.info.cover_url)}`,
-        }));
-
-      const sortedSongs = Object.values(songFrequency)
-        .sort((a, b) => b.count - a.count)
-        .map((song) => ({
-          ...song.info,
-          count: song.count,
-          playCount: formatPlayCount(song.count),
-          album_object: {
-            ...song.info.album_object,
-            cover_url:
-              song.info.album_object.cover_url.length === 0
-                ? "/snf.png"
-                : `${getBaseURL()}/image/${encodeURIComponent(song.info.album_object.cover_url)}`,
-          },
-        }));
-
-      setTopArtists(sortedArtists);
-      setTopAlbums(sortedAlbums);
-      setTopSongs(sortedSongs);
-
-      const profilePic = await getProfilePicture(userInfo.id);
-      if (profilePic) {
-        setProfilePicture(URL.createObjectURL(profilePic));
-      } else {
-        setProfilePicture(null);
       }
-    }
+      return acc;
+    }, {});
 
-    if (username) {
-      fetchData();
-    }
-  }, [username]);
+    const songFrequency: Record<string, { count: number; info: LibrarySong }> = 
+      songsInfo.reduce((acc: Record<string, { count: number; info: LibrarySong }>, song) => {
+        const songId = song.id;
+        if (!acc[songId] && 'artist_object' in song && 'album_object' in song) {
+          acc[songId] = { count: 0, info: song as LibrarySong };
+        }
+        if (acc[songId]) {
+          acc[songId].count++;
+        }
+        return acc;
+      }, {});
 
-  if (!user) {
-    return null;
+    const sortedArtists = Object.values(artistFrequency)
+      .sort((a, b) => b.count - a.count)
+      .map((artist) => ({
+        ...artist.info,
+        count: artist.count,
+        playCount: formatPlayCount(artist.count),
+      }));
+
+    const sortedAlbums = Object.values(albumFrequency)
+      .sort((a, b) => b.count - a.count)
+      .map((album) => ({
+        ...album.info,
+        artist: album.artist,
+        count: album.count,
+        playCount: formatPlayCount(album.count),
+        cover_url:
+          album.info.cover_url.length === 0
+            ? "/snf.png"
+            : `${getBaseURL()}/image/${encodeURIComponent(album.info.cover_url)}`,
+      }));
+
+    const sortedSongs = Object.values(songFrequency)
+      .sort((a, b) => b.count - a.count)
+      .map((song) => ({
+        ...song.info,
+        count: song.count,
+        playCount: formatPlayCount(song.count),
+        album_object: {
+          ...song.info.album_object,
+          cover_url:
+            song.info.album_object.cover_url.length === 0
+              ? "/snf.png"
+              : `${getBaseURL()}/image/${encodeURIComponent(song.info.album_object.cover_url)}`,
+        },
+      }));
+
+    return { topArtists: sortedArtists, topAlbums: sortedAlbums, topSongs: sortedSongs };
+  }, [songsInfo]);
+
+  const isLoading = isUserLoading || isHistoryLoading || isSongsLoading || isPictureLoading;
+
+  const error = userError || historyError || songsError;
+  if (error) {
+    return (
+      <div className="flex justify-center items-center min-h-screen text-red-500">
+        Error loading profile: {(error as Error).message}
+      </div>
+    );
+  }
+
+  if (isLoading || !user) {
+    return (
+      <div className="flex justify-center items-center min-h-screen">
+        <Loader2 className="w-8 h-8 animate-spin text-white" />
+        <span className="ml-2 text-white">Loading profile...</span>
+      </div>
+    );
   }
 
   return (

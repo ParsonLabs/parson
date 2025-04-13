@@ -148,26 +148,6 @@ CREATE TABLE IF NOT EXISTS "lyrics_view_history" (
     CONSTRAINT "lyrics_view_history_song_id_fkey" FOREIGN KEY ("song_id") REFERENCES "song" ("id") ON DELETE CASCADE ON UPDATE CASCADE
 );
 
-CREATE VIRTUAL TABLE IF NOT EXISTS "lyrics_fts" USING fts5(
-    "song_id" UNINDEXED,
-    "content",
-    content='lyrics',
-    content_rowid='id'
-);
-
-CREATE TRIGGER IF NOT EXISTS lyrics_ai AFTER INSERT ON lyrics BEGIN
-    INSERT INTO lyrics_fts(rowid, song_id, content) VALUES (new.id, new.song_id, new.plain_lyrics);
-END;
-
-CREATE TRIGGER IF NOT EXISTS lyrics_au AFTER UPDATE ON lyrics BEGIN
-    INSERT INTO lyrics_fts(lyrics_fts, rowid, song_id, content) VALUES('delete', old.id, old.song_id, old.plain_lyrics);
-    INSERT INTO lyrics_fts(rowid, song_id, content) VALUES (new.id, new.song_id, new.plain_lyrics);
-END;
-
-CREATE TRIGGER IF NOT EXISTS lyrics_ad AFTER DELETE ON lyrics BEGIN
-    INSERT INTO lyrics_fts(lyrics_fts, rowid, song_id, content) VALUES('delete', old.id, old.song_id, old.plain_lyrics);
-END;
-
 CREATE UNIQUE INDEX "user_username_key" ON "user"("username");
 CREATE INDEX "idx_listen_history_user" ON "listen_history_item"("user_id");
 CREATE INDEX "idx_listen_history_song" ON "listen_history_item"("song_id");

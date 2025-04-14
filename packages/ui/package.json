@@ -21,8 +21,9 @@
     "@types/eslint": "^8.56.5",
     "@types/node": "^20.11.24",
     "eslint": "^8.57.0",
-    "react": "19.1.0",
-    "react-dom": "19.1.0",
+    "lucide-react": "0.487.0",
+    "react": "19",
+    "react-dom": "19",
     "typescript": "^5.3.3"
   },
   "dependencies": {

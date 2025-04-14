@@ -233,11 +233,13 @@ export function PlayerProvider({ children }: PlayerProviderProps) {
       return;
     }
 
-    const sourceUrl = audioSource.startsWith("http")
-      ? audioSource
-      : `${getBaseURL()}/api/stream/${encodeURIComponent(
-          audioSource
-        )}?bitrate=${session?.bitrate || 0}`;
+    // const sourceUrl = audioSource.startsWith("http")
+    //   ? audioSource
+    //   : `${getBaseURL()}/api/stream/${encodeURIComponent(
+    //       audioSource
+    //     )}?bitrate=${session?.bitrate || 0}`;
+
+    const sourceUrl = audioSource;
 
     const loadStartTime = Date.now();
     let playbackAttempted = false;
@@ -274,11 +276,14 @@ export function PlayerProvider({ children }: PlayerProviderProps) {
 
                 if (session?.bitrate && session.bitrate > 0) {
                   const lowerBitrate = Math.floor(session.bitrate * 0.75);
-                  const fallbackUrl = audioSource.startsWith("http")
-                    ? audioSource
-                    : `${getBaseURL()}/api/stream/${encodeURIComponent(
-                        audioSource
-                      )}?bitrate=${lowerBitrate}`;
+                  // const fallbackUrl = audioSource.startsWith("http")
+                  //   ? audioSource
+                  //   : `${getBaseURL()}/api/stream/${encodeURIComponent(
+                  //       audioSource
+                  //     )}?bitrate=${lowerBitrate}`;
+
+
+                  const fallbackUrl = audioSource;
 
                   audio.src = fallbackUrl;
                   audio.load();
@@ -343,11 +348,12 @@ export function PlayerProvider({ children }: PlayerProviderProps) {
 
       if (session?.bitrate && session.bitrate > 0) {
         const lowerBitrate = Math.floor(session.bitrate * 0.75);
-        const fallbackUrl = audioSource.startsWith("http")
-          ? audioSource
-          : `${getBaseURL()}/api/stream/${encodeURIComponent(
-              audioSource
-            )}?bitrate=${lowerBitrate}`;
+        // const fallbackUrl = audioSource.startsWith("http")
+        //   ? audioSource
+        //   : `${getBaseURL()}/api/stream/${encodeURIComponent(
+        //       audioSource
+        //     )}?bitrate=${lowerBitrate}`;
+        const fallbackUrl = audioSource;
 
         audio.src = fallbackUrl;
         audio.load();
@@ -381,11 +387,11 @@ export function PlayerProvider({ children }: PlayerProviderProps) {
 
       setIsYouTubeUrl(isYT);
 
-      if (!isYT && !source.startsWith("http")) {
-        source = `${getBaseURL()}/api/stream/${encodeURIComponent(
-          source
-        )}?bitrate=${session?.bitrate || 0}`;
-      }
+      // if (!isYT) {
+      //   source = `${getBaseURL()}/api/stream/${encodeURIComponent(
+      //     source
+      //   )}?bitrate=${session?.bitrate || 0}`;
+      // }
 
       setAudioSourceState(source);
     },
@@ -405,11 +411,13 @@ export function PlayerProvider({ children }: PlayerProviderProps) {
         audioRef.current.load();
       }
     } else {
-      const formattedSource = audioSource.startsWith("http")
-        ? audioSource
-        : `${getBaseURL()}/api/stream/${encodeURIComponent(
-            audioSource
-          )}?bitrate=${bitrate}`;
+      // const formattedSource = audioSource.startsWith("http")
+      //   ? audioSource
+      //   : `${getBaseURL()}/api/stream/${encodeURIComponent(
+      //       audioSource
+      //     )}?bitrate=${bitrate}`;
+
+        const formattedSource = audioSource
 
       if (audioRef.current && audioRef.current.src !== formattedSource) {
         const wasPlaying = !audioRef.current.paused;

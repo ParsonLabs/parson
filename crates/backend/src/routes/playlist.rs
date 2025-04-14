@@ -77,8 +77,10 @@ async fn create(item: web::Json<CreatePlaylistRequest>) -> Result<impl Responder
     diesel::insert_into(playlist)
         .values(&new_playlist)
         .execute(&mut connection)?;
-
+    use diesel::SelectableHelper;
+    
     let created_playlist = playlist
+        .select(Playlist::as_select())
         .order(id.desc())
         .first::<Playlist>(&mut connection)?;
 
@@ -119,6 +121,7 @@ async fn info(path: web::Path<i32>) -> Result<impl Responder, Box<dyn Error>> {
     let mut connection = establish_connection().get().unwrap();
 
     let result = playlist
+        .select(Playlist::as_select())
         .filter(id.eq(playlist_id))
         .first::<Playlist>(&mut connection)?;
 
@@ -180,6 +183,7 @@ async fn list(path: web::Path<i32>) -> Result<impl Responder, Box<dyn Error>> {
         .load::<i32>(&mut connection)?;
 
     let results = playlist
+        .select(Playlist::as_select())
         .filter(id.eq_any(playlist_ids))
         .load::<Playlist>(&mut connection)?;
 

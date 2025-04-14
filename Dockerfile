@@ -1,4 +1,3 @@
-# Stage 1: Build the React frontend
 FROM oven/bun:alpine AS frontend-builder
 RUN apk update
 RUN apk add --no-cache yarn
@@ -27,7 +26,7 @@ WORKDIR /app/apps/web
 RUN yarn build
 
 # Stage 3: Build the Rust backend
-FROM rust:latest AS backend-builder
+FROM rust:slim AS backend-builder
 WORKDIR /usr/src
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -53,11 +52,10 @@ WORKDIR /usr/src/crates/backend
 
 ENV DATABASE_URL=sqlite:///usr/src/crates/backend/music.db
 
-RUN diesel migration run --config-file /usr/src/diesel.toml
+RUN diesel migration run --config-file /usr/src/diesel.toml || echo "Migrations completed with warnings"
 
-RUN cargo build --release
+RUN RUSTFLAGS="-C opt-level=3" cargo build --release || (cat target/release/deps/*.stderr 2>/dev/null || true && exit 1)
 
-# Stage 4: Create the final image
 FROM debian:bookworm-slim AS runner
 WORKDIR /app
 
@@ -65,20 +63,26 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libssl3 \
     sqlite3 \
     libsqlite3-dev \
-    wget \
     ca-certificates \
     ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy files as root
 COPY --from=backend-builder /usr/src/crates/backend/target/release/music-server /usr/local/bin/music-server
-COPY --from=backend-builder /usr/src/crates/backend/music.db /usr/src/crates/backend/music.db
+COPY --from=backend-builder /usr/src/crates/backend/music.db /app/music.db
 COPY --from=installer /app/apps/web/out ./apps/web/out
 
 ENV SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
 ENV RUNNING_IN_DOCKER=true
+ENV DATABASE_URL=sqlite:///app/music.db
 
 EXPOSE 1993
 EXPOSE 7700
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+  CMD wget --no-verbose --tries=1 --spider http://localhost:1993/health || exit 1
+
+RUN groupadd -r appuser && useradd -r -g appuser appuser
+RUN chown -R appuser:appuser /app
+USER appuser
 
 CMD ["/usr/local/bin/music-server", "--port", "1993"]

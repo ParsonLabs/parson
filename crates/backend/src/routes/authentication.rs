@@ -169,14 +169,14 @@ pub async fn login(form: web::Json<AuthData>) -> impl Responder {
 
                 let access_cookie = Cookie::build("plm_accessToken", generated_access_token.clone())
                     .http_only(false)
-                    .same_site(SameSite::None)
+                    .same_site(SameSite::Lax)
                     .path("/")
                     .max_age(cookie::time::Duration::days(7))
                     .finish();
 
                 let refresh_cookie = Cookie::build("plm_refreshToken", generated_refresh_token.clone())
                     .http_only(true)
-                    .same_site(SameSite::None)
+                    .same_site(SameSite::Lax)
                     .path("/")
                     .max_age(cookie::time::Duration::days(30))
                     .finish();
@@ -323,7 +323,7 @@ pub async fn renew_refresh_token(req: HttpRequest) -> impl Responder {
 
                 let refresh_cookie = Cookie::build("plm_refreshToken", new_refresh_token.clone())
                     .http_only(true)
-                    .same_site(SameSite::None)
+                    .same_site(SameSite::Lax)
                     .path("/")
                     .max_age(cookie::time::Duration::days(30))
                     .finish();
@@ -351,7 +351,7 @@ pub async fn renew_refresh_token(req: HttpRequest) -> impl Responder {
             let expired_cookie = Cookie::build("plm_refreshToken", "")
                 .path("/")
                 .http_only(true)
-                .same_site(SameSite::None)
+                .same_site(SameSite::Lax)
                 .max_age(cookie::time::Duration::seconds(0))
                 .finish();
 
@@ -401,7 +401,7 @@ pub async fn refresh(req: HttpRequest) -> impl Responder {
 
                 let access_cookie = Cookie::build("plm_accessToken", new_access_token.clone())
                     .http_only(false)
-                    .same_site(SameSite::None)
+                    .same_site(SameSite::Lax)
                     .path("/")
                     .max_age(cookie::time::Duration::days(7))
                     .finish();
@@ -429,7 +429,7 @@ pub async fn refresh(req: HttpRequest) -> impl Responder {
             let expired_cookie = Cookie::build("plm_accessToken", "")
                 .path("/")
                 .http_only(true)
-                .same_site(SameSite::None)
+                .same_site(SameSite::Lax)
                 .max_age(cookie::time::Duration::seconds(0))
                 .finish();
 
@@ -454,14 +454,14 @@ pub async fn logout() -> impl Responder {
     let access_cookie = Cookie::build("plm_accessToken", "")
         .path("/")
         .http_only(true)
-        .same_site(SameSite::None)
+        .same_site(SameSite::Lax)
         .max_age(cookie::time::Duration::seconds(0))
         .finish();
 
     let refresh_cookie = Cookie::build("plm_refreshToken", "")
         .path("/")
         .http_only(true) 
-        .same_site(SameSite::None)
+        .same_site(SameSite::Lax)
         .max_age(cookie::time::Duration::seconds(0))
         .finish();
 

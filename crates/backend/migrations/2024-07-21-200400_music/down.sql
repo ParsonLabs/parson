@@ -25,8 +25,6 @@ DROP TRIGGER IF EXISTS lyrics_ai;
 DROP TRIGGER IF EXISTS lyrics_au;
 DROP TRIGGER IF EXISTS lyrics_ad;
 
-DROP TABLE IF EXISTS "lyrics_fts";
-
 DROP TABLE IF EXISTS "lyrics_view_history";
 DROP TABLE IF EXISTS "lyrics_contribution";
 DROP TABLE IF EXISTS "lyrics";

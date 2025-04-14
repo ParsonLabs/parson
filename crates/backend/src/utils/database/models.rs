@@ -1,5 +1,5 @@
 use chrono::NaiveDateTime;
-use diesel::prelude::*;
+use diesel::{prelude::*, sqlite::Sqlite};
 use serde::{Deserialize, Serialize};
 
 use super::schema::{
@@ -81,8 +81,8 @@ pub struct NewFollow {
     pub following_id: i32,
 }
 
-#[derive(Insertable, Queryable, Identifiable, Debug, Serialize)]
-#[diesel(table_name = playlist)]
+#[derive(Insertable, Queryable, Identifiable, Debug, Serialize, Selectable)]
+#[diesel(table_name = playlist, check_for_backend(Sqlite))]
 pub struct Playlist {
     pub id: i32,
     pub name: String,

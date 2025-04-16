@@ -5,20 +5,27 @@ import TopResultsCard from "@/components/Music/Card/Search/TopResultsCard";
 import { searchLibrary, searchYouTube } from "@music/sdk";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useState, useCallback, useMemo } from "react";
-import { YoutubeIcon, MusicIcon, AlbumIcon, UsersIcon, Search, ExternalLink } from "lucide-react";
+import {
+  YoutubeIcon,
+  MusicIcon,
+  AlbumIcon,
+  UsersIcon,
+  Search,
+  ExternalLink,
+} from "lucide-react";
 import Image from "next/image";
 import { usePlayer } from "@/components/Music/Player/usePlayer";
 import { Play, Pause } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Tabs, TabsList, TabsTrigger } from "@music/ui/components/tabs";
 import { useGradientHover } from "@/components/Providers/GradientHoverProvider";
-import { FastAverageColor } from 'fast-average-color';
+import { FastAverageColor } from "fast-average-color";
 import YouTubeMiniPlayer from "@/components/Music/Player/YouTubeMiniPlayer";
 import React from "react";
 import { Button } from "@music/ui/components/button";
 import { useRouter } from "next/navigation";
 
-const YoutubeResultCard = React.memo(({ video }: { video: YouTubeVideo }) => {
+function YoutubeResultCard({ video }: { video: YouTubeVideo }) {
   const [isHovered, setIsHovered] = useState(false);
   const {
     setImageSrc,
@@ -28,23 +35,20 @@ const YoutubeResultCard = React.memo(({ video }: { video: YouTubeVideo }) => {
     setAudioSource,
     isPlaying,
     song: currentSong,
-    togglePlayPause
+    togglePlayPause,
+    playAudioSource,
   } = usePlayer();
-  
-  const videoId = video.url.split('v=')[1] || video.id;
-  const isCurrentlyPlaying = currentSong?.id === `youtube-${videoId}` && isPlaying;
 
-  const handlePlayYouTube = useCallback((e: React.MouseEvent) => {
+  const videoId = video.url.split("v=")[1] || video.id;
+  const isCurrentlyPlaying =
+    currentSong?.id === `youtube-${videoId}` && isPlaying;
+
+  const handlePlayYouTube = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
 
-    if (currentSong?.id === `youtube-${videoId}`) {
-      togglePlayPause();
-      return;
-    }
-
     setImageSrc(video.thumbnail);
-    
+
     const youtubeSong = {
       id: `youtube-${videoId}`,
       name: video.title,
@@ -55,32 +59,29 @@ const YoutubeResultCard = React.memo(({ video }: { video: YouTubeVideo }) => {
       album_object: {
         cover_url: video.thumbnail,
         name: "YouTube",
-        id: "youtube"
+        id: "youtube",
       },
       artist_object: {
         name: video.channel.name,
         id: "youtube",
-      }
+      },
     };
-    
+
     setSong(youtubeSong);
     setArtist({
       name: video.channel.name,
       id: "youtube",
-      icon_url: video.thumbnail
+      icon_url: video.thumbnail,
     });
     setAlbum({
       name: "YouTube",
       id: "youtube",
-      cover_url: video.thumbnail
+      cover_url: video.thumbnail,
     });
-    
+
     setAudioSource(video.url);
-    
-    if (!isPlaying) {
-      setTimeout(() => togglePlayPause(), 100);
-    }
-  }, [currentSong?.id, isPlaying, setAlbum, setArtist, setAudioSource, setImageSrc, setSong, togglePlayPause, video, videoId]);
+    togglePlayPause();
+  };
 
   return (
     <motion.div
@@ -88,7 +89,7 @@ const YoutubeResultCard = React.memo(({ video }: { video: YouTubeVideo }) => {
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.3 }}
       className={`flex items-center p-3 rounded-lg cursor-pointer relative group overflow-hidden
-        ${isCurrentlyPlaying ? 'bg-white/10 ring-1 ring-white/20' : 'hover:bg-white/10'}
+        ${isCurrentlyPlaying ? "bg-white/10 ring-1 ring-white/20" : "hover:bg-white/10"}
         transition-all duration-300 transform hover:translate-x-1`}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
@@ -97,13 +98,13 @@ const YoutubeResultCard = React.memo(({ video }: { video: YouTubeVideo }) => {
       {isCurrentlyPlaying && (
         <div className="absolute inset-0 bg-gradient-to-r from-red-500/10 to-purple-500/10 z-0" />
       )}
-      
+
       <div className="relative flex-shrink-0 rounded-md overflow-hidden shadow-lg">
         <div className="absolute top-1.5 right-1.5 z-20 bg-red-600 rounded text-[10px] font-bold py-0.5 px-1.5 text-white opacity-80">
           YT
         </div>
-        
-        <motion.div 
+
+        <motion.div
           animate={{ scale: isHovered ? 1.05 : 1 }}
           transition={{ duration: 0.3 }}
           className="relative"
@@ -114,48 +115,55 @@ const YoutubeResultCard = React.memo(({ video }: { video: YouTubeVideo }) => {
             width={192}
             height={108}
             className={`w-24 h-[54px] object-cover ${
-              isHovered || isCurrentlyPlaying ? "brightness-80" : "brightness-90"
+              isHovered || isCurrentlyPlaying
+                ? "brightness-80"
+                : "brightness-90"
             } transition-all duration-300 rounded-md`}
             onError={(e) => {
               e.currentTarget.src = "/fallback-thumbnail.png";
             }}
           />
-          
-          <div className={`absolute inset-0 bg-gradient-to-t from-black/60 to-transparent ${
-            isHovered ? 'opacity-100' : 'opacity-80'
-          } transition-opacity duration-300 rounded-md`} />
+
+          <div
+            className={`absolute inset-0 bg-gradient-to-t from-black/60 to-transparent ${
+              isHovered ? "opacity-100" : "opacity-80"
+            } transition-opacity duration-300 rounded-md`}
+          />
         </motion.div>
-        
-        <div className={`absolute inset-0 flex items-center justify-center transition-opacity duration-300 ${
-          isHovered || isCurrentlyPlaying ? 'opacity-100' : 'opacity-0'
-        } z-10`}>
-          <motion.div 
+
+        <div
+          className={`absolute inset-0 flex items-center justify-center transition-opacity duration-300 ${
+            isHovered || isCurrentlyPlaying ? "opacity-100" : "opacity-0"
+          } z-10`}
+        >
+          <motion.div
             whileHover={{ scale: 1.1 }}
             whileTap={{ scale: 0.9 }}
             className={`bg-white/20 backdrop-blur-sm p-2 rounded-full shadow-lg 
-              ${isCurrentlyPlaying ? 'bg-red-500/30' : 'bg-black/40'}`}
+              ${isCurrentlyPlaying ? "bg-red-500/30" : "bg-black/40"}`}
           >
-            {isCurrentlyPlaying ? 
-              <Pause className="w-5 h-5 text-white fill-white drop-shadow-md" /> : 
+            {isCurrentlyPlaying ? (
+              <Pause className="w-5 h-5 text-white fill-white drop-shadow-md" />
+            ) : (
               <Play className="w-5 h-5 text-white fill-white drop-shadow-md ml-0.5" />
-            }
+            )}
           </motion.div>
         </div>
-        
+
         {isCurrentlyPlaying && (
           <div className="absolute bottom-1 left-0 right-0 flex justify-center">
             <div className="flex gap-0.5 px-1.5 py-1 bg-black/70 backdrop-blur-md rounded-full">
-              <motion.div 
+              <motion.div
                 animate={{ height: ["3px", "8px", "3px"] }}
                 transition={{ repeat: Infinity, duration: 0.8, delay: 0 }}
                 className="w-0.5 bg-red-500 rounded-full"
               ></motion.div>
-              <motion.div 
+              <motion.div
                 animate={{ height: ["3px", "12px", "3px"] }}
                 transition={{ repeat: Infinity, duration: 0.8, delay: 0.2 }}
                 className="w-0.5 bg-red-400 rounded-full"
               ></motion.div>
-              <motion.div 
+              <motion.div
                 animate={{ height: ["3px", "6px", "3px"] }}
                 transition={{ repeat: Infinity, duration: 0.8, delay: 0.4 }}
                 className="w-0.5 bg-red-500 rounded-full"
@@ -164,15 +172,19 @@ const YoutubeResultCard = React.memo(({ video }: { video: YouTubeVideo }) => {
           </div>
         )}
       </div>
-      
+
       <div className="ml-3 flex-grow min-w-0 relative z-10">
-        <p className={`text-sm font-medium truncate leading-snug transition-colors duration-300
-          ${isCurrentlyPlaying 
-            ? 'bg-gradient-to-r from-white via-white to-red-200 bg-clip-text text-transparent' 
-            : 'text-white group-hover:text-white'}`}>
+        <p
+          className={`text-sm font-medium truncate leading-snug transition-colors duration-300
+          ${
+            isCurrentlyPlaying
+              ? "bg-gradient-to-r from-white via-white to-red-200 bg-clip-text text-transparent"
+              : "text-white group-hover:text-white"
+          }`}
+        >
           {video.title}
         </p>
-        
+
         <p className="text-xs text-gray-400 truncate flex items-center gap-1.5 mt-0.5">
           <YoutubeIcon className="w-3 h-3 text-red-500" />
           <span className="group-hover:text-gray-300 transition-colors duration-300">
@@ -180,12 +192,12 @@ const YoutubeResultCard = React.memo(({ video }: { video: YouTubeVideo }) => {
           </span>
         </p>
       </div>
-      
-      <motion.div 
+
+      <motion.div
         className="ml-2 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300"
         animate={{ opacity: isHovered || isCurrentlyPlaying ? 1 : 0 }}
       >
-        <motion.div 
+        <motion.div
           whileHover={{ scale: 1.1, rotate: 15 }}
           whileTap={{ scale: 0.9 }}
           className="text-gray-400 group-hover:text-white"
@@ -195,9 +207,9 @@ const YoutubeResultCard = React.memo(({ video }: { video: YouTubeVideo }) => {
       </motion.div>
     </motion.div>
   );
-});
+}
 
-YoutubeResultCard.displayName = 'YoutubeResultCard';
+YoutubeResultCard.displayName = "YoutubeResultCard";
 
 interface YouTubeVideo {
   id: string;
@@ -211,7 +223,10 @@ interface YouTubeVideo {
 
 const HorizontalCardSkeleton = () => (
   <div className="w-full text-white flex items-center animate-pulse p-2">
-    <div className="bg-gray-700 rounded-lg" style={{ width: 64, height: 64 }}></div>
+    <div
+      className="bg-gray-700 rounded-lg"
+      style={{ width: 64, height: 64 }}
+    ></div>
     <div className="ml-4">
       <div className="bg-gray-700 h-5 w-32 mb-2 rounded"></div>
       <div className="bg-gray-700 h-4 w-48 rounded"></div>
@@ -220,10 +235,16 @@ const HorizontalCardSkeleton = () => (
 );
 
 const TopResultCardSkeleton = () => (
-  <div className="relative rounded-xl overflow-hidden bg-white/5 backdrop-blur-md animate-pulse w-full" style={{ height: 350 }}>
+  <div
+    className="relative rounded-xl overflow-hidden bg-white/5 backdrop-blur-md animate-pulse w-full"
+    style={{ height: 350 }}
+  >
     <div className="absolute inset-0 bg-gradient-to-br from-gray-900 to-gray-800"></div>
     <div className="relative z-10 flex flex-col md:flex-row items-center justify-center p-8 gap-8 h-full">
-      <div className="bg-gray-700 rounded-lg" style={{ width: 200, height: 200 }}></div>
+      <div
+        className="bg-gray-700 rounded-lg"
+        style={{ width: 200, height: 200 }}
+      ></div>
       <div className="space-y-4">
         <div className="bg-gray-700 h-10 w-64 rounded"></div>
         <div className="bg-gray-700 h-6 w-48 rounded"></div>
@@ -237,13 +258,24 @@ export default function SearchComponent() {
   const searchParams = useSearchParams();
   const query = searchParams?.get("q") ?? "";
   const router = useRouter();
-  
+
   const trendingSearches = [
-    "Hip Hop", "R&B", "Pop", "Rock", "Jazz", 
-    "Classical", "Electronic", "Country", "Reggae", 
-    "Soul", "Blues", "Dance", "Funk", "Disco"
+    "Hip Hop",
+    "R&B",
+    "Pop",
+    "Rock",
+    "Jazz",
+    "Classical",
+    "Electronic",
+    "Country",
+    "Reggae",
+    "Soul",
+    "Blues",
+    "Dance",
+    "Funk",
+    "Disco",
   ];
-  
+
   const handleQuickSearch = (term: string) => {
     router.push(`/search?q=${encodeURIComponent(term)}`);
   };
@@ -254,13 +286,14 @@ export default function SearchComponent() {
   const [error, setError] = useState<string | null>(null);
   const [youtubeLoading, setYoutubeLoading] = useState<boolean>(true);
   const [youtubeError, setYoutubeError] = useState<string | null>(null);
-  const [activeYouTubeVideo, setActiveYouTubeVideo] = useState<YouTubeVideo | null>(null);
+  const [activeYouTubeVideo, setActiveYouTubeVideo] =
+    useState<YouTubeVideo | null>(null);
   const [activeTab, setActiveTab] = useState<string>("all");
   const { setGradientWithTransition } = useGradientHover();
-  
+
   // const setDominantColor = useCallback(async (imageUrl: string) => {
   //   if (!imageUrl) return;
-    
+
   //   try {
   //     const fac = new FastAverageColor();
   //     const color = await fac.getColorAsync(imageUrl);
@@ -275,7 +308,7 @@ export default function SearchComponent() {
 
     async function getSearchResults() {
       if (!isMounted) return;
-      
+
       setLoading(true);
       setYoutubeLoading(true);
       setError(null);
@@ -284,9 +317,9 @@ export default function SearchComponent() {
       try {
         const searchResults = await searchLibrary(query);
         if (!isMounted) return;
-        
+
         setResults(searchResults);
-        
+
         if (searchResults[0]?.album_object?.cover_url) {
           // setDominantColor(searchResults[0].album_object.cover_url);
         }
@@ -325,27 +358,35 @@ export default function SearchComponent() {
     };
   }, [query]);
 
-  const filteredResults = useMemo(() => 
-    activeTab === "all" 
-      ? results.slice(1)
-      : results.slice(1).filter((result: any) => result.item_type === activeTab),
+  const filteredResults = useMemo(
+    () =>
+      activeTab === "all"
+        ? results.slice(1)
+        : results
+            .slice(1)
+            .filter((result: any) => result.item_type === activeTab),
     [activeTab, results]
   );
 
-  const counts = useMemo(() => ({
-    all: results.slice(1).length,
-    song: results.slice(1).filter((r: any) => r.item_type === "song").length,
-    album: results.slice(1).filter((r: any) => r.item_type === "album").length,
-    artist: results.slice(1).filter((r: any) => r.item_type === "artist").length,
-  }), [results]);
-
-  const backgroundImageSource = useMemo(() => 
-    results[0]?.album_object?.cover_url ?? "/snf.png",
+  const counts = useMemo(
+    () => ({
+      all: results.slice(1).length,
+      song: results.slice(1).filter((r: any) => r.item_type === "song").length,
+      album: results.slice(1).filter((r: any) => r.item_type === "album")
+        .length,
+      artist: results.slice(1).filter((r: any) => r.item_type === "artist")
+        .length,
+    }),
     [results]
   );
 
-  const totalResults = useMemo(() => 
-    results.length + youtubeResults.length, 
+  const backgroundImageSource = useMemo(
+    () => results[0]?.album_object?.cover_url ?? "/snf.png",
+    [results]
+  );
+
+  const totalResults = useMemo(
+    () => results.length + youtubeResults.length,
     [results.length, youtubeResults.length]
   );
 
@@ -353,12 +394,12 @@ export default function SearchComponent() {
     return (
       <div className="relative min-h-screen">
         <div className="fixed inset-0 bg-gradient-to-br from-neutral-900 via-neutral-900 to-neutral-800" />
-        
+
         <div className="fixed inset-0 opacity-10">
           <div className="absolute top-0 left-0 right-0 h-64 bg-gradient-to-r from-purple-500 via-indigo-500 to-blue-500 blur-3xl transform -translate-y-1/2" />
           <div className="absolute bottom-0 right-0 left-0 h-64 bg-gradient-to-r from-rose-500 via-amber-500 to-orange-500 blur-3xl transform translate-y-1/2" />
         </div>
-        
+
         <div className="relative z-10 pt-20 pb-40 px-4 md:px-8">
           <div className="max-w-4xl mx-auto">
             <motion.div
@@ -371,10 +412,11 @@ export default function SearchComponent() {
                 Discover Your Perfect Sound
               </h1>
               <p className="text-xl text-gray-300 max-w-xl mx-auto">
-                Search for your favorite songs, artists, or albums in our extensive music library.
+                Search for your favorite songs, artists, or albums in our
+                extensive music library.
               </p>
             </motion.div>
-            
+
             <motion.div
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
@@ -382,12 +424,14 @@ export default function SearchComponent() {
               className="mb-16"
             >
               <div className="relative max-w-2xl mx-auto">
-                <form 
+                <form
                   onSubmit={(e) => {
                     e.preventDefault();
-                    const input = e.currentTarget.querySelector('input');
+                    const input = e.currentTarget.querySelector("input");
                     if (input && input.value.trim()) {
-                      router.push(`/search?q=${encodeURIComponent(input.value.trim())}`);
+                      router.push(
+                        `/search?q=${encodeURIComponent(input.value.trim())}`
+                      );
                     }
                   }}
                   className="group"
@@ -410,7 +454,7 @@ export default function SearchComponent() {
                 </form>
               </div>
             </motion.div>
-            
+
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
@@ -438,7 +482,7 @@ export default function SearchComponent() {
                 ))}
               </div>
             </motion.div>
-            
+
             <motion.div
               initial={{ opacity: 0, y: 30 }}
               animate={{ opacity: 1, y: 0 }}
@@ -450,10 +494,26 @@ export default function SearchComponent() {
               </h2>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 {[
-                  { name: "Top Charts", icon: "🏆", color: "from-pink-600 to-rose-600" },
-                  { name: "New Releases", icon: "🆕", color: "from-blue-600 to-cyan-600" },
-                  { name: "Podcasts", icon: "🎙️", color: "from-green-600 to-emerald-600" },
-                  { name: "Your Playlists", icon: "📂", color: "from-amber-600 to-yellow-600" }
+                  {
+                    name: "Top Charts",
+                    icon: "🏆",
+                    color: "from-pink-600 to-rose-600",
+                  },
+                  {
+                    name: "New Releases",
+                    icon: "🆕",
+                    color: "from-blue-600 to-cyan-600",
+                  },
+                  {
+                    name: "Podcasts",
+                    icon: "🎙️",
+                    color: "from-green-600 to-emerald-600",
+                  },
+                  {
+                    name: "Your Playlists",
+                    icon: "📂",
+                    color: "from-amber-600 to-yellow-600",
+                  },
                 ].map((category, index) => (
                   <motion.div
                     key={category.name}
@@ -466,7 +526,9 @@ export default function SearchComponent() {
                     className={`bg-gradient-to-br ${category.color} rounded-xl p-6 text-center cursor-pointer`}
                   >
                     <div className="text-3xl mb-2">{category.icon}</div>
-                    <h3 className="text-lg font-semibold text-white">{category.name}</h3>
+                    <h3 className="text-lg font-semibold text-white">
+                      {category.name}
+                    </h3>
                   </motion.div>
                 ))}
               </div>
@@ -476,25 +538,25 @@ export default function SearchComponent() {
       </div>
     );
   }
-  
+
   return (
     <div className="relative min-h-screen">
       <div className="fixed inset-0 bg-neutral-900" />
-      
-      <div 
+
+      <div
         className="fixed inset-0 opacity-30 will-change-transform"
         style={{
           backgroundImage: `url(${backgroundImageSource})`,
-          backgroundSize: 'cover',
-          backgroundPosition: 'center',
-          filter: 'blur(140px)',
-          transform: 'translateZ(0)',
+          backgroundSize: "cover",
+          backgroundPosition: "center",
+          filter: "blur(140px)",
+          transform: "translateZ(0)",
         }}
       />
 
       <div className="relative z-10 px-4 md:px-8 pt-16 pb-40 backdrop-blur-sm">
         <div className="max-w-7xl mx-auto">
-          <motion.div 
+          <motion.div
             className="mb-6"
             initial={{ opacity: 0, y: -20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -510,7 +572,7 @@ export default function SearchComponent() {
             </p>
           </motion.div>
 
-          <motion.div 
+          <motion.div
             className="mb-10"
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -523,15 +585,20 @@ export default function SearchComponent() {
             )}
           </motion.div>
 
-          <Tabs defaultValue="all" value={activeTab} onValueChange={setActiveTab} className="mb-8">
+          <Tabs
+            defaultValue="all"
+            value={activeTab}
+            onValueChange={setActiveTab}
+            className="mb-8"
+          >
             <TabsList className="bg-black/40 backdrop-blur-md p-1 rounded-lg">
-              <TabsTrigger 
-                value="all" 
+              <TabsTrigger
+                value="all"
                 className="data-[state=active]:bg-white/20 data-[state=active]:text-white rounded-md"
               >
                 All ({counts.all})
               </TabsTrigger>
-              <TabsTrigger 
+              <TabsTrigger
                 value="song"
                 className="data-[state=active]:bg-white/20 data-[state=active]:text-white rounded-md"
                 disabled={counts.song === 0}
@@ -539,7 +606,7 @@ export default function SearchComponent() {
                 <MusicIcon className="w-4 h-4 mr-1" />
                 Songs ({counts.song})
               </TabsTrigger>
-              <TabsTrigger 
+              <TabsTrigger
                 value="album"
                 className="data-[state=active]:bg-white/20 data-[state=active]:text-white rounded-md"
                 disabled={counts.album === 0}
@@ -547,7 +614,7 @@ export default function SearchComponent() {
                 <AlbumIcon className="w-4 h-4 mr-1" />
                 Albums ({counts.album})
               </TabsTrigger>
-              <TabsTrigger 
+              <TabsTrigger
                 value="artist"
                 className="data-[state=active]:bg-white/20 data-[state=active]:text-white rounded-md"
                 disabled={counts.artist === 0}
@@ -571,7 +638,7 @@ export default function SearchComponent() {
                   <p className="text-gray-400">{error}</p>
                 </div>
               ) : filteredResults.length > 0 ? (
-                <motion.div 
+                <motion.div
                   className="bg-black/40 backdrop-blur-md rounded-xl overflow-hidden"
                   initial={{ opacity: 0, scale: 0.98 }}
                   animate={{ opacity: 1, scale: 1 }}
@@ -597,7 +664,10 @@ export default function SearchComponent() {
                 </motion.div>
               ) : (
                 <div className="p-12 text-center bg-black/40 backdrop-blur-md rounded-xl">
-                  <p className="text-gray-400">No matching {activeTab === "all" ? "items" : activeTab + "s"} found</p>
+                  <p className="text-gray-400">
+                    No matching{" "}
+                    {activeTab === "all" ? "items" : activeTab + "s"} found
+                  </p>
                 </div>
               )}
             </div>
@@ -627,7 +697,7 @@ export default function SearchComponent() {
                   <p className="text-gray-400">{youtubeError}</p>
                 </div>
               ) : youtubeResults.length > 0 ? (
-                <motion.div 
+                <motion.div
                   className="bg-black/40 backdrop-blur-md rounded-xl overflow-hidden"
                   initial={{ opacity: 0, scale: 0.98 }}
                   animate={{ opacity: 1, scale: 1 }}
@@ -642,10 +712,7 @@ export default function SearchComponent() {
                     </div>
                     <div className="space-y-2">
                       {youtubeResults.map((video, index) => (
-                        <YoutubeResultCard 
-                          video={video} 
-                          key={video.id}
-                        />
+                        <YoutubeResultCard video={video} key={video.id} />
                       ))}
                     </div>
                   </div>
@@ -662,8 +729,8 @@ export default function SearchComponent() {
       </div>
 
       {activeYouTubeVideo && (
-        <YouTubeMiniPlayer 
-          video={activeYouTubeVideo} 
+        <YouTubeMiniPlayer
+          video={activeYouTubeVideo}
           onClose={() => setActiveYouTubeVideo(null)}
         />
       )}

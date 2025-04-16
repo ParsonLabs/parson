@@ -60,11 +60,12 @@ export default function SongRow({
 
   async function handlePlay() {
     setImageSrc(imageSrc);
-    setArtist({ id: artist_id, name: artist_name });
-    setAlbum({ id: album_id, name: album_name, cover_url: album_cover });
     const songInfo = await getSongInfo(song_id);
     setSong(songInfo);
-    setAudioSource(`${getBaseURL()}/api/stream/${encodeURIComponent(path)}?bitrate=0`);
+    setArtist({ id: artist_id, name: artist_name });
+    setAlbum({ id: album_id, name: album_name, cover_url: album_cover });
+    const audioSource = `${getBaseURL()}/api/stream/${encodeURIComponent(path)}?bitrate=0`;
+    setAudioSource(audioSource);
     playAudioSource()
   }
 

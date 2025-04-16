@@ -90,8 +90,7 @@ export default function TopResultsCard({ result }: ResultCardProps) {
       song.album_object.cover_url.length === 0
         ? "/snf.png"
         : `${getBaseURL()}/image/${encodeURIComponent(song.album_object.cover_url)}?raw=true`;
-        
-    console.log("first song", song)
+
     setImageSrc(albumCoverURL);
     setPlayerSong(song)
     setPlayerArtist(song.artist_object);
@@ -99,7 +98,6 @@ export default function TopResultsCard({ result }: ResultCardProps) {
     const songURL = `${getBaseURL()}/api/stream/${encodeURIComponent(song.path)}?bitrate=${(session && session.bitrate) || 0}`;
     setAudioSource(songURL);
 
-    console.log(songURL)
     setPlayedFromAlbum(false);
     playAudioSource()
   }

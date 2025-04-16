@@ -43,10 +43,10 @@ jobs:
           echo "::endgroup::"
 
       - name: Install root dependencies
-        run: bun install --frozen-lockfile
+        run: bun install
 
       - name: Install web dependencies
-        run: bun install --frozen-lockfile
+        run: bun install
         working-directory: apps/web
         env:
           ESBUILD_BINARY_PATH: ${{ env.ESBUILD_BINARY_PATH }}

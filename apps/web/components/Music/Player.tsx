@@ -85,11 +85,7 @@ export default function Player() {
     const isYouTubeUrl = song?.path?.includes('youtube.com') || song?.path?.includes('youtu.be');
     
     if (isYouTubeUrl && !isPlaying) {
-      const timer = setTimeout(() => {
         togglePlayPause();
-      }, 100);
-      
-      return () => clearTimeout(timer);
     }
   }, [song?.path, isPlaying, togglePlayPause]);
 
@@ -166,11 +162,6 @@ export default function Player() {
       timeout = setTimeout(() => func(...args), wait);
     };
   }
-
-  const debouncedTogglePlayPause = useMemo(
-    () => debounce(togglePlayPause, 150),
-    [togglePlayPause]
-  );
 
 useEffect(() => {
     let originalTitle = document.title;

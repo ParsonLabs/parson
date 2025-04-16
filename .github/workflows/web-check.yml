@@ -21,15 +21,39 @@ jobs:
       - name: Cache dependencies
         uses: actions/cache@v4
         with:
-          path: apps/web/node_modules
-          key: ${{ runner.os }}-bun-${{ hashFiles('apps/web/package.json', 'apps/web/bun.lockb') }}
+          path: |
+            node_modules
+            apps/web/node_modules
+            ~/.bun/install/cache
+          key: ${{ runner.os }}-bun-${{ hashFiles('**/package.json', '**/bun.lockb') }}
           restore-keys: |
             ${{ runner.os }}-bun-
 
-      - name: Install dependencies
-        run: bun install
+      - name: Prepare environment
+        run: |
+          echo "::group::Node environment info"
+          node --version
+          npm --version
+          echo "::endgroup::"
+          
+          echo "::group::Prepare esbuild dependencies"
+          npm install -g esbuild@0.20.2
+          export ESBUILD_BINARY_PATH=$(which esbuild)
+          echo "ESBUILD_BINARY_PATH=$ESBUILD_BINARY_PATH" >> $GITHUB_ENV
+          echo "::endgroup::"
+
+      - name: Install root dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Install web dependencies
+        run: bun install --frozen-lockfile
         working-directory: apps/web
+        env:
+          ESBUILD_BINARY_PATH: ${{ env.ESBUILD_BINARY_PATH }}
+          BUN_INSTALL_SKIP_DOWNLOAD: "true"
 
       - name: Run type-check
         run: bun run type-check
         working-directory: apps/web
+        env:
+          ESBUILD_BINARY_PATH: ${{ env.ESBUILD_BINARY_PATH }}

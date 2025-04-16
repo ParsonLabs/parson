@@ -27,10 +27,18 @@
     "electron",
     "esbuild"
   ],
+  "optionalDependencies": {
+    "@esbuild/linux-x64": "0.21.1",
+    "esbuild": "0.21.1"
+  },
   "dependencies": {
     "eslint-config-next": "^15.2.4",
     "next": "^15.2.4",
     "react": "^19.1.0",
     "react-dom": "^19.1.0"
+  },
+  "resolutions": {
+    "esbuild": "0.21.1",
+    "@esbuild/linux-x64": "0.21.1"
   }
 }

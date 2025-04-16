@@ -37,19 +37,24 @@ jobs:
           echo "::endgroup::"
           
           echo "::group::Prepare esbuild dependencies"
-          npm install -g esbuild@0.20.2
+          npm install -g esbuild@0.21.1
           export ESBUILD_BINARY_PATH=$(which esbuild)
           echo "ESBUILD_BINARY_PATH=$ESBUILD_BINARY_PATH" >> $GITHUB_ENV
           echo "::endgroup::"
-
+      
       - name: Install root dependencies
-        run: bun install
+        run: |
+          export ESBUILD_SKIP_POSTINSTALL=1
+          export ESBUILD_BINARY_PATH=$(which esbuild)
+          bun install
 
       - name: Install web dependencies
-        run: bun install
+        run: |
+          export ESBUILD_SKIP_POSTINSTALL=1
+          export ESBUILD_BINARY_PATH=$(which esbuild)
+          bun install
         working-directory: apps/web
         env:
-          ESBUILD_BINARY_PATH: ${{ env.ESBUILD_BINARY_PATH }}
           BUN_INSTALL_SKIP_DOWNLOAD: "true"
 
       - name: Run type-check

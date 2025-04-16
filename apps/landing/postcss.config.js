@@ -1,1 +1,0 @@
-module.exports = require('@music/ui/postcss.config');

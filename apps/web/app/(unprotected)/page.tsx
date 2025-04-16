@@ -39,12 +39,15 @@ export default function MainPage() {
 
       try {
         const storedServer = localStorage.getItem("server");
-        const response = await fetch(
-          `${(storedServer && JSON.parse(storedServer).local_address) || window.location.origin}/api/s/server/info`
-        );
+        const serverUrl = storedServer 
+          ? (JSON.parse(storedServer).server_url || JSON.parse(storedServer).local_address)
+          : localStorage.getItem("server_url") || window.location.origin;
+
+        const response = await fetch(`${serverUrl}/api/s/server/info`);
         let serverInfo: ServerInfo = await response.json();
 
         localStorage.setItem("server", JSON.stringify(serverInfo));
+        localStorage.setItem("server_url", serverUrl);
 
         if (serverInfo.product_name && serverInfo.startup_wizard_completed) {
           push("/home");
@@ -71,6 +74,9 @@ export default function MainPage() {
 
   const form = useForm<FormData>({
     resolver: zodResolver(schema),
+    defaultValues: {
+      serverUrl: window.location.origin
+    }
   });
 
   const { handleSubmit } = form;
@@ -88,11 +94,18 @@ export default function MainPage() {
 
       const serverInfo = await response.json();
 
+      localStorage.setItem("server_url", data.serverUrl);
+      
       if (serverInfo.product_name && serverInfo.startup_wizard_completed) {
         localStorage.setItem("server", JSON.stringify(serverInfo));
         push("/home");
       } else {
-        localStorage.setItem("server", JSON.stringify({ local_address: data.serverUrl }));
+        localStorage.setItem("server", JSON.stringify({ 
+          server_url: data.serverUrl,
+          server_name: serverInfo.server_name || "",
+          product_name: serverInfo.product_name || "ParsonLabs Music"
+        }));
+        
         if (!serverInfo.startup_wizard_completed) {
           push("/setup/library");
         } else {

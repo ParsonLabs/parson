@@ -151,7 +151,7 @@ export default function ArtistMusicVideos({ artistName }: ArtistMusicVideosProps
           style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}
           onScroll={checkScroll}
         >
-          <div className="flex space-x-4 w-max">
+          <div className="flex space-x-4 max-w-2xl">
             {videos.map((video, index) => (
               <motion.div
                 key={video.id}

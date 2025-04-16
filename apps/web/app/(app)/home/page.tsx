@@ -19,6 +19,7 @@ import TopArtists from "@/components/Home/TopArtists";
 import RecentlyAddedAlbums from "@/components/Home/RecentlyAddedAlbums";
 import PopularGenres from "@/components/Home/PopularGenres";
 import { Settings } from "lucide-react";
+import MusicVideosHomepage from "@/components/Music/MusicVideosHomepage";
 
 export default function Home() {
   const [configExists, setConfigExists] = useState(true);
@@ -95,7 +96,7 @@ export default function Home() {
         case "FromYourLibrary":
           return <FromYourLibrary />;
         case "MusicVideos":
-          return <MusicVideos />;
+          return <MusicVideosHomepage />;
         case "PopularGenres":
           return <PopularGenres />;
         case "RecentlyAddedAlbums":

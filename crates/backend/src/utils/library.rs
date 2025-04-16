@@ -269,8 +269,11 @@ pub async fn index_library(path_to_library: &str) -> Result<Arc<Mutex<Vec<Artist
             let album_name_without_cd_clone = album_name_without_cd.clone();
             let album_position = artist.albums.iter().position(|a| a.name == album_name_without_cd_clone && a.id == hash_album(&album_name_without_cd_clone, &artist_name)).unwrap();
             let album = &mut artist.albums[album_position];
-            album.songs.push(song);
-            album.songs.sort_by(|a, b| a.track_number.cmp(&b.track_number));
+
+            if !album.songs.iter().any(|s| s.id == song.id) {
+                album.songs.push(song);
+                album.songs.sort_by(|a, b| a.track_number.cmp(&b.track_number));
+            }
 
             for contributing_artist_name in &contributing_artists {
                 if !album.contributing_artists.contains(contributing_artist_name) {
@@ -286,7 +289,35 @@ pub async fn index_library(path_to_library: &str) -> Result<Arc<Mutex<Vec<Artist
     });
 
     let mut library = library.lock().unwrap();
-    library.sort_by(|a, b| a.name.cmp(&b.name));
+    
+    library.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    library.dedup_by_key(|a| a.id.clone());
+
+    for artist in library.iter_mut() {
+        artist.albums.retain(|album| !album.songs.is_empty());
+        
+        artist.albums.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+        artist.albums.dedup_by_key(|a| a.id.clone());
+        
+        artist.featured_on_album_ids.sort();
+        artist.featured_on_album_ids.dedup();
+
+        for album in artist.albums.iter_mut() {
+            album.songs.sort_by(|a, b| {
+                match a.track_number.cmp(&b.track_number) {
+                    std::cmp::Ordering::Equal => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
+                    other => other
+                }
+            });
+            album.songs.dedup_by_key(|s| s.id.clone());
+            
+            album.contributing_artists.sort();
+            album.contributing_artists.dedup();
+            
+            album.contributing_artists_ids.sort();
+            album.contributing_artists_ids.dedup();
+        }
+    }
 
     Ok(Arc::clone(&library_clone))
 }

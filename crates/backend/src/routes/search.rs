@@ -15,9 +15,11 @@ use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use serde_json::{self, from_str, json};
 use tantivy::collector::TopDocs;
-use tantivy::query::{FuzzyTermQuery, QueryParser};
-use tantivy::schema::{*, Term};
-use tantivy::{doc, Index, IndexWriter, ReloadPolicy};
+use tantivy::query::{
+    BooleanQuery, FuzzyTermQuery, Occur, PhraseQuery, Query, QueryParser, RegexQuery, TermQuery,
+};
+use tantivy::schema::{Term, *};
+use tantivy::{doc, DocAddress, Index, IndexWriter, ReloadPolicy, Searcher};
 use tokio::task;
 use tracing::{debug, error, info, warn};
 
@@ -39,12 +41,18 @@ pub struct CombinedItem {
 }
 
 fn extract_acronym(name: &str) -> String {
-    let acronym: String = name.split_whitespace()
+    let acronym: String = name
+        .split_whitespace()
         .map(|word| {
             if word == "&" {
                 'A'
             } else {
-                word.chars().next().unwrap_or_default().to_uppercase().next().unwrap_or_default()
+                word.chars()
+                    .next()
+                    .unwrap_or_default()
+                    .to_uppercase()
+                    .next()
+                    .unwrap_or_default()
             }
         })
         .collect();
@@ -86,7 +94,8 @@ pub fn get_tantivy_index_path() -> PathBuf {
     path
 }
 
-pub async fn populate_search_data() -> Result<Vec<CombinedItem>, Box<dyn std::error::Error + Send + Sync>> {
+pub async fn populate_search_data(
+) -> Result<Vec<CombinedItem>, Box<dyn std::error::Error + Send + Sync>> {
     let config = match get_config().await {
         Ok(config) => config,
         Err(_e) => {
@@ -189,7 +198,10 @@ pub async fn populate_search_data() -> Result<Vec<CombinedItem>, Box<dyn std::er
 
     let meta_path = index_path.join("meta.json");
     if !meta_path.exists() {
-        error!("Index metadata file does not exist after commit at {:?}", meta_path);
+        error!(
+            "Index metadata file does not exist after commit at {:?}",
+            meta_path
+        );
         return Err("Index metadata file does not exist after commit".into());
     }
 
@@ -202,7 +214,8 @@ async fn populate_search() -> HttpResponse {
         Ok(combined_items) => HttpResponse::Ok().json(combined_items),
         Err(e) => {
             error!("Failed to populate search data: {:?}", e);
-            HttpResponse::InternalServerError().body(format!("Failed to populate search data: {:?}", e))
+            HttpResponse::InternalServerError()
+                .body(format!("Failed to populate search data: {:?}", e))
         }
     }
 }
@@ -247,198 +260,492 @@ struct ResponseCombinedItem {
     artist_object: Option<ArtistInfo>,
     album_object: Option<AlbumInfo>,
     song_object: Option<SongInfo>,
+    relevance_score: f32,
 }
 
 #[get("/library")]
 async fn search_fn(query: web::Query<SearchQuery>) -> HttpResponse {
-    let index_path: PathBuf = {
-        let temp_dir_path = TEMP_DIR_PATH.lock().unwrap();
-        match &*temp_dir_path {
+    if query.q.trim().is_empty() {
+        return HttpResponse::BadRequest().body("Search query cannot be empty");
+    }
+
+    let index_path: PathBuf = match TEMP_DIR_PATH.lock() {
+        Ok(lock) => match &*lock {
             Some(path) => path.clone(),
             None => {
                 error!("TempDir path is not set");
-                return HttpResponse::InternalServerError().body("TempDir path is not set");
+                return HttpResponse::InternalServerError().json(json!({
+                    "error": "Search index is not available"
+                }));
             }
+        },
+        Err(e) => {
+            error!("Failed to lock TEMP_DIR_PATH: {:?}", e);
+            return HttpResponse::InternalServerError().json(json!({
+                "error": "Internal server error"
+            }));
         }
     };
 
-    if !index_path.exists() {
-        if let Err(e) = std::fs::create_dir_all(&index_path) {
-            error!("Failed to create directory: {:?}", e);
-            return HttpResponse::InternalServerError().body(format!("Failed to create directory: {:?}", e));
+    if !index_path.exists() || !index_path.join("meta.json").exists() {
+        error!("Search index does not exist at {:?}", index_path);
+
+        info!("Attempting to rebuild search index");
+        match populate_search_data().await {
+            Ok(_) => info!("Successfully rebuilt search index"),
+            Err(e) => {
+                error!("Failed to rebuild search index: {:?}", e);
+                return HttpResponse::InternalServerError().json(json!({
+                    "error": "Search index is not available and could not be rebuilt"
+                }));
+            }
         }
     }
 
-    let meta_path = index_path.join("meta.json");
-    if !meta_path.exists() {
-        error!("Index metadata file does not exist at {:?}", meta_path);
-        return HttpResponse::InternalServerError().body("Index metadata file does not exist");
-    }
+    let schema = build_search_schema();
+    let index = match Index::open_in_dir(&index_path) {
+        Ok(index) => index,
+        Err(e) => {
+            error!("Failed to open index: {:?}", e);
+            return HttpResponse::InternalServerError().json(json!({
+                "error": "Failed to access search index"
+            }));
+        }
+    };
 
+    let reader = match index
+        .reader_builder()
+        .reload_policy(ReloadPolicy::OnCommitWithDelay)
+        .try_into()
+    {
+        Ok(reader) => reader,
+        Err(e) => {
+            error!("Failed to create reader: {:?}", e);
+            return HttpResponse::InternalServerError().json(json!({
+                "error": "Failed to access search index"
+            }));
+        }
+    };
+
+    let searcher = reader.searcher();
+    let search_results = perform_search(&query.q, &schema, &searcher).await;
+
+    HttpResponse::Ok().json(search_results)
+}
+
+fn build_search_schema() -> Schema {
     let mut schema_builder = Schema::builder();
     schema_builder.add_text_field("item_type", TEXT | STORED);
     schema_builder.add_text_field("name", TEXT | STORED);
     schema_builder.add_text_field("id", TEXT | STORED);
     schema_builder.add_text_field("description", TEXT | STORED);
     schema_builder.add_text_field("acronym", TEXT | STORED);
-    let schema = schema_builder.build();
+    schema_builder.build()
+}
 
-    let index = match Index::open_in_dir(&index_path) {
-        Ok(index) => index,
+async fn perform_search(
+    query_text: &str,
+    schema: &Schema,
+    searcher: &Searcher,
+) -> Vec<ResponseCombinedItem> {
+    let name_field = schema.get_field("name").unwrap();
+    let description_field = schema.get_field("description").unwrap();
+    let acronym_field = schema.get_field("acronym").unwrap();
+
+    let mut query_parser = QueryParser::for_index(
+        &searcher.index(),
+        vec![name_field, description_field, acronym_field],
+    );
+
+    query_parser.set_field_boost(name_field, 3.0);
+    query_parser.set_field_boost(acronym_field, 5.0);
+    query_parser.set_field_boost(description_field, 0.5);
+
+    let parsed_query = match query_parser.parse_query(query_text) {
+        Ok(q) => q,
         Err(e) => {
-            error!("Failed to open index: {:?}", e);
-            return HttpResponse::InternalServerError().body(format!("Failed to open index: {:?}", e));
+            error!("Query parsing error: {:?}", e);
+            Box::new(TermQuery::new(
+                Term::from_field_text(name_field, query_text),
+                IndexRecordOption::WithFreqsAndPositions,
+            ))
         }
     };
 
-    let reader = match index.reader_builder().reload_policy(ReloadPolicy::OnCommitWithDelay).try_into() {
-        Ok(reader) => reader,
-        Err(e) => {
-            error!("Failed to create reader: {:?}", e);
-            return HttpResponse::InternalServerError().body(format!("Failed to create reader: {:?}", e));
+    let mut query_clauses: Vec<(Occur, Box<dyn Query>)> = Vec::new();
+
+    let words: Vec<&str> = query_text.split_whitespace().collect();
+    if words.len() > 1 {
+        let mut multi_word_fuzzy_queries: Vec<(Occur, Box<dyn Query>)> = Vec::new();
+
+        for word in &words {
+            if word.len() > 1 {
+                let word_fuzzy =
+                    FuzzyTermQuery::new(Term::from_field_text(name_field, word), 2, true);
+                multi_word_fuzzy_queries.push((Occur::Should, Box::new(word_fuzzy)));
+            }
         }
-    };
 
-    let searcher = reader.searcher();
+        let required_matches = std::cmp::max(1, words.len() * 2 / 3);
 
-    let query_parser = QueryParser::for_index(&index, vec![
-        schema.get_field("name").unwrap(),
-        schema.get_field("description").unwrap(),
-    ]);
+        let multi_word_query =
+            BooleanQuery::with_minimum_required_clauses(multi_word_fuzzy_queries, required_matches);
 
-    let parsed_query = match query_parser.parse_query(&query.q) {
-        Ok(parsed_query) => parsed_query,
-        Err(e) => {
-            error!("Failed to parse query: {:?}", e);
-            return HttpResponse::BadRequest().body(format!("Failed to parse query: {:?}", e));
+        query_clauses.push((Occur::Should, Box::new(multi_word_query)));
+
+        let mut phrase_terms = Vec::new();
+        for word in &words {
+            if word.len() <= 2 {
+                phrase_terms.push(Term::from_field_text(name_field, word));
+            } else {
+                phrase_terms.push(Term::from_field_text(name_field, word));
+            }
         }
-    };
 
-    let top_docs = match searcher.search(&parsed_query, &TopDocs::with_limit(10)) {
-        Ok(top_docs) => top_docs,
-        Err(e) => {
-            error!("Search failed: {:?}", e);
-            return HttpResponse::InternalServerError().body(format!("Search failed: {:?}", e));
-        }
-    };
+        let phrase_query = PhraseQuery::new(phrase_terms);
+        query_clauses.push((Occur::Should, Box::new(phrase_query)));
+    }
 
-    let fuzzy_query = FuzzyTermQuery::new(
-        Term::from_field_text(schema.get_field("name").unwrap(), &query.q),
+    query_clauses.push((Occur::Should, Box::new(parsed_query)));
+
+    let fuzzy_query = FuzzyTermQuery::new(Term::from_field_text(name_field, query_text), 2, true);
+    query_clauses.push((Occur::Should, Box::new(fuzzy_query)));
+
+    let description_fuzzy = FuzzyTermQuery::new(
+        Term::from_field_text(description_field, query_text),
         2,
         true,
     );
+    query_clauses.push((Occur::Should, Box::new(description_fuzzy)));
 
-    let fuzzy_top_docs = match searcher.search(&fuzzy_query, &TopDocs::with_limit(10)) {
-        Ok(fuzzy_top_docs) => fuzzy_top_docs,
+    let normalized_query = query_text
+        .to_lowercase()
+        .replace(&[',', '.', '!', '?', ':', ';', '(', ')', '[', ']'], "");
+    if normalized_query != query_text {
+        let normalized_fuzzy = FuzzyTermQuery::new(
+            Term::from_field_text(name_field, &normalized_query),
+            2,
+            true,
+        );
+        query_clauses.push((Occur::Should, Box::new(normalized_fuzzy)));
+    }
+
+    let simplified_query = query_text
+        .to_lowercase()
+        .chars()
+        .filter(|c| c.is_alphanumeric())
+        .collect::<String>();
+    if simplified_query.len() > 3 && simplified_query != query_text {
+        let simple_fuzzy = FuzzyTermQuery::new(
+            Term::from_field_text(name_field, &simplified_query),
+            2,
+            true,
+        );
+        query_clauses.push((Occur::Should, Box::new(simple_fuzzy)));
+    }
+
+    let prefix_query =
+        RegexQuery::from_pattern(&format!("{}{}", regex::escape(&words[0]), ".*"), name_field)
+            .unwrap();
+    query_clauses.push((Occur::Should, Box::new(prefix_query)));
+
+    if query_text.len() <= 10 {
+        query_clauses.push((
+            Occur::Should,
+            Box::new(TermQuery::new(
+                Term::from_field_text(acronym_field, &query_text.to_uppercase()),
+                IndexRecordOption::WithFreqsAndPositions,
+            )),
+        ));
+
+        if words.len() > 1 {
+            let potential_acronym: String = words
+                .iter()
+                .filter_map(|word| word.chars().next())
+                .map(|c| c.to_uppercase().next().unwrap_or_default())
+                .collect();
+
+            if potential_acronym.len() > 1 {
+                query_clauses.push((
+                    Occur::Should,
+                    Box::new(TermQuery::new(
+                        Term::from_field_text(acronym_field, &potential_acronym),
+                        IndexRecordOption::WithFreqsAndPositions,
+                    )),
+                ));
+            }
+        }
+    }
+
+    let contains_by = query_text.to_lowercase().contains(" by ");
+    if contains_by {
+        let parts: Vec<&str> = query_text.splitn(2, " by ").collect();
+        if parts.len() == 2 {
+            let title_part = parts[0].trim();
+            let artist_part = parts[1].trim();
+
+            let title_fuzzy =
+                FuzzyTermQuery::new(Term::from_field_text(name_field, title_part), 3, true);
+
+            let artist_query = TermQuery::new(
+                Term::from_field_text(schema.get_field("item_type").unwrap(), "song"),
+                IndexRecordOption::Basic,
+            );
+
+            let combined_query = BooleanQuery::new(vec![
+                (Occur::Must, Box::new(title_fuzzy)),
+                (Occur::Must, Box::new(artist_query)),
+            ]);
+
+            query_clauses.push((Occur::Should, Box::new(combined_query)));
+        }
+    }
+
+    if words.len() > 1 {
+        let mut phrase_terms = Vec::new();
+        for word in &words {
+            phrase_terms.push(Term::from_field_text(name_field, word));
+        }
+
+        let phrase_query = PhraseQuery::new(phrase_terms);
+        query_clauses.push((Occur::Should, Box::new(phrase_query)));
+    }
+
+    if words.len() == 1 && query_text.len() > 3 {
+        let item_type_field = schema.get_field("item_type").unwrap();
+        let song_type_query = TermQuery::new(
+            Term::from_field_text(item_type_field, "song"),
+            IndexRecordOption::Basic,
+        );
+        query_clauses.push((Occur::Should, Box::new(song_type_query)));
+    }
+
+    let bool_query = BooleanQuery::with_minimum_required_clauses(query_clauses, 1);
+
+    let top_docs = match searcher.search(&bool_query, &TopDocs::with_limit(20)) {
+        Ok(docs) => docs,
         Err(e) => {
-            error!("Fuzzy search failed: {:?}", e);
-            return HttpResponse::InternalServerError().body(format!("Fuzzy search failed: {:?}", e));
+            error!("Search failed: {:?}", e);
+            return Vec::new();
         }
     };
 
-    let combined_top_docs = top_docs.into_iter().chain(fuzzy_top_docs.into_iter()).collect::<Vec<_>>();
-
+    let schema_clone = schema.clone();
+    let searcher_clone = searcher.clone();
     let hits: Vec<ResponseCombinedItem> = task::spawn_blocking(move || {
-        combined_top_docs.into_par_iter().map(|(_score, doc_address)| {
-            let searcher = searcher.clone();
-            let schema = schema.clone();
-            let rt = tokio::runtime::Runtime::new().unwrap();
-            rt.block_on(async move {
-                let retrieved_doc: tantivy::TantivyDocument = searcher.doc(doc_address).unwrap();
-                let item_type = retrieved_doc.get_first(schema.get_field("item_type").unwrap()).unwrap().as_str().unwrap().to_string();
-                let name = retrieved_doc.get_first(schema.get_field("name").unwrap()).unwrap().as_str().unwrap().to_string();
-                let id = retrieved_doc.get_first(schema.get_field("id").unwrap()).unwrap().as_str().unwrap().to_string();
-                let description = retrieved_doc.get_first(schema.get_field("description").unwrap()).map(|f| f.as_str().unwrap().to_string());
-                let acronym = retrieved_doc.get_first(schema.get_field("acronym").unwrap()).unwrap().as_str().unwrap().to_string();
+        top_docs
+            .into_par_iter()
+            .map(|(score, doc_address)| {
+                let searcher = searcher_clone.clone();
+                let schema = schema_clone.clone();
+                let rt = tokio::runtime::Runtime::new().unwrap();
 
-                let song_object = if item_type == "song" {
-                    fetch_song_info(id.clone(), None, None).await.ok()
-                } else {
-                    None
-                };
-                let album_object = if item_type == "album" {
-                    fetch_album_info(id.clone(), None).await.ok()
-                } else {
-                    None
-                };
-                let artist_object = if item_type == "artist" {
-                    fetch_artist_info(id.clone()).await.ok()
-                } else {
-                    None
-                };
-
-                ResponseCombinedItem {
-                    item_type: item_type.clone(),
-                    name,
-                    id,
-                    description,
-                    acronym,
-                    artist_object: match item_type.as_str() {
-                        "song" => song_object.as_ref().and_then(|song| match song {
-                            super::song::SongInfo::Full(song) => Some(ArtistInfo {
-                                id: song.artist_object.id.clone(),
-                                name: song.artist_object.name.clone(),
-                                icon_url: song.artist_object.icon_url.clone(),
-                                followers: song.artist_object.followers,
-                                description: song.artist_object.description.clone(),
-                            }),
-                            _ => None,
-                        }),
-                        "album" => album_object.as_ref().and_then(|album| match album {
-                            super::album::AlbumInfo::Full(album) => Some(ArtistInfo {
-                                id: album.artist_object.id.clone(),
-                                name: album.artist_object.name.clone(),
-                                icon_url: album.artist_object.icon_url.clone(),
-                                followers: album.artist_object.followers,
-                                description: album.artist_object.description.clone(),
-                            }),
-                            _ => None,
-                        }),
-                        "artist" => artist_object.as_ref().map(|artist| ArtistInfo {
-                            id: artist.id.clone(),
-                            name: artist.name.clone(),
-                            icon_url: artist.icon_url.clone(),
-                            followers: artist.followers,
-                            description: artist.description.clone(),
-                        }),
-                        _ => None,
-                    },
-                    album_object: match item_type.as_str() {
-                        "song" => song_object.as_ref().and_then(|song| match song {
-                            super::song::SongInfo::Full(song) => Some(AlbumInfo {
-                                id: song.album_object.id.clone(),
-                                name: song.album_object.name.clone(),
-                                cover_url: song.album_object.cover_url.clone(),
-                                first_release_date: song.album_object.first_release_date.clone(),
-                                description: song.album_object.description.clone(),
-                            }),
-                            _ => None,
-                        }),
-                        _ => album_object.as_ref().and_then(|album| match album {
-                            super::album::AlbumInfo::Full(album) => Some(AlbumInfo {
-                                id: album.id.clone(),
-                                name: album.name.clone(),
-                                cover_url: album.cover_url.clone(),
-                                first_release_date: album.first_release_date.clone(),
-                                description: album.description.clone(),
-                            }),
-                            _ => None,
-                        }),
-                    },
-                    song_object: song_object.as_ref().and_then(|song| match song {
-                        super::song::SongInfo::Full(song) => Some(SongInfo {
-                            id: song.id.clone(),
-                            name: song.name.clone(),
-                            duration: song.duration,
-                        }),
-                        _ => None,
-                    }),
-                }
+                rt.block_on(async move {
+                    process_search_result(score, doc_address, searcher, schema).await
+                })
             })
-        }).collect::<Vec<_>>()
-    }).await.unwrap();
+            .collect::<Vec<_>>()
+    })
+    .await
+    .unwrap_or_default();
 
-    HttpResponse::Ok().json(hits)
+    hits
+}
+
+async fn process_search_result(
+    score: f32,
+    doc_address: DocAddress,
+    searcher: Searcher,
+    schema: Schema,
+) -> ResponseCombinedItem {
+    let item_type;
+    let name;
+    let id;
+    let description;
+    let acronym;
+
+    let retrieved_doc = match searcher.doc(doc_address) {
+        Ok(doc) => doc,
+        Err(e) => {
+            error!("Failed to retrieve doc: {:?}", e);
+            return create_empty_result();
+        }
+    };
+
+    item_type = match get_text_field(&retrieved_doc, "item_type", &schema) {
+        Some(value) => value,
+        None => return create_empty_result(),
+    };
+
+    name = match get_text_field(&retrieved_doc, "name", &schema) {
+        Some(value) => value,
+        None => return create_empty_result(),
+    };
+
+    id = match get_text_field(&retrieved_doc, "id", &schema) {
+        Some(value) => value,
+        None => return create_empty_result(),
+    };
+
+    description = get_text_field(&retrieved_doc, "description", &schema);
+
+    acronym = match get_text_field(&retrieved_doc, "acronym", &schema) {
+        Some(value) => value,
+        None => String::new(),
+    };
+
+    let (song_object, album_object, artist_object) = match item_type.as_str() {
+        "song" => {
+            let song = fetch_song_info(id.clone(), None, None).await.ok();
+            (song, None, None)
+        }
+        "album" => {
+            let album = fetch_album_info(id.clone(), None).await.ok();
+            (None, album, None)
+        }
+        "artist" => {
+            let artist = fetch_artist_info(id.clone()).await.ok();
+            (None, None, artist)
+        }
+        _ => (None, None, None),
+    };
+
+    build_response_item(
+        item_type,
+        name,
+        id,
+        description,
+        acronym,
+        song_object,
+        album_object,
+        artist_object,
+        score,
+    )
+}
+
+fn get_text_field(doc: &TantivyDocument, field_name: &str, schema: &Schema) -> Option<String> {
+    schema
+        .get_field(field_name)
+        .and_then(|field| Ok(doc.get_first(field).and_then(|v| v.as_str())))
+        .ok()
+        .flatten()
+        .map(|s| s.to_string())
+}
+
+fn create_empty_result() -> ResponseCombinedItem {
+    ResponseCombinedItem {
+        item_type: String::new(),
+        name: String::new(),
+        id: String::new(),
+        description: None,
+        acronym: String::new(),
+        artist_object: None,
+        album_object: None,
+        song_object: None,
+        relevance_score: 0.0,
+    }
+}
+
+fn build_response_item(
+    item_type: String,
+    name: String,
+    id: String,
+    description: Option<String>,
+    acronym: String,
+    song_object: Option<super::song::SongInfo>,
+    album_object: Option<super::album::AlbumInfo>,
+    artist_object: Option<super::artist::Artist>,
+    relevance_score: f32,
+) -> ResponseCombinedItem {
+    ResponseCombinedItem {
+        item_type: item_type.clone(),
+        name,
+        id,
+        description,
+        acronym,
+        artist_object: extract_artist_info(&item_type, &song_object, &album_object, &artist_object),
+        album_object: extract_album_info(&item_type, &song_object, &album_object),
+        song_object: extract_song_info(&song_object),
+        relevance_score,
+    }
+}
+
+fn extract_artist_info(
+    item_type: &str,
+    song_object: &Option<super::song::SongInfo>,
+    album_object: &Option<super::album::AlbumInfo>,
+    artist_object: &Option<super::artist::Artist>,
+) -> Option<ArtistInfo> {
+    match item_type {
+        "song" => song_object.as_ref().and_then(|song| match song {
+            super::song::SongInfo::Full(song) => Some(ArtistInfo {
+                id: song.artist_object.id.clone(),
+                name: song.artist_object.name.clone(),
+                icon_url: song.artist_object.icon_url.clone(),
+                followers: song.artist_object.followers,
+                description: song.artist_object.description.clone(),
+            }),
+            _ => None,
+        }),
+        "album" => album_object.as_ref().and_then(|album| match album {
+            super::album::AlbumInfo::Full(album) => Some(ArtistInfo {
+                id: album.artist_object.id.clone(),
+                name: album.artist_object.name.clone(),
+                icon_url: album.artist_object.icon_url.clone(),
+                followers: album.artist_object.followers,
+                description: album.artist_object.description.clone(),
+            }),
+            _ => None,
+        }),
+        "artist" => artist_object.as_ref().map(|artist| ArtistInfo {
+            id: artist.id.clone(),
+            name: artist.name.clone(),
+            icon_url: artist.icon_url.clone(),
+            followers: artist.followers,
+            description: artist.description.clone(),
+        }),
+        _ => None,
+    }
+}
+
+fn extract_album_info(
+    item_type: &str,
+    song_object: &Option<super::song::SongInfo>,
+    album_object: &Option<super::album::AlbumInfo>,
+) -> Option<AlbumInfo> {
+    match item_type {
+        "song" => song_object.as_ref().and_then(|song| match song {
+            super::song::SongInfo::Full(song) => Some(AlbumInfo {
+                id: song.album_object.id.clone(),
+                name: song.album_object.name.clone(),
+                cover_url: song.album_object.cover_url.clone(),
+                first_release_date: song.album_object.first_release_date.clone(),
+                description: song.album_object.description.clone(),
+            }),
+            _ => None,
+        }),
+        _ => album_object.as_ref().and_then(|album| match album {
+            super::album::AlbumInfo::Full(album) => Some(AlbumInfo {
+                id: album.id.clone(),
+                name: album.name.clone(),
+                cover_url: album.cover_url.clone(),
+                first_release_date: album.first_release_date.clone(),
+                description: album.description.clone(),
+            }),
+            _ => None,
+        }),
+    }
+}
+
+fn extract_song_info(song_object: &Option<super::song::SongInfo>) -> Option<SongInfo> {
+    song_object.as_ref().and_then(|song| match song {
+        super::song::SongInfo::Full(song) => Some(SongInfo {
+            id: song.id.clone(),
+            name: song.name.clone(),
+            duration: song.duration,
+        }),
+        _ => None,
+    })
 }
 
 #[derive(Deserialize)]
@@ -466,7 +773,9 @@ struct SearchItemResponse {
 }
 
 #[post("/add_search_history")]
-async fn add_search_history(item: web::Json<AddSearchHistoryRequest>) -> Result<impl Responder, Box<dyn Error>> {
+async fn add_search_history(
+    item: web::Json<AddSearchHistoryRequest>,
+) -> Result<impl Responder, Box<dyn Error>> {
     use crate::utils::database::schema::search_item::dsl::*;
 
     let mut connection = establish_connection().get().unwrap();
@@ -484,19 +793,22 @@ async fn add_search_history(item: web::Json<AddSearchHistoryRequest>) -> Result<
 }
 
 #[delete("/delete_item_from_search_history")]
-async fn delete_item_from_search_history(item: web::Json<DeleteItemFromSearchHistoryRequest>) -> Result<impl Responder, Box<dyn Error>> {
+async fn delete_item_from_search_history(
+    item: web::Json<DeleteItemFromSearchHistoryRequest>,
+) -> Result<impl Responder, Box<dyn Error>> {
     use crate::utils::database::schema::search_item::dsl::*;
 
     let mut connection = establish_connection().get().unwrap();
 
-    diesel::delete(search_item.filter(id.eq(item.id)))
-        .execute(&mut connection)?;
+    diesel::delete(search_item.filter(id.eq(item.id))).execute(&mut connection)?;
 
     Ok(HttpResponse::Ok().body("Search history item deleted successfully"))
 }
 
 #[get("/get_last_searched_queries")]
-async fn get_last_searched_queries(query: web::Query<GetLastSearchedQueriesRequest>) -> Result<impl Responder, Box<dyn Error>> {
+async fn get_last_searched_queries(
+    query: web::Query<GetLastSearchedQueriesRequest>,
+) -> Result<impl Responder, Box<dyn Error>> {
     use crate::utils::database::schema::search_item::dsl::*;
 
     let mut connection = establish_connection().get().unwrap();
@@ -507,12 +819,15 @@ async fn get_last_searched_queries(query: web::Query<GetLastSearchedQueriesReque
         .limit(10)
         .load::<SearchItem>(&mut connection)?;
 
-    let response: Vec<SearchItemResponse> = results.into_iter().map(|item| SearchItemResponse {
-        id: item.id,
-        user_id: item.user_id,
-        search: item.search,
-        created_at: item.created_at,
-    }).collect();
+    let response: Vec<SearchItemResponse> = results
+        .into_iter()
+        .map(|item| SearchItemResponse {
+            id: item.id,
+            user_id: item.user_id,
+            search: item.search,
+            created_at: item.created_at,
+        })
+        .collect();
 
     Ok(HttpResponse::Ok().json(response))
 }
@@ -545,13 +860,15 @@ struct InvidiousVideo {
 }
 
 #[get("/youtube")]
-async fn search_youtube(query: web::Query<SearchRequest>) -> Result<impl Responder, Box<dyn Error>> {
+async fn search_youtube(
+    query: web::Query<SearchRequest>,
+) -> Result<impl Responder, Box<dyn Error>> {
     let client = reqwest::Client::new();
     let search_query = &query.q;
-    
+
     for _ in 0..3 {
-        let invidious_url = env::var("INVIDIOUS_URL")
-            .unwrap_or_else(|_| get_random_invidious_instance());
+        let invidious_url =
+            env::var("INVIDIOUS_URL").unwrap_or_else(|_| get_random_invidious_instance());
 
         let response = match client
             .get(format!(
@@ -561,16 +878,21 @@ async fn search_youtube(query: web::Query<SearchRequest>) -> Result<impl Respond
             ))
             .header("Accept", "application/json")
             .send()
-            .await {
-                Ok(resp) => resp,
-                Err(e) => {
-                    warn!("Failed to connect to {}: {}", invidious_url, e);
-                    continue;
-                }
-            };
+            .await
+        {
+            Ok(resp) => resp,
+            Err(e) => {
+                warn!("Failed to connect to {}: {}", invidious_url, e);
+                continue;
+            }
+        };
 
         if !response.status().is_success() {
-            warn!("Instance {} returned status {}", invidious_url, response.status());
+            warn!(
+                "Instance {} returned status {}",
+                invidious_url,
+                response.status()
+            );
             continue;
         }
 
@@ -584,15 +906,17 @@ async fn search_youtube(query: web::Query<SearchRequest>) -> Result<impl Respond
 
         match serde_json::from_str::<Vec<InvidiousVideo>>(&response_text) {
             Ok(videos) => {
-                let limited_results = videos.into_iter()
+                let limited_results = videos
+                    .into_iter()
                     .take(10)
                     .map(|video| YouTubeVideoResponse {
                         id: video.video_id.clone(),
                         title: video.title,
-                        thumbnail: format!("https://i.ytimg.com/vi/{}/mqdefault.jpg", video.video_id),
-                        channel: Channel { 
-                            name: video.author 
-                        },
+                        thumbnail: format!(
+                            "https://i.ytimg.com/vi/{}/mqdefault.jpg",
+                            video.video_id
+                        ),
+                        channel: Channel { name: video.author },
                         url: format!("https://youtube.com/watch?v={}", video.video_id),
                     })
                     .collect::<Vec<_>>();
@@ -600,8 +924,10 @@ async fn search_youtube(query: web::Query<SearchRequest>) -> Result<impl Respond
                 return Ok(HttpResponse::Ok().json(limited_results));
             }
             Err(e) => {
-                warn!("Failed to parse response from {}: {}\nResponse: {}", 
-                    invidious_url, e, response_text);
+                warn!(
+                    "Failed to parse response from {}: {}\nResponse: {}",
+                    invidious_url, e, response_text
+                );
                 continue;
             }
         }
@@ -674,29 +1000,32 @@ struct Replies {
 
 fn get_random_invidious_instance() -> String {
     let instances = vec![
-        "https://inv.nadeko.net",            
-        "https://vid.puffyan.us",            
-        "https://y.com.sb",                  
+        "https://inv.nadeko.net",
+        "https://vid.puffyan.us",
+        "https://y.com.sb",
     ];
-    
-    instances.choose(&mut rand::thread_rng())
+
+    instances
+        .choose(&mut rand::thread_rng())
         .unwrap_or(&"https://inv.nadeko.net")
         .to_string()
 }
 
 #[get("/youtube/comments")]
-async fn get_youtube_comments(query: web::Query<CommentsRequest>) -> Result<impl Responder, Box<dyn Error>> {
+async fn get_youtube_comments(
+    query: web::Query<CommentsRequest>,
+) -> Result<impl Responder, Box<dyn Error>> {
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(5))
         .build()?;
     let video_id = &query.video_id;
-    
+
     for _ in 0..3 {
-        let invidious_url = env::var("INVIDIOUS_URL")
-            .unwrap_or_else(|_| get_random_invidious_instance());
+        let invidious_url =
+            env::var("INVIDIOUS_URL").unwrap_or_else(|_| get_random_invidious_instance());
 
         info!("Trying Invidious instance: {}", invidious_url);
-        
+
         let response = match client
             .get(format!(
                 "{}/api/v1/comments/{}",
@@ -705,16 +1034,21 @@ async fn get_youtube_comments(query: web::Query<CommentsRequest>) -> Result<impl
             ))
             .header("Accept", "application/json")
             .send()
-            .await {
-                Ok(resp) => resp,
-                Err(e) => {
-                    warn!("Failed to connect to {}: {}", invidious_url, e);
-                    continue;
-                }
-            };
+            .await
+        {
+            Ok(resp) => resp,
+            Err(e) => {
+                warn!("Failed to connect to {}: {}", invidious_url, e);
+                continue;
+            }
+        };
 
         if !response.status().is_success() {
-            warn!("Instance {} returned status {}", invidious_url, response.status());
+            warn!(
+                "Instance {} returned status {}",
+                invidious_url,
+                response.status()
+            );
             continue;
         }
 
@@ -722,7 +1056,7 @@ async fn get_youtube_comments(query: web::Query<CommentsRequest>) -> Result<impl
             Ok(text) => {
                 debug!("Response from {}: {}", invidious_url, text);
                 text
-            },
+            }
             Err(e) => {
                 warn!("Failed to get response text from {}: {}", invidious_url, e);
                 continue;
@@ -736,10 +1070,12 @@ async fn get_youtube_comments(query: web::Query<CommentsRequest>) -> Result<impl
                     continue;
                 }
                 return Ok(HttpResponse::Ok().json(comments));
-            },
+            }
             Err(e) => {
-                warn!("Failed to parse comments from {}: {}\nResponse: {}", 
-                    invidious_url, e, response_text);
+                warn!(
+                    "Failed to parse comments from {}: {}\nResponse: {}",
+                    invidious_url, e, response_text
+                );
                 continue;
             }
         }
@@ -764,6 +1100,6 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
             .service(get_last_searched_queries)
             .service(populate_search)
             .service(search_youtube)
-            .service(get_youtube_comments)
+            .service(get_youtube_comments),
     );
 }

@@ -28,7 +28,7 @@
     "esbuild"
   ],
   "optionalDependencies": {
-    "@esbuild/linux-x64": "0.21.1"
+    "@esbuild/linux-x64": "0.23.1"
   },
   "dependencies": {
     "eslint-config-next": "^15.2.4",

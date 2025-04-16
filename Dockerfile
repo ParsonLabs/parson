@@ -1,11 +1,16 @@
 FROM oven/bun:alpine AS frontend-builder
 RUN apk update
-RUN apk add --no-cache yarn
+RUN apk add --no-cache yarn nodejs npm
 WORKDIR /app
-COPY . .
 
-RUN bun install --ignore-scripts
+COPY package.json yarn.lock bun.lockb turbo.json ./
+COPY apps/web/package.json ./apps/web/
+COPY packages/*/package.json ./packages/
+
+RUN bun install --frozen-lockfile
 RUN bun install turbo --global
+
+COPY . .
 RUN turbo prune music --docker
 
 # Stage 2: Install dependencies and build the project
@@ -14,15 +19,20 @@ WORKDIR /app
 COPY --from=frontend-builder /app/out/json/ . 
 COPY --from=frontend-builder /app/out/yarn.lock ./yarn.lock
 
-RUN bun install --ignore-scripts
+RUN apk add --no-cache nodejs npm
+
+RUN bun install --frozen-lockfile
 RUN bun install yarn --global
-RUN apk add --no-cache nodejs-current
 COPY --from=frontend-builder /app/out/full/ . 
 COPY ./package.json ./package.json
 COPY ./yarn.lock ./yarn.lock
 
-WORKDIR /app/apps/web
+RUN npm install esbuild --no-save
 
+ENV NODE_ENV=production
+ENV NEXT_TELEMETRY_DISABLED=1
+
+WORKDIR /app/apps/web
 RUN yarn build
 
 # Stage 3: Build the Rust backend
@@ -33,32 +43,44 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     sqlite3 libsqlite3-dev wget make build-essential pkg-config libssl-dev ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
-RUN wget https://www.nasm.us/pub/nasm/releasebuilds/2.16/nasm-2.16.tar.gz \
+RUN wget -q https://www.nasm.us/pub/nasm/releasebuilds/2.16/nasm-2.16.tar.gz \
     && tar xzf nasm-2.16.tar.gz \
     && cd nasm-2.16 \
-    && ./configure \
-    && make \
+    && ./configure --prefix=/usr/local \
+    && make -j$(nproc) \
     && make install \
     && cd .. \
     && rm -rf nasm-2.16 nasm-2.16.tar.gz
     
 RUN cargo install diesel_cli@2.2.8 --no-default-features --features sqlite
 
-COPY ./crates/backend /usr/src/crates/backend
+COPY ./crates/backend/Cargo.toml /usr/src/crates/backend/
+COPY ./crates/backend/Cargo.lock /usr/src/crates/backend/
+COPY ./Cargo.toml /usr/src/
+COPY ./Cargo.lock /usr/src/
 COPY ./diesel.toml /usr/src/diesel.toml
-COPY --from=installer /app/apps/web/out /usr/src/apps/web/out
 
 WORKDIR /usr/src/crates/backend
+RUN mkdir -p src && \
+    echo "fn main() {}" > src/main.rs && \
+    cargo fetch
+
+COPY ./crates/backend/src /usr/src/crates/backend/src
+COPY ./crates/backend/migrations /usr/src/crates/backend/migrations
+COPY --from=installer /app/apps/web/out /usr/src/apps/web/out
 
 ENV DATABASE_URL=sqlite:///usr/src/crates/backend/music.db
 
 RUN diesel migration run --config-file /usr/src/diesel.toml || echo "Migrations completed with warnings"
 
-RUN RUSTFLAGS="-C opt-level=3" cargo build --release || (cat target/release/deps/*.stderr 2>/dev/null || true && exit 1)
+ENV RUSTFLAGS="-C opt-level=3 -C target-cpu=native -C codegen-units=1"
+RUN cargo build --release -j $(nproc) || (cat target/release/deps/*.stderr 2>/dev/null || true && exit 1)
 
+# Final stage with minimal image
 FROM debian:bookworm-slim AS runner
 WORKDIR /app
 
+# Install only essential runtime dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libssl3 \
     sqlite3 \

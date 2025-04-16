@@ -43,14 +43,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     sqlite3 libsqlite3-dev wget make build-essential pkg-config libssl-dev ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
-RUN wget -q https://www.nasm.us/pub/nasm/releasebuilds/2.16/nasm-2.16.tar.gz \
-    && tar xzf nasm-2.16.tar.gz \
-    && cd nasm-2.16 \
+RUN wget -q https://github.com/netwide-assembler/nasm/archive/refs/tags/nasm-2.16.01.tar.gz \
+    && tar xzf nasm-2.16.01.tar.gz \
+    && cd nasm-nasm-2.16.01 \
+    && ./autogen.sh \
     && ./configure --prefix=/usr/local \
     && make -j$(nproc) \
     && make install \
     && cd .. \
-    && rm -rf nasm-2.16 nasm-2.16.tar.gz
+    && rm -rf nasm-nasm-2.16.01 nasm-2.16.01.tar.gz
     
 RUN cargo install diesel_cli@2.2.8 --no-default-features --features sqlite
 

@@ -4,7 +4,7 @@ use actix_web::{delete, get, post, web, HttpResponse};
 use rand::seq::SliceRandom;
 use serde::Deserialize;
 
-use crate::structures::structures::Artist;
+pub use crate::structures::structures::Artist;
 use crate::utils::config::{fetch_library, get_config, refresh_cache, save_library};
 
 pub async fn fetch_random_artists(amount: usize) -> Result<Vec<Artist>, ()> {

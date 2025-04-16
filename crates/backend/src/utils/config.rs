@@ -167,6 +167,17 @@ async fn has_config() -> impl Responder {
 
 pub async fn save_config(indexed_json: &String, create_backup: bool) -> std::io::Result<()> {
     let config_path = get_config_path();
+
+    let current_content = if config_path.exists() {
+        fs::read_to_string(&config_path).ok()
+    } else {
+        None
+    };
+
+    if current_content.as_ref() == Some(indexed_json) {
+        return Ok(());
+    }
+
     let config_dir = config_path.parent().unwrap();
     let config_filename = config_path.file_stem().unwrap().to_str().unwrap();
     let config_extension = config_path.extension().unwrap().to_str().unwrap();

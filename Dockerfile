@@ -5,9 +5,14 @@ WORKDIR /app
 
 COPY package.json yarn.lock bun.lockb turbo.json ./
 COPY apps/web/package.json ./apps/web/
-COPY packages/*/package.json ./packages/
 
-RUN bun install --frozen-lockfile
+RUN mkdir -p packages/typescript-config packages/sdk packages/ui
+
+COPY packages/typescript-config/package.json ./packages/typescript-config/
+COPY packages/sdk/package.json ./packages/sdk/
+COPY packages/ui/package.json ./packages/ui/
+
+RUN bun install
 RUN bun install turbo --global
 
 COPY . .

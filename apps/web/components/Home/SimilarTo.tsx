@@ -176,6 +176,7 @@ export default function SimilarTo() {
             ))
           ) : (
             similarAlbums.map((album, index) => (
+              <Link href={`/album?id=${album.album_id}`} key={album.album_id}>
               <motion.div 
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -188,7 +189,7 @@ export default function SimilarTo() {
                   y: -12,
                   transition: { duration: 0.2 }
                 }}
-                className="snap-start shrink-0 pl-8 w-[300px] group"
+                className="snap-start shrink-0 pl-8 w-[300px] group relative z-10"
                 key={`${album.album_id}-${index}`}
               >
                 <div className="relative overflow-hidden rounded-xl shadow-xl shadow-black/40 transition-all duration-300 group-hover:shadow-2xl group-hover:shadow-purple-900/20">
@@ -208,6 +209,7 @@ export default function SimilarTo() {
                   />
                 </div>
               </motion.div>
+              </Link>
             ))
           )}
         </div>

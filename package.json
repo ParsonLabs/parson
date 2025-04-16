@@ -27,6 +27,9 @@
     "electron",
     "esbuild"
   ],
+  "optionalDependencies": {
+    "@esbuild/linux-x64": "0.25.2"
+  },
   "dependencies": {
     "eslint-config-next": "^15.2.4",
     "next": "^15.2.4",

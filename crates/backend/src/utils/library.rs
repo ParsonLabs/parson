@@ -318,6 +318,84 @@ pub async fn index_library(path_to_library: &str) -> Result<Arc<Mutex<Vec<Artist
             album.contributing_artists_ids.dedup();
         }
     }
+    
+    let mut album_map: std::collections::HashMap<String, Vec<(usize, usize)>> = std::collections::HashMap::new();
+    
+    for (artist_idx, artist) in library.iter().enumerate() {
+        for (album_idx, album) in artist.albums.iter().enumerate() {
+            album_map
+                .entry(album.name.to_lowercase())
+                .or_insert_with(Vec::new)
+                .push((artist_idx, album_idx));
+        }
+    }
+    
+    for (_album_name, locations) in album_map.iter().filter(|(_, v)| v.len() > 1) {
+        let mut best_location = locations[0];
+        let mut max_songs = library[locations[0].0].albums[locations[0].1].songs.len();
+        
+        for &(artist_idx, album_idx) in &locations[1..] {
+            let song_count = library[artist_idx].albums[album_idx].songs.len();
+            if song_count > max_songs {
+                max_songs = song_count;
+                best_location = (artist_idx, album_idx);
+            }
+        }
+        
+        let best_album_id = library[best_location.0].albums[best_location.1].id.clone();
+        
+        for &(artist_idx, album_idx) in locations {
+            if (artist_idx, album_idx) == best_location {
+                continue;
+            }
+            
+            let losing_artist_name = library[artist_idx].name.clone();
+            let losing_artist_id = library[artist_idx].id.clone();
+            
+            if !library[best_location.0].albums[best_location.1].contributing_artists.contains(&losing_artist_name) {
+                library[best_location.0].albums[best_location.1].contributing_artists.push(losing_artist_name);
+            }
+            
+            if !library[best_location.0].albums[best_location.1].contributing_artists_ids.contains(&losing_artist_id) {
+                library[best_location.0].albums[best_location.1].contributing_artists_ids.push(losing_artist_id.clone());
+            }
+            
+            let songs_to_move = std::mem::take(&mut library[artist_idx].albums[album_idx].songs);
+            for song in songs_to_move {
+                if !library[best_location.0].albums[best_location.1].songs.iter().any(|s| s.id == song.id) {
+                    library[best_location.0].albums[best_location.1].songs.push(song);
+                }
+            }
+            
+            if !library[artist_idx].featured_on_album_ids.contains(&best_album_id) {
+                library[artist_idx].featured_on_album_ids.push(best_album_id.clone());
+            }
+        }
+    }
+    
+    for artist in library.iter_mut() {
+        artist.albums.retain(|album| !album.songs.is_empty());
+    }
+    
+    for artist in library.iter_mut() {
+        artist.featured_on_album_ids.sort();
+        artist.featured_on_album_ids.dedup();
+        
+        for album in artist.albums.iter_mut() {
+            album.songs.sort_by(|a, b| {
+                match a.track_number.cmp(&b.track_number) {
+                    std::cmp::Ordering::Equal => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
+                    other => other
+                }
+            });
+            
+            album.contributing_artists.sort();
+            album.contributing_artists.dedup();
+            
+            album.contributing_artists_ids.sort();
+            album.contributing_artists_ids.dedup();
+        }
+    }
 
     Ok(Arc::clone(&library_clone))
 }

@@ -2,7 +2,14 @@
 
 import HorizontalCard from "@/components/Music/Card/HorizontalCard";
 import TopResultsCard from "@/components/Music/Card/Search/TopResultsCard";
-import { searchLibrary, searchYouTube } from "@music/sdk";
+import {
+  searchLibrary,
+  searchYouTube,
+  searchGenius,
+  GeniusSearchResult,
+  GeniusSongResponse,
+  getSongInfo,
+} from "@music/sdk";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useState, useCallback, useMemo } from "react";
 import {
@@ -12,6 +19,7 @@ import {
   UsersIcon,
   Search,
   ExternalLink,
+  MicVocal,
 } from "lucide-react";
 import Image from "next/image";
 import { usePlayer } from "@/components/Music/Player/usePlayer";
@@ -24,6 +32,8 @@ import YouTubeMiniPlayer from "@/components/Music/Player/YouTubeMiniPlayer";
 import React from "react";
 import { Button } from "@music/ui/components/button";
 import { useRouter } from "next/navigation";
+import { Song } from "@music/sdk/types";
+import getBaseURL from "@/lib/Server/getBaseURL";
 
 function YoutubeResultCard({ video }: { video: YouTubeVideo }) {
   const [isHovered, setIsHovered] = useState(false);
@@ -208,7 +218,6 @@ function YoutubeResultCard({ video }: { video: YouTubeVideo }) {
     </motion.div>
   );
 }
-
 YoutubeResultCard.displayName = "YoutubeResultCard";
 
 interface YouTubeVideo {
@@ -220,6 +229,174 @@ interface YouTubeVideo {
   };
   url: string;
 }
+
+interface GeniusResultCardProps {
+  result: GeniusSearchResult;
+  query: string;
+}
+
+function GeniusResultCard({ result, query }: GeniusResultCardProps) {
+  const [isHovered, setIsHovered] = useState(false);
+  const [isSearching, setIsSearching] = useState(false);
+
+  const {
+    setSong,
+    setAlbum,
+    setArtist,
+    setImageSrc,
+    setAudioSource,
+    playAudioSource,
+  } = usePlayer();
+
+  const getHighlightedSnippet = () => {
+    if (!result.lyrics_snippet || !query) {
+      return result.lyrics_snippet?.replace(/\n/g, "<br />") || "";
+    }
+    const escapedQuery = query.replace(/[-\/\\^$*+?.()|[\]{}]/g, "\\$&");
+    const regex = new RegExp(`(${escapedQuery})`, "gi");
+    return result.lyrics_snippet
+      .replace(regex, `<strong class="text-yellow-300">$1</strong>`)
+      .replace(/\n/g, "<br />");
+  };
+
+  const handlePlayMatchedSong = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setIsSearching(true);
+    try {
+      const searchQuery = `${result.title} ${result.artist}`;
+      console.log("Searching library for:", searchQuery);
+
+      const libraryResults = await searchLibrary(searchQuery);
+
+      const matchedSong = libraryResults.find(
+        (item) => item.item_type === "song"
+      );
+
+      if (matchedSong && matchedSong.song_object) {
+        const imageSrc =
+          matchedSong.album_object?.cover_url?.length === 0
+            ? "/snf.png"
+            : `${getBaseURL()}/image/${encodeURIComponent(matchedSong?.album_object?.cover_url ?? "")}`;
+        setImageSrc(imageSrc);
+        const songInfo = await getSongInfo(matchedSong.id);
+        setSong(songInfo as unknown as Song);
+        setArtist({
+          id: matchedSong?.artist_object?.id,
+          name: matchedSong?.artist_object?.name,
+        });
+        setAlbum({
+          id: matchedSong?.album_object?.id,
+          name: matchedSong.album_object?.name,
+          cover_url: imageSrc,
+        });
+        const audioSource = `${getBaseURL()}/api/stream/${encodeURIComponent(songInfo.path)}?bitrate=0`;
+        setAudioSource(audioSource);
+        playAudioSource();
+      } else {
+        console.log("No matching song found in library for:", searchQuery);
+      }
+    } catch (error) {
+      console.error("Error searching library or playing song:", error);
+    } finally {
+      setIsSearching(false);
+    }
+  };
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.3 }}
+      className="flex items-center p-3 rounded-lg cursor-pointer relative group overflow-hidden hover:bg-white/10 transition-all duration-300 transform hover:translate-x-1"
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+      onClick={handlePlayMatchedSong}
+    >
+      {isSearching && (
+        <div className="absolute inset-0 bg-black/50 flex items-center justify-center z-30">
+          <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-yellow-400"></div>
+        </div>
+      )}
+      <div className="relative flex-shrink-0 rounded-md overflow-hidden shadow-lg">
+        <div className="absolute top-1.5 right-1.5 z-20 bg-yellow-400 rounded text-[10px] font-bold py-0.5 px-1.5 text-black opacity-80">
+          LYRICS
+        </div>
+        <motion.div
+          animate={{ scale: isHovered ? 1.05 : 1 }}
+          transition={{ duration: 0.3 }}
+          className="relative"
+        >
+          <Image
+            src={result.thumbnail || "/fallback-thumbnail.png"}
+            alt={result.title}
+            width={64}
+            height={64}
+            className={`w-16 h-16 object-cover ${
+              isHovered ? "brightness-80" : "brightness-90"
+            } transition-all duration-300 rounded-md`}
+            onError={(e) => {
+              e.currentTarget.src = "/fallback-thumbnail.png";
+            }}
+          />
+          <div
+            className={`absolute inset-0 bg-gradient-to-t from-black/60 to-transparent ${
+              isHovered ? "opacity-100" : "opacity-80"
+            } transition-opacity duration-300 rounded-md`}
+          />
+        </motion.div>
+        <div
+          className={`absolute inset-0 flex items-center justify-center transition-opacity duration-300 ${
+            isHovered ? "opacity-100" : "opacity-0"
+          } z-10`}
+        >
+          <motion.div
+            whileHover={{ scale: 1.1 }}
+            whileTap={{ scale: 0.9 }}
+            className="bg-black/40 backdrop-blur-sm p-2 rounded-full shadow-lg"
+          >
+            <Play className="w-5 h-5 text-white fill-white drop-shadow-md ml-0.5" />
+          </motion.div>
+        </div>
+      </div>
+
+      <div className="ml-3 flex-grow min-w-0 relative z-10">
+        <p className="text-sm font-medium truncate leading-snug text-white group-hover:text-yellow-300 transition-colors duration-300">
+          {result.title}
+        </p>
+        <p className="text-xs text-gray-400 truncate flex items-center gap-1.5 mt-0.5">
+          <span className="group-hover:text-gray-300 transition-colors duration-300">
+            {result.artist}
+          </span>
+        </p>
+        {result.lyrics_snippet && (
+          <p
+            className="text-xs text-gray-500 italic truncate mt-1"
+            dangerouslySetInnerHTML={{ __html: getHighlightedSnippet() }}
+          />
+        )}
+      </div>
+      <motion.div
+        className="ml-2 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300"
+        animate={{ opacity: isHovered ? 1 : 0 }}
+      >
+        <motion.div
+          whileHover={{ scale: 1.1, rotate: 15 }}
+          whileTap={{ scale: 0.9 }}
+          className="text-gray-400 group-hover:text-white"
+          title="View on Genius.com"
+          onClick={(e) => {
+            e.stopPropagation();
+            window.open(result.url, "_blank");
+          }}
+        >
+          <ExternalLink className="w-4 h-4" />
+        </motion.div>
+      </motion.div>
+    </motion.div>
+  );
+}
+
+GeniusResultCard.displayName = "GeniusResultCard";
 
 const HorizontalCardSkeleton = () => (
   <div className="w-full text-white flex items-center animate-pulse p-2">
@@ -286,22 +463,34 @@ export default function SearchComponent() {
   const [error, setError] = useState<string | null>(null);
   const [youtubeLoading, setYoutubeLoading] = useState<boolean>(true);
   const [youtubeError, setYoutubeError] = useState<string | null>(null);
+  const [geniusResults, setGeniusResults] = useState<GeniusSearchResult[]>([]);
+  const [geniusLoading, setGeniusLoading] = useState<boolean>(true);
+  const [geniusError, setGeniusError] = useState<string | null>(null);
+  const [activeLyrics, setActiveLyrics] = useState<GeniusSongResponse | null>(
+    null
+  );
   const [activeYouTubeVideo, setActiveYouTubeVideo] =
     useState<YouTubeVideo | null>(null);
   const [activeTab, setActiveTab] = useState<string>("all");
-  const { setGradientWithTransition } = useGradientHover();
 
-  // const setDominantColor = useCallback(async (imageUrl: string) => {
-  //   if (!imageUrl) return;
+  const totalResults = useMemo(
+    () => results.length + youtubeResults.length + geniusResults.length,
+    [results.length, youtubeResults.length, geniusResults.length]
+  );
 
-  //   try {
-  //     const fac = new FastAverageColor();
-  //     const color = await fac.getColorAsync(imageUrl);
-  //     setGradientWithTransition(color.hex);
-  //   } catch (error) {
-  //     console.error("Failed to get dominant color:", error);
-  //   }
-  // }, [setGradientWithTransition]);
+  const totalResultsMessage = useMemo(() => {
+    const parts = [];
+    if (results.length > 0) parts.push(`${results.length} in library`);
+    if (youtubeResults.length > 0)
+      parts.push(`${youtubeResults.length} on YouTube`);
+    if (geniusResults.length > 0)
+      parts.push(`${geniusResults.length} lyrics on Genius`);
+
+    if (parts.length === 0) return "No results found";
+    if (parts.length === 1) return `Found ${parts[0]}`;
+
+    return `Found ${parts.slice(0, -1).join(", ")} and ${parts.slice(-1)}`;
+  }, [results.length, youtubeResults.length, geniusResults.length]);
 
   useEffect(() => {
     let isMounted = true;
@@ -311,18 +500,15 @@ export default function SearchComponent() {
 
       setLoading(true);
       setYoutubeLoading(true);
+      setGeniusLoading(true);
       setError(null);
       setYoutubeError(null);
+      setGeniusError(null);
 
       try {
         const searchResults = await searchLibrary(query);
         if (!isMounted) return;
-
         setResults(searchResults);
-
-        if (searchResults[0]?.album_object?.cover_url) {
-          // setDominantColor(searchResults[0].album_object.cover_url);
-        }
       } catch (err) {
         if (!isMounted) return;
         console.error("Search error:", err);
@@ -342,6 +528,18 @@ export default function SearchComponent() {
       } finally {
         if (isMounted) setYoutubeLoading(false);
       }
+
+      try {
+        const geniusData = await searchGenius(query);
+        if (!isMounted) return;
+        setGeniusResults(geniusData.results);
+      } catch (err) {
+        if (!isMounted) return;
+        console.error("Genius error:", err);
+        setGeniusError("Failed to load Genius results");
+      } finally {
+        if (isMounted) setGeniusLoading(false);
+      }
     }
 
     if (query) {
@@ -349,8 +547,10 @@ export default function SearchComponent() {
     } else {
       setResults([]);
       setYoutubeResults([]);
+      setGeniusResults([]);
       setLoading(false);
       setYoutubeLoading(false);
+      setGeniusLoading(false);
     }
 
     return () => {
@@ -383,11 +583,6 @@ export default function SearchComponent() {
   const backgroundImageSource = useMemo(
     () => results[0]?.album_object?.cover_url ?? "/snf.png",
     [results]
-  );
-
-  const totalResults = useMemo(
-    () => results.length + youtubeResults.length,
-    [results.length, youtubeResults.length]
   );
 
   if (!query) {
@@ -567,9 +762,7 @@ export default function SearchComponent() {
               Results for &ldquo;{query}&rdquo;
             </h1>
 
-            <p className="text-gray-400">
-              Found {totalResults} results in your library and on YouTube
-            </p>
+            <p className="text-gray-400">{totalResultsMessage}</p>
           </motion.div>
 
           <motion.div
@@ -625,7 +818,7 @@ export default function SearchComponent() {
             </TabsList>
           </Tabs>
 
-          <div className="grid grid-cols-1 lg:grid-cols-[1fr,360px] gap-8">
+          <div className="grid grid-cols-1 lg:grid-cols-[1fr,500px] gap-8">
             <div>
               {loading ? (
                 <div className="space-y-4 p-6 bg-black/40 backdrop-blur-md rounded-xl">
@@ -673,56 +866,118 @@ export default function SearchComponent() {
             </div>
 
             <div>
-              {youtubeLoading ? (
-                <div className="space-y-4 p-6 bg-black/40 backdrop-blur-md rounded-xl">
-                  <div className="flex items-center gap-2 mb-4">
-                    <h2 className="text-lg font-bold bg-gradient-to-r from-purple-400 via-pink-500 to-red-500 bg-clip-text text-transparent animate-pulse">
-                      Loading YouTube Results...
-                    </h2>
-                    <YoutubeIcon className="w-5 h-5 text-red-600" />
+              <div className="mb-8">
+                {geniusLoading ? (
+                  <div className="space-y-4 p-6 bg-black/40 backdrop-blur-md rounded-xl">
+                    <div className="flex items-center gap-2 mb-4">
+                      <h2 className="text-lg font-bold bg-gradient-to-r from-yellow-400 via-amber-500 to-orange-500 bg-clip-text text-transparent animate-pulse">
+                        Loading Genius Results...
+                      </h2>
+                      <MicVocal className="w-5 h-5 text-yellow-500" />
+                    </div>
+                    {[...Array(3)].map((_, i) => (
+                      <div key={i} className="flex animate-pulse">
+                        <div className="w-16 h-16 rounded bg-gray-700"></div>
+                        <div className="ml-4">
+                          <div className="h-4 w-48 bg-gray-700 rounded mb-2"></div>
+                          <div className="h-3 w-32 bg-gray-700 rounded"></div>
+                        </div>
+                      </div>
+                    ))}
                   </div>
-                  {[...Array(3)].map((_, i) => (
-                    <div key={i} className="flex animate-pulse">
-                      <div className="w-24 h-16 rounded bg-gray-700"></div>
-                      <div className="ml-4">
-                        <div className="h-4 w-48 bg-gray-700 rounded mb-2"></div>
-                        <div className="h-3 w-32 bg-gray-700 rounded"></div>
+                ) : geniusError ? (
+                  <div className="p-8 text-center bg-black/40 backdrop-blur-md rounded-xl">
+                    <MicVocal className="w-10 h-10 text-yellow-600 mx-auto mb-3 opacity-50" />
+                    <p className="text-gray-400">{geniusError}</p>
+                  </div>
+                ) : geniusResults.length > 0 ? (
+                  <motion.div
+                    className="bg-black/40 backdrop-blur-md rounded-xl overflow-hidden"
+                    initial={{ opacity: 0, scale: 0.98 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    transition={{ duration: 0.4, delay: 0.3 }}
+                  >
+                    <div className="p-5">
+                      <div className="flex items-center gap-2 mb-4">
+                        <h2 className="text-lg font-bold bg-gradient-to-r from-yellow-400 via-amber-500 to-orange-500 bg-clip-text text-transparent">
+                          Lyrics from Genius
+                        </h2>
+                        <MicVocal className="w-5 h-5 text-yellow-500" />
+                      </div>
+                      <div className="space-y-2">
+                        {geniusResults.map((result) => (
+                          <GeniusResultCard
+                            result={result}
+                            key={result.id}
+                            query={query}
+                          />
+                        ))}
                       </div>
                     </div>
-                  ))}
-                </div>
-              ) : youtubeError ? (
-                <div className="p-8 text-center bg-black/40 backdrop-blur-md rounded-xl">
-                  <YoutubeIcon className="w-10 h-10 text-red-600 mx-auto mb-3 opacity-50" />
-                  <p className="text-gray-400">{youtubeError}</p>
-                </div>
-              ) : youtubeResults.length > 0 ? (
-                <motion.div
-                  className="bg-black/40 backdrop-blur-md rounded-xl overflow-hidden"
-                  initial={{ opacity: 0, scale: 0.98 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  transition={{ duration: 0.4, delay: 0.2 }}
-                >
-                  <div className="p-5">
+                  </motion.div>
+                ) : (
+                  query &&
+                  !geniusLoading && (
+                    <div className="p-8 text-center bg-black/40 backdrop-blur-md rounded-xl">
+                      <MicVocal className="w-10 h-10 text-yellow-600/50 mx-auto mb-3 opacity-50" />
+                      <p className="text-gray-400">No lyrics found on Genius</p>
+                    </div>
+                  )
+                )}
+              </div>
+
+              <div>
+                {youtubeLoading ? (
+                  <div className="space-y-4 p-6 bg-black/40 backdrop-blur-md rounded-xl">
                     <div className="flex items-center gap-2 mb-4">
-                      <h2 className="text-lg font-bold bg-gradient-to-r from-purple-400 via-pink-500 to-red-500 bg-clip-text text-transparent">
-                        From YouTube
+                      <h2 className="text-lg font-bold bg-gradient-to-r from-purple-400 via-pink-500 to-red-500 bg-clip-text text-transparent animate-pulse">
+                        Loading YouTube Results...
                       </h2>
                       <YoutubeIcon className="w-5 h-5 text-red-600" />
                     </div>
-                    <div className="space-y-2">
-                      {youtubeResults.map((video, index) => (
-                        <YoutubeResultCard video={video} key={video.id} />
-                      ))}
-                    </div>
+                    {[...Array(3)].map((_, i) => (
+                      <div key={i} className="flex animate-pulse">
+                        <div className="w-24 h-16 rounded bg-gray-700"></div>
+                        <div className="ml-4">
+                          <div className="h-4 w-48 bg-gray-700 rounded mb-2"></div>
+                          <div className="h-3 w-32 bg-gray-700 rounded"></div>
+                        </div>
+                      </div>
+                    ))}
                   </div>
-                </motion.div>
-              ) : (
-                <div className="p-8 text-center bg-black/40 backdrop-blur-md rounded-xl">
-                  <YoutubeIcon className="w-10 h-10 text-red-600/50 mx-auto mb-3 opacity-50" />
-                  <p className="text-gray-400">No YouTube videos found</p>
-                </div>
-              )}
+                ) : youtubeError ? (
+                  <div className="p-8 text-center bg-black/40 backdrop-blur-md rounded-xl">
+                    <YoutubeIcon className="w-10 h-10 text-red-600 mx-auto mb-3 opacity-50" />
+                    <p className="text-gray-400">{youtubeError}</p>
+                  </div>
+                ) : youtubeResults.length > 0 ? (
+                  <motion.div
+                    className="bg-black/40 backdrop-blur-md rounded-xl overflow-hidden"
+                    initial={{ opacity: 0, scale: 0.98 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    transition={{ duration: 0.4, delay: 0.2 }}
+                  >
+                    <div className="p-5">
+                      <div className="flex items-center gap-2 mb-4">
+                        <h2 className="text-lg font-bold bg-gradient-to-r from-purple-400 via-pink-500 to-red-500 bg-clip-text text-transparent">
+                          From YouTube
+                        </h2>
+                        <YoutubeIcon className="w-5 h-5 text-red-600" />
+                      </div>
+                      <div className="space-y-2">
+                        {youtubeResults.map((video, index) => (
+                          <YoutubeResultCard video={video} key={video.id} />
+                        ))}
+                      </div>
+                    </div>
+                  </motion.div>
+                ) : (
+                  <div className="p-8 text-center bg-black/40 backdrop-blur-md rounded-xl">
+                    <YoutubeIcon className="w-10 h-10 text-red-600/50 mx-auto mb-3 opacity-50" />
+                    <p className="text-gray-400">No YouTube videos found</p>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </div>

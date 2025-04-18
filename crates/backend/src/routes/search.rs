@@ -12,6 +12,8 @@ use dirs;
 use lazy_static::lazy_static;
 use rand::seq::SliceRandom;
 use rayon::prelude::*;
+use reqwest::header::{HeaderMap, HeaderValue, USER_AGENT};
+use scraper::{Html, Selector};
 use serde::{Deserialize, Serialize};
 use serde_json::{self, from_str, json};
 use tantivy::collector::TopDocs;
@@ -22,6 +24,7 @@ use tantivy::schema::{Term, *};
 use tantivy::{doc, DocAddress, Index, IndexWriter, ReloadPolicy, Searcher};
 use tokio::task;
 use tracing::{debug, error, info, warn};
+use url::Url;
 
 use crate::routes::album::fetch_album_info;
 use crate::routes::artist::fetch_artist_info;
@@ -1091,6 +1094,271 @@ struct YouTubeApiResponse {
     items: Vec<InvidiousVideo>,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+struct GeniusSearchResult {
+    title: String,
+    artist: String,
+    thumbnail: String,
+    url: String,
+    lyrics_snippet: Option<String>,
+    id: i64,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct GeniusSearchResponse {
+    results: Vec<GeniusSearchResult>,
+    query: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct GeniusSongResponse {
+    title: String,
+    artist: String,
+    lyrics: String,
+    url: String,
+}
+
+#[derive(Deserialize)]
+struct GeniusSongRequest {
+    url: String,
+}
+
+#[get("/genius")]
+async fn search_genius_lyrics(
+    query: web::Query<SearchRequest>,
+) -> Result<impl Responder, Box<dyn Error>> {
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(10))
+        .build()?;
+    
+    let search_query = &query.q;
+    let genius_search_url = "https://genius.com/api/search/multi";
+    
+    let mut headers = HeaderMap::new();
+    headers.insert(USER_AGENT, HeaderValue::from_static("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"));
+    
+    let response = match client
+        .get(genius_search_url)
+        .headers(headers.clone())
+        .query(&[("q", search_query), ("per_page", &String::from("5"))])
+        .send()
+        .await {
+            Ok(resp) => resp,
+            Err(e) => {
+                error!("Failed to connect to Genius: {}", e);
+                return Ok(HttpResponse::ServiceUnavailable().json(json!({
+                    "error": "Failed to connect to Genius API"
+                })));
+            }
+        };
+        
+    if !response.status().is_success() {
+        error!("Genius returned status {}", response.status());
+        return Ok(HttpResponse::BadGateway().json(json!({
+            "error": format!("Genius API returned status {}", response.status())
+        })));
+    }
+    
+    let response_text = match response.text().await {
+        Ok(text) => text,
+        Err(e) => {
+            error!("Failed to get response text from Genius: {}", e);
+            return Ok(HttpResponse::InternalServerError().json(json!({
+                "error": "Failed to read response from Genius API"
+            })));
+        }
+    };
+    
+    let parsed: serde_json::Value = match serde_json::from_str(&response_text) {
+        Ok(val) => val,
+        Err(e) => {
+            error!("Failed to parse Genius response: {}", e);
+            return Ok(HttpResponse::InternalServerError().json(json!({
+                "error": "Failed to parse Genius API response"
+            })));
+        }
+    };
+    
+    let sections = parsed["response"]["sections"].as_array();
+    let mut results = Vec::new();
+    
+    if let Some(sections) = sections {
+        for section in sections {
+            if section["type"] == "lyric" {
+                if let Some(hits) = section["hits"].as_array() {
+                    for hit in hits {
+                        if let Some(result) = hit["result"].as_object() {
+                            let id = result.get("id").and_then(|v| v.as_i64()).unwrap_or(0);
+                            let title = result.get("title").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                            let artist = result.get("artist_names").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                            
+                            let thumbnail = result
+                                .get("song_art_image_thumbnail_url")
+                                .and_then(|v| v.as_str())
+                                .or_else(|| result.get("header_image_thumbnail_url").and_then(|v| v.as_str()))
+                                .unwrap_or("").to_string();
+                                
+                            let url = result.get("url").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                            
+                            let mut lyrics_snippet = None;
+                            if let Some(highlights) = hit["highlights"].as_array() {
+                                for highlight in highlights {
+                                    if highlight["property"] == "lyrics" {
+                                        lyrics_snippet = highlight["value"].as_str().map(|s| s.to_string());
+                                        break;
+                                    }
+                                }
+                            }
+                            
+                            results.push(GeniusSearchResult {
+                                id,
+                                title,
+                                artist,
+                                thumbnail,
+                                url,
+                                lyrics_snippet,
+                            });
+                        }
+                    }
+                }
+                break;
+            }
+        }
+    }
+    
+    Ok(HttpResponse::Ok().json(GeniusSearchResponse {
+        results,
+        query: search_query.clone(),
+    }))
+}
+
+#[get("/genius/lyrics")]
+async fn get_genius_lyrics(
+    query: web::Query<GeniusSongRequest>,
+) -> Result<impl Responder, Box<dyn Error>> {
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(15))
+        .build()?;
+        
+    let mut headers = HeaderMap::new();
+    headers.insert(USER_AGENT, HeaderValue::from_static("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"));
+    
+    let url = match Url::parse(&query.url) {
+        Ok(url) => {
+            if url.host_str() == Some("genius.com") {
+                url
+            } else {
+                return Ok(HttpResponse::BadRequest().json(json!({
+                    "error": "Only Genius URLs are allowed"
+                })));
+            }
+        },
+        Err(_) => {
+            return Ok(HttpResponse::BadRequest().json(json!({
+                "error": "Invalid URL format"
+            })));
+        }
+    };
+    
+    let response = match client
+        .get(url.as_str())
+        .headers(headers)
+        .send()
+        .await {
+            Ok(resp) => resp,
+            Err(e) => {
+                error!("Failed to fetch lyrics from Genius: {}", e);
+                return Ok(HttpResponse::ServiceUnavailable().json(json!({
+                    "error": "Failed to fetch lyrics from Genius"
+                })));
+            }
+        };
+        
+    if !response.status().is_success() {
+        error!("Genius returned status {} for lyrics", response.status());
+        return Ok(HttpResponse::BadGateway().json(json!({
+            "error": format!("Genius returned status {}", response.status())
+        })));
+    }
+    
+    let html_content = match response.text().await {
+        Ok(text) => text,
+        Err(e) => {
+            error!("Failed to get HTML content from Genius: {}", e);
+            return Ok(HttpResponse::InternalServerError().json(json!({
+                "error": "Failed to read HTML content"
+            })));
+        }
+    };
+    
+    let document = Html::parse_document(&html_content);
+    
+    let title_selector = match Selector::parse("h1[data-lyrics-container='true']") {
+        Ok(selector) => selector,
+        Err(_) => {
+            return Ok(HttpResponse::InternalServerError().json(json!({
+                "error": "Failed to create title selector"
+            })));
+        }
+    };
+    
+    let title = document.select(&title_selector)
+        .next()
+        .map(|el| el.text().collect::<String>().trim().to_string())
+        .unwrap_or_else(|| {
+            match Selector::parse("h1.SongHeader__Title-sc-1b7aqpg-0") {
+                Ok(alt_selector) => document.select(&alt_selector)
+                    .next()
+                    .map(|el| el.text().collect::<String>().trim().to_string())
+                    .unwrap_or_default(),
+                Err(_) => String::new()
+            }
+        });
+    
+    let artist_selector = match Selector::parse("a.SongHeader__Artist-sc-1b7aqpg-2") {
+        Ok(selector) => selector,
+        Err(_) => {
+            return Ok(HttpResponse::InternalServerError().json(json!({
+                "error": "Failed to create artist selector"
+            })));
+        }
+    };
+    
+    let artist = document.select(&artist_selector)
+        .next()
+        .map(|el| el.text().collect::<String>().trim().to_string())
+        .unwrap_or_default();
+    
+    let lyrics_selector = match Selector::parse("div[data-lyrics-container='true']") {
+        Ok(selector) => selector,
+        Err(_) => {
+            return Ok(HttpResponse::InternalServerError().json(json!({
+                "error": "Failed to create lyrics selector"
+            })));
+        }
+    };
+    
+    let mut lyrics = String::new();
+    for element in document.select(&lyrics_selector) {
+        let html = element.inner_html();
+        lyrics.push_str(&html);
+        lyrics.push_str("\n");
+    }
+    
+    if lyrics.trim().is_empty() {
+        return Ok(HttpResponse::NotFound().json(json!({
+            "error": "No lyrics found on this page"
+        })));
+    }
+    
+    Ok(HttpResponse::Ok().json(GeniusSongResponse {
+        title,
+        artist,
+        lyrics,
+        url: query.url.clone(),
+    }))
+}
+
 pub fn configure(cfg: &mut web::ServiceConfig) {
     cfg.service(
         web::scope("/search")
@@ -1100,6 +1368,8 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
             .service(get_last_searched_queries)
             .service(populate_search)
             .service(search_youtube)
-            .service(get_youtube_comments),
+            .service(get_youtube_comments)
+            .service(search_genius_lyrics)
+            .service(get_genius_lyrics),
     );
 }

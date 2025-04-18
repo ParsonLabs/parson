@@ -33,8 +33,6 @@ interface SearchItemResponse {
   created_at: string;
 }
 
-
-
 /**
  * Represents an artist.
  */
@@ -160,6 +158,60 @@ export interface AuthorThumbnail {
 export interface Replies {
   replyCount: number
   continuation: string
+}
+
+/**
+ * Represents a Genius search result.
+ */
+export interface GeniusSearchResult {
+  id: number;
+  title: string;
+  artist: string;
+  thumbnail: string;
+  url: string;
+  lyrics_snippet?: string;
+}
+
+/**
+ * Represents the response from a Genius search.
+ */
+export interface GeniusSearchResponse {
+  results: GeniusSearchResult[];
+  query: string;
+}
+
+/**
+ * Represents the response containing Genius song lyrics.
+ */
+export interface GeniusSongResponse {
+  title: string;
+  artist: string;
+  lyrics: string;
+  url: string;
+}
+
+/**
+ * Search Genius for lyrics.
+ * @param {string} query - The search query string.
+ * @returns {Promise<GeniusSearchResponse>} - A promise that resolves to the Genius search results.
+ */
+export async function searchGenius(query: string): Promise<GeniusSearchResponse> {
+  const response = await axios.get<GeniusSearchResponse>('/search/genius', {
+    params: { q: query },
+  });
+  return response.data;
+}
+
+/**
+ * Get lyrics for a specific song from Genius using its URL.
+ * @param {string} url - The Genius URL of the song.
+ * @returns {Promise<GeniusSongResponse>} - A promise that resolves to the song's lyrics and details.
+ */
+export async function getGeniusLyrics(url: string): Promise<GeniusSongResponse> {
+  const response = await axios.get<GeniusSongResponse>('/search/genius/lyrics', {
+    params: { url: url },
+  });
+  return response.data;
 }
 
 /**

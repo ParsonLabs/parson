@@ -116,15 +116,18 @@ async fn get_artist_metadata(
     None
 }
 
-pub async fn process_artist(client: &Client, artist: &mut Artist, access_token: String) {
-    // let icon_path = Path::new(&icon_path_formatted);
-
+pub async fn process_artist(
+    client: &Client,
+    artist: &mut Artist,
+    access_token: Option<String>,
+    store_audio_db_image: bool,
+) {
     let client1 = client.clone();
     let artist_name1 = artist.name.clone();
     let wikipedia_future =
-        tokio::spawn(
-            async move { fetch_wikipedia_extract(&client1, &artist_name1, None, None).await },
-        );
+        tokio::spawn(async move {
+            fetch_wikipedia_extract(&client1, &artist_name1, None, None).await
+        });
 
     let wikipedia_extract = wikipedia_future.await.unwrap();
     if let Some(wikipedia_extract) = wikipedia_extract {
@@ -134,34 +137,33 @@ pub async fn process_artist(client: &Client, artist: &mut Artist, access_token: 
         log_to_ws(log).await;
     }
 
-    // if !icon_path.exists() {
-    let client2 = client.clone();
-    let artist_name2 = artist.name.clone();
-    let metadata_future = tokio::spawn(async move {
-        get_artist_metadata(&client2, &artist_name2, access_token.clone()).await
-    });
+    if let Some(token) = access_token.clone() {
+        let client2 = client.clone();
+        let artist_name2 = artist.name.clone();
+        let metadata_future = tokio::spawn(async move {
+            get_artist_metadata(&client2, &artist_name2, token).await
+        });
 
-    let metadata_result = metadata_future.await.unwrap();
+        if let Some((img_url, followers)) = metadata_future.await.unwrap() {
+            match download_and_store_icon_art(client, &img_url, &artist.id.to_string()).await {
+                Ok(path) => {
+                    artist.icon_url = path;
+                    artist.followers = followers;
 
-    if let Some(metadata) = metadata_result {
-        match download_and_store_icon_art(client, &metadata.0, &artist.id.to_string()).await {
-            Ok(path) => {
-                artist.icon_url = path;
-                artist.followers = metadata.1;
-
-                let log = format!("Icon art downloaded and stored for Artist: {}", artist.name);
-                info!(log);
-                log_to_ws(log).await;
+                    let log = format!("Icon art downloaded and stored for Artist: {}", artist.name);
+                    info!(log);
+                    log_to_ws(log).await;
+                }
+                Err(e) => warn!(
+                    "Failed to store icon art for Artist: {}. Error: {}",
+                    artist.name, e
+                ),
             }
-            Err(e) => warn!(
-                "Failed to store icon art for Artist: {}. Error: {}",
-                artist.name, e
-            ),
+        } else {
+            warn!("No Spotify icon for {}", artist.name);
         }
     } else {
-        let log = format!("Icon art not found for Artist: {}", artist.name);
-        warn!(log);
-        log_to_ws(log).await;
+        warn!("Skipping Spotify metadata (no token) for {}", artist.name);
     }
 
     let client3 = client.clone();
@@ -170,45 +172,47 @@ pub async fn process_artist(client: &Client, artist: &mut Artist, access_token: 
     
     let audio_db_future = tokio::task::spawn_blocking(move || {
         tokio::runtime::Handle::current().block_on(async move {
-            let mut artist_clone_locked = artist_clone_for_task.lock().unwrap();
-            fetch_audio_db_info(&client3, &mut artist_clone_locked).await
+            fetch_audio_db_info(&client3, &mut artist_clone_for_task.lock().unwrap(), store_audio_db_image).await
         })
     });
-    
+
     match audio_db_future.await {
         Ok(inner_result) => match inner_result {
             Ok(()) => {
                 let artist_clone_locked = artist_clone.lock().unwrap();
                 *artist = artist_clone_locked.clone();
-                let log = format!("Audio DB info processed for Artist: {}", artist.name);
-                info!("{}", log);
+                let log = format!("AudioDB info done for {}", artist.name);
+                info!(log);
                 log_to_ws(log).await;
             }
             Err(e) => {
-                let log = format!("Failed to process Audio DB info for Artist: {}: {}", artist.name, e);
-                warn!("{}", log);
-                log_to_ws(log).await;
+                warn!("AudioDB task error for {}: {}", artist.name, e);
+                log_to_ws(format!("AudioDB error for {}: {}", artist.name, e)).await;
             }
         },
         Err(e) => {
-            let log = format!("Failed to join audio DB task for Artist: {}: {:?}", artist.name, e);
-            warn!("{}", log);
-            log_to_ws(log).await;
+            warn!("Failed to join AudioDB task for {}: {:?}", artist.name, e);
+            log_to_ws(format!("Join AudioDB task failed: {:?}", e)).await;
         }
     }
 
     sleep(Duration::from_secs(1)).await;
-    // }
 }
 
 pub async fn process_artists(client: &Client, library: &mut Vec<Artist>) {
     match get_access_token().await {
-        Ok(access_token) => {
+        Ok(tok) => {
             for artist in library.iter_mut() {
-                process_artist(client, artist, access_token.clone()).await;
+                process_artist(client, artist, Some(tok.clone()), false).await;
             }
         }
-        Err(e) => warn!("Failed to get access token. Error: {}", e),
+        Err(e) => {
+            warn!("Failed to get Spotify token: {}", e);
+            log_to_ws(format!("Spotify token error, using AudioDB fallback: {}", e)).await;
+            for artist in library.iter_mut() {
+                process_artist(client, artist, None, true).await;
+            }
+        }
     }
 }
 
@@ -1679,7 +1683,7 @@ fn map_to_release_group_album(
     })
 }
 
-async fn fetch_audio_db_info(client: &Client, artist: &mut Artist) -> Result<(), Box<dyn StdError + Send + Sync>> {
+async fn fetch_audio_db_info(client: &Client, artist: &mut Artist, store_image: bool) -> Result<(), Box<dyn StdError + Send + Sync>> {
     let mut params = HashMap::new();
     params.insert("search", &artist.name);
 
@@ -1690,6 +1694,22 @@ async fn fetch_audio_db_info(client: &Client, artist: &mut Artist) -> Result<(),
 
     let body = res.text().await?;
 
+    if store_image {
+        let document = Html::parse_document(&body);
+        if let Ok(img_sel) = Selector::parse("div.col-sm-3 img") {
+            if let Some(img_el) = document.select(&img_sel).next() {
+                if let Some(src) = img_el.value().attr("src") {
+                    if let Ok(path) = download_and_store_icon_art(client, src, &artist.id.to_string()).await {
+                        artist.icon_url = path;
+                        let log = format!("AudioDB fallback icon stored for Artist: {}", artist.name);
+                        info!("{}", log.clone());
+                        log_to_ws(log).await;
+                    }
+                }
+            }
+        }
+    }
+        
     let document = Html::parse_document(&body);
     let selector = Selector::parse("div.col-sm-3 a")
         .map_err(|e: scraper::error::SelectorErrorKind| Box::<dyn StdError + Send + Sync>::from(e.to_string()))?;

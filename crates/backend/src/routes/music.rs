@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use tokio::io::AsyncReadExt;
 use tokio::process::Command;
 use tokio_util::io::ReaderStream;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 use walkdir::WalkDir;
 
 use crate::routes::search::populate_search_data;
@@ -112,12 +112,27 @@ async fn process_music_library(path: &str) -> Result<String, Box<dyn std::error:
             info!(log);
             log_to_ws(log).await;
 
-            if let Ok(access_token) = get_access_token().await {
-                for artist in new_artist_entries.iter_mut() {
-                    process_artist(&client, artist, access_token.clone()).await;
-                    current_library.push(artist.clone());
-                }
-            }
+           match get_access_token().await {
+               Ok(token) => {
+                   for artist in new_artist_entries.iter_mut() {
+                       process_artist(&client, artist, Some(token.clone()), false).await;
+                       current_library.push(artist.clone());
+                   }
+               }
+               Err(err) => {
+                   warn!("Spotify token error, falling back to AudioDB for artist icons: {}", err);
+                   log_to_ws(format!(
+                       "Spotify token error, using AudioDB fallback: {}",
+                       err
+                   ))
+                   .await;
+
+                   for artist in new_artist_entries.iter_mut() {
+                       process_artist(&client, artist, None, true).await;
+                       current_library.push(artist.clone());
+                   }
+               }
+           }
         }
 
         if !new_album_entries.is_empty() {
@@ -204,12 +219,28 @@ pub async fn process_music_library_no_ws(path: &str) -> Result<String, Box<dyn s
                 .count();
             info!("Searching icon art for {} artists...", artists_without_icon_count);
 
-            if let Ok(access_token) = get_access_token().await {
-                for artist in new_artist_entries.iter_mut() {
-                    process_artist(&client, artist, access_token.clone()).await;
-                    current_library.push(artist.clone());
-                }
-            }
+           match get_access_token().await {
+               Ok(token) => {
+                   for artist in new_artist_entries.iter_mut() {
+                       process_artist(&client, artist, Some(token.clone()), false).await;
+                       current_library.push(artist.clone());
+                   }
+               }
+               Err(err) => {
+                   warn!("Spotify token error, falling back to AudioDB for artist icons: {}", err);
+                   log_to_ws(format!(
+                       "Spotify token error, using AudioDB fallback: {}",
+                       err
+                   ))
+                   .await;
+
+                   for artist in new_artist_entries.iter_mut() {
+                       process_artist(&client, artist, None, true).await;
+                       current_library.push(artist.clone());
+                   }
+               }
+           }
+
         }
 
         if !new_album_entries.is_empty() {

@@ -136,7 +136,7 @@ export default function ArtistComponent() {
                 transition={{ duration: 0.6, delay: 0.5 }}
                 className="text-gray-300 text-lg font-medium"
               >
-                {formatFollowers(artist.followers)} Followers
+                {artist.followers > 0 && `${formatFollowers(artist.followers)} Followers`}
               </motion.div>
             </div>
           </motion.div>

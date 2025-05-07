@@ -352,7 +352,7 @@ export function PlayerProvider({ children }: PlayerProviderProps) {
 
     if (isYT !== isYouTubeUrl) {
       if (audioRef.current) {
-        audioRef.current.pause();
+        // audioRef.current.pause();
       }
       setIsPlaying(false);
     }
@@ -362,13 +362,13 @@ export function PlayerProvider({ children }: PlayerProviderProps) {
     setAudioSourceState(source);
   };
 
+  // Replace the audioSource effect with this updated version:
   useEffect(() => {
     if (!audioSource) return;
-
-    const isYT =
-      audioSource.includes("youtube.com") || audioSource.includes("youtu.be");
+  
+    const isYT = audioSource.includes("youtube.com") || audioSource.includes("youtu.be");
     setIsYouTubeUrl(isYT);
-
+  
     if (isYT) {
       if (audioRef.current) {
         audioRef.current.pause();
@@ -377,34 +377,54 @@ export function PlayerProvider({ children }: PlayerProviderProps) {
       }
     } else {
       const formattedSource = audioSource;
-
+  
       if (audioRef.current && audioRef.current.src !== formattedSource) {
         const wasPlaying = !audioRef.current.paused;
-
-        audioRef.current.src = formattedSource;
-        audioRef.current.load();
-
+        
         audioRef.current.oncanplaythrough = null;
-
+        audioRef.current.onloadeddata = null;
+  
+        audioRef.current.pause();
+        audioRef.current.currentTime = 0;
+        
+        audioRef.current.src = formattedSource;
+  
         if (wasPlaying) {
-          audioRef.current.oncanplaythrough = function oncePlayable() {
-            audioRef.current!.oncanplaythrough = null;
-
-            audioRef
-              .current!.play()
+          const playPromise = () => {
+            if (!audioRef.current) return;
+            
+            audioRef.current
+              .play()
               .then(() => {
                 console.log("Audio resumed after source change");
+                setIsPlaying(true);
               })
               .catch((err) => {
-                console.error("Failed to resume after source change:", err);
-                setIsPlaying(false);
+                if (err.name === 'AbortError') {
+                  setTimeout(() => {
+                    audioRef.current?.play()
+                      .then(() => {
+                        console.log("Audio resumed after retry");
+                        setIsPlaying(true);
+                      })
+                      .catch((finalErr) => {
+                        console.error("Final play attempt failed:", finalErr);
+                        setIsPlaying(false);
+                      });
+                  }, 100);
+                } else {
+                  console.error("Failed to resume after source change:", err);
+                  setIsPlaying(false);
+                }
               });
           };
+  
+          audioRef.current.onloadeddata = playPromise;
+          audioRef.current.oncanplaythrough = playPromise;
         }
       }
     }
   }, [audioSource, bitrate]);
-
   const setSongCallback = async (
     song: LibrarySong,
     artist: Artist,
@@ -431,7 +451,7 @@ export function PlayerProvider({ children }: PlayerProviderProps) {
     if (isYouTubeUrl) {
       setAudioSource(song.path);
     } else {
-      setAudioSource(song.path);
+      setAudioSource(`${getBaseURL()}/api/stream/${encodeURIComponent(song?.path ?? "")}?bitrate=0`);
     }
 
     const index = queueRef.current.findIndex((q) => q.song.id === song.id);
@@ -553,7 +573,7 @@ export function PlayerProvider({ children }: PlayerProviderProps) {
   };
 
   useEffect(() => {
-    if (audioRef.current) {
+    if (audioRef.current && !isPlaying) {
       audioRef.current.src = audioSource;
     }
 

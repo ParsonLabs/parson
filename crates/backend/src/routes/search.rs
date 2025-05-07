@@ -3,7 +3,7 @@ use std::error::Error;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 
 use actix_web::{delete, get, post, web, HttpResponse, Responder};
 use chrono::NaiveDateTime;
@@ -69,6 +69,13 @@ fn extract_acronym(name: &str) -> String {
 
 lazy_static! {
     static ref TEMP_DIR_PATH: Arc<Mutex<Option<PathBuf>>> = Arc::new(Mutex::new(None));
+    static ref WORKING_INSTANCE: Mutex<Option<InstanceCache>> = Mutex::new(None);
+}
+
+#[derive(Debug, Clone)]
+struct InstanceCache {
+    url: String,
+    last_checked: SystemTime,
 }
 
 pub fn get_tantivy_index_path() -> PathBuf {
@@ -485,7 +492,7 @@ async fn perform_search(
         let parts: Vec<&str> = query_text.splitn(2, " by ").collect();
         if parts.len() == 2 {
             let title_part = parts[0].trim();
-            let artist_part = parts[1].trim();
+            let _artist_part = parts[1].trim();
 
             let title_fuzzy =
                 FuzzyTermQuery::new(Term::from_field_text(name_field, title_part), 3, true);
@@ -862,6 +869,49 @@ struct InvidiousVideo {
     author: String,
 }
 
+async fn get_working_invidious_instance(client: &reqwest::Client) -> String {
+    if let Ok(cache) = WORKING_INSTANCE.lock() {
+        if let Some(instance) = cache.as_ref() {
+            if instance
+                .last_checked
+                .elapsed()
+                .map(|elapsed| elapsed < Duration::from_secs(86400))
+                .unwrap_or(false)
+            {
+                return instance.url.clone();
+            }
+        }
+    }
+
+    let instances = vec![
+        "https://inv.nadeko.net",
+        "https://vid.puffyan.us",
+        "https://y.com.sb",
+    ];
+
+    for instance in instances {
+        match client
+            .get(format!("{}/api/v1/stats", instance))
+            .timeout(Duration::from_secs(5))
+            .send()
+            .await
+        {
+            Ok(response) if response.status().is_success() => {
+                if let Ok(mut cache) = WORKING_INSTANCE.lock() {
+                    *cache = Some(InstanceCache {
+                        url: instance.to_string(),
+                        last_checked: SystemTime::now(),
+                    });
+                }
+                return instance.to_string();
+            }
+            _ => continue,
+        }
+    }
+
+    "https://inv.nadeko.net".to_string()
+}
+
 #[get("/youtube")]
 async fn search_youtube(
     query: web::Query<SearchRequest>,
@@ -869,76 +919,83 @@ async fn search_youtube(
     let client = reqwest::Client::new();
     let search_query = &query.q;
 
-    for _ in 0..3 {
-        let invidious_url =
-            env::var("INVIDIOUS_URL").unwrap_or_else(|_| get_random_invidious_instance());
+    let invidious_url = get_working_invidious_instance(&client).await;
 
-        let response = match client
-            .get(format!(
-                "{}/api/v1/search?q={}&type=video&page=1",
-                invidious_url.trim_end_matches('/'),
-                search_query
-            ))
-            .header("Accept", "application/json")
-            .send()
-            .await
-        {
-            Ok(resp) => resp,
-            Err(e) => {
-                warn!("Failed to connect to {}: {}", invidious_url, e);
-                continue;
+    let response = match client
+        .get(format!(
+            "{}/api/v1/search?q={}&type=video&page=1",
+            invidious_url.trim_end_matches('/'),
+            search_query
+        ))
+        .header("Accept", "application/json")
+        .send()
+        .await
+    {
+        Ok(resp) => resp,
+        Err(e) => {
+            if let Ok(mut cache) = WORKING_INSTANCE.lock() {
+                *cache = None;
             }
-        };
-
-        if !response.status().is_success() {
-            warn!(
-                "Instance {} returned status {}",
-                invidious_url,
-                response.status()
-            );
-            continue;
+            warn!("Failed to connect to {}: {}", invidious_url, e);
+            return Ok(HttpResponse::ServiceUnavailable().json(serde_json::json!({
+                "error": "Failed to fetch results from Invidious"
+            })));
         }
+    };
 
-        let response_text = match response.text().await {
-            Ok(text) => text,
-            Err(e) => {
-                warn!("Failed to get response text from {}: {}", invidious_url, e);
-                continue;
-            }
-        };
-
-        match serde_json::from_str::<Vec<InvidiousVideo>>(&response_text) {
-            Ok(videos) => {
-                let limited_results = videos
-                    .into_iter()
-                    .take(10)
-                    .map(|video| YouTubeVideoResponse {
-                        id: video.video_id.clone(),
-                        title: video.title,
-                        thumbnail: format!(
-                            "https://i.ytimg.com/vi/{}/mqdefault.jpg",
-                            video.video_id
-                        ),
-                        channel: Channel { name: video.author },
-                        url: format!("https://youtube.com/watch?v={}", video.video_id),
-                    })
-                    .collect::<Vec<_>>();
-
-                return Ok(HttpResponse::Ok().json(limited_results));
-            }
-            Err(e) => {
-                warn!(
-                    "Failed to parse response from {}: {}\nResponse: {}",
-                    invidious_url, e, response_text
-                );
-                continue;
-            }
+    if !response.status().is_success() {
+        if let Ok(mut cache) = WORKING_INSTANCE.lock() {
+            *cache = None;
         }
+        warn!(
+            "Instance {} returned status {}",
+            invidious_url,
+            response.status()
+        );
+        return Ok(HttpResponse::ServiceUnavailable().json(serde_json::json!({
+            "error": "Invidious instance returned error"
+        })));
     }
 
-    Ok(HttpResponse::ServiceUnavailable().json(serde_json::json!({
-        "error": "Failed to fetch results from any Invidious instance"
-    })))
+    let response_text = match response.text().await {
+        Ok(text) => text,
+        Err(e) => {
+            warn!("Failed to get response text from {}: {}", invidious_url, e);
+            return Ok(HttpResponse::ServiceUnavailable().json(serde_json::json!({
+                "error": "Failed to fetch results from Invidious"
+            })));
+        }
+    };
+
+    match serde_json::from_str::<Vec<InvidiousVideo>>(&response_text) {
+        Ok(videos) => {
+            let limited_results = videos
+                .into_iter()
+                .take(10)
+                .map(|video| YouTubeVideoResponse {
+                    id: video.video_id.clone(),
+                    title: video.title,
+                    thumbnail: format!(
+                        "https://i.ytimg.com/vi/{}/mqdefault.jpg",
+                        video.video_id
+                    ),
+                    channel: Channel { name: video.author },
+                    url: format!("https://youtube.com/watch?v={}", video.video_id),
+                })
+                .collect::<Vec<_>>();
+
+            return Ok(HttpResponse::Ok().json(limited_results));
+        }
+        Err(e) => {
+            warn!(
+                "Failed to parse response from {}: {}\nResponse: {}",
+                invidious_url, e, response_text
+            );
+            return Ok(HttpResponse::ServiceUnavailable().json(serde_json::json!({
+                "error": "Failed to fetch results from Invidious"
+            })));
+        }
+    }
 }
 
 #[derive(Deserialize)]

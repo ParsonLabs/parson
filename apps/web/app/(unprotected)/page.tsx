@@ -63,6 +63,24 @@ export default function MainPage() {
         console.error("Error checking server URL:", error);
         const storedServer = localStorage.getItem("server");
         if (storedServer) {
+          try {
+            const savedServer = JSON.parse(storedServer);
+            const serverUrl = savedServer.server_url || savedServer.local_address;
+            const response = await fetch(`${serverUrl}/api/s/server/info`);
+            
+            if (response.ok) {
+              const serverInfo: ServerInfo = await response.json();
+              if (serverInfo.product_name && serverInfo.startup_wizard_completed) {
+                localStorage.setItem('server_url', serverUrl);
+                localStorage.setItem('server', JSON.stringify(serverInfo));
+                push("/home");
+                return;
+              }
+            }
+          } catch (connectionError) {
+            console.error("Auto-connect failed:", connectionError);
+          }
+
           setShowServerSelect(true);
         } else {
           setShowServerURLInput(true);

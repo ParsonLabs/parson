@@ -38,7 +38,7 @@
     "electron-serve": "2.0.0",
     "fast-average-color": "^9.4.0",
     "fastest-levenshtein": "1.0.16",
-    "framer-motion": "12.4.6",
+    "framer-motion": "11.2.14",
     "jwt-decode": "4.0.0",
     "lucide-react": "0.487.0",
     "next": "15.2.4",

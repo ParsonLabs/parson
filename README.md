@@ -19,6 +19,8 @@
 
 <img width="1280" alt="Home Page" src="https://github.com/user-attachments/assets/24ac1681-30e3-4570-9501-e0faab259bd9" />
 <img width="1280" alt="Album Showcase" src="https://github.com/user-attachments/assets/361b7f64-cee3-4571-a7ff-b12718476a70" />
+<img width="1280" alt="image" src="https://github.com/user-attachments/assets/ad58933c-f4c6-4e48-9189-2a9a56d4f2f9" />
+
 
 ## Get Started
 

@@ -7,6 +7,7 @@ use audiotags::Tag;
 use lofty::{AudioFile, Probe};
 use rayon::prelude::*;
 use regex::Regex;
+use tracing::warn;
 use walkdir::WalkDir;
 
 use crate::structures::structures::{Album, Artist, Song};
@@ -34,7 +35,7 @@ pub async fn index_library(path_to_library: &str) -> Result<Arc<Mutex<Vec<Artist
             Ok(t) => t,
             Err(e) => {
                 warn!("Failed to read tags from {}: {}", path.display(), e);
-                Tag::new()
+                Tag::new().read_from_path(&path).ok().unwrap()
             }
         };
 

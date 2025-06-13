@@ -37,8 +37,8 @@ useEffect(() => {
     <div className="mb-24 pt-12">
       <h2 className="text-2xl font-bold text-white mb-4">You Might Also Like</h2>
       <div className="bg-black/20 backdrop-blur-sm rounded-xl p-4">
-        <ScrollArea>
-          <div className="flex space-x-4 pb-4">
+        <ScrollArea className="w-full overflow-x-auto">
+          <div className="flex flex-nowrap space-x-4 pb-4">
             {similarArtists.map((artist) => (
               <Link 
                 key={artist.id} 

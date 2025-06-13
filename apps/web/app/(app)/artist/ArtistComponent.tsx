@@ -79,7 +79,8 @@ export default function ArtistComponent() {
   const artistIconURL = artist.icon_url.length === 0 ? "/snf.png" : `${getBaseURL()}/image/${encodeURIComponent(artist.icon_url)}?raw=true`;
 
   return (
-    <div className="relative min-h-screen">
+    <div className="max-w-[180vh] relative min-h-screen">
+
       <div className="fixed inset-0 bg-neutral-900" />
       
       <motion.div 
@@ -96,7 +97,7 @@ export default function ArtistComponent() {
       />
   
       <div className="relative z-10 px-4 md:px-8 pt-20 pb-16">
-        <div className="max-w-8xl mx-auto">
+        <div className="mx-auto">
           <motion.div 
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -233,7 +234,7 @@ export default function ArtistComponent() {
             </motion.div>
           )}
   
-          {albums.some(album => 
+          {albums.some(album =>
             (album.release_group_album?.genres || []).length > 0 ||
             (album.release_album?.genres || []).length > 0
           ) && (

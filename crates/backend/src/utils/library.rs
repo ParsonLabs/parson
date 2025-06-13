@@ -29,31 +29,68 @@ pub async fn index_library(path_to_library: &str) -> Result<Arc<Mutex<Vec<Artist
 
     files.par_iter().for_each(|entry| {
         let path = entry.path();
+        
         let tag = match Tag::new().read_from_path(&path) {
             Ok(t) => t,
-            Err(_) => return,
+            Err(e) => {
+                warn!("Failed to read tags from {}: {}", path.display(), e);
+                Tag::new()
+            }
         };
 
-        let artists: Vec<String> = tag.artists().unwrap().iter().map(|&s| s.to_string()).collect();
-        let formatted_artists = format_contributing_artists(artists);
+        let artists: Vec<String> = tag.artists()
+            .unwrap_or_default()
+            .iter()
+            .map(|&s| s.to_string())
+            .collect();
 
-        let song_name = tag.title().unwrap_or_default().to_string();
+        let song_name = tag.title()
+            .unwrap_or_else(|| {
+                path.file_stem()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("Unknown Title")
+            })
+            .to_string();
+
+        let album_name = tag.album_title()
+            .unwrap_or_else(|| {
+                // Use parent directory name as fallback
+                path.parent()
+                    .and_then(|p| p.file_name())
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("Unknown Album")
+            })
+            .to_string();
+
+        let track_number = tag.track_number().unwrap_or(0);
+
+        let duration = match Probe::open(path) {
+            Ok(probe) => match probe.read() {
+                Ok(tagged_file) => tagged_file.properties().duration().as_secs_f64(),
+                Err(e) => {
+                    warn!("Failed to read audio properties from {}: {}", path.display(), e);
+                    0.0
+                }
+            },
+            Err(e) => {
+                warn!("Failed to probe audio file {}: {}", path.display(), e);
+                0.0
+            }
+        };
+
+        let formatted_artists = if artists.is_empty() {
+            vec![(String::from("Unknown Artist"), Vec::new())]
+        } else {
+            format_contributing_artists(artists)
+        };
+
         let artist_name = formatted_artists.get(0).map_or(String::new(), |a| a.0.clone());
         let contributing_artists = formatted_artists.get(0).map_or(Vec::new(), |a| a.1.clone());
 
-        let album_name = tag.album_title().unwrap_or_default().to_string();
         let re = Regex::new(r"\(.*\)").unwrap();
         let album_name_without_cd = re.replace_all(&album_name, "").trim().to_string();
-        let track_number = tag.track_number().unwrap_or_default();
 
         let id = hash_song(&song_name, &artist_name, &album_name, track_number);
-
-        let tagged_file = Probe::open(path)
-            .expect("ERROR: Bad path provided!")
-            .read()
-            .expect("ERROR: Failed to read file!");
-
-        let duration = tagged_file.properties().duration().as_secs_f64();
 
         let album_id;
         {

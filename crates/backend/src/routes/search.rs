@@ -870,6 +870,7 @@ struct InvidiousVideo {
 }
 
 async fn get_working_invidious_instance(client: &reqwest::Client) -> String {
+    // Return cached instance if checked recently
     if let Ok(cache) = WORKING_INSTANCE.lock() {
         if let Some(instance) = cache.as_ref() {
             if instance
@@ -883,6 +884,44 @@ async fn get_working_invidious_instance(client: &reqwest::Client) -> String {
         }
     }
 
+    // If INVIDIOUS_URL is set, try those instances first
+    if let Ok(invidious_env) = env::var("INVIDIOUS_URL") {
+        let candidates: Vec<String> = invidious_env
+            .split(',')
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .map(|s| {
+                if s.starts_with("http://") || s.starts_with("https://") {
+                    s
+                } else {
+                    format!("https://{}", s)
+                }
+            })
+            .collect();
+
+        for instance in candidates {
+            let stats_url = format!("{}/api/v1/stats", instance.trim_end_matches('/'));
+            match client
+                .get(&stats_url)
+                .timeout(Duration::from_secs(5))
+                .send()
+                .await
+            {
+                Ok(response) if response.status().is_success() => {
+                    if let Ok(mut cache) = WORKING_INSTANCE.lock() {
+                        *cache = Some(InstanceCache {
+                            url: instance.clone(),
+                            last_checked: SystemTime::now(),
+                        });
+                    }
+                    return instance;
+                }
+                _ => continue,
+            }
+        }
+    }
+
+    // Fallback to built-in list
     let instances = vec![
         "https://inv.nadeko.net",
         "https://vid.puffyan.us",
@@ -890,8 +929,9 @@ async fn get_working_invidious_instance(client: &reqwest::Client) -> String {
     ];
 
     for instance in instances {
+        let stats_url = format!("{}/api/v1/stats", instance.trim_end_matches('/'));
         match client
-            .get(format!("{}/api/v1/stats", instance))
+            .get(&stats_url)
             .timeout(Duration::from_secs(5))
             .send()
             .await
@@ -909,6 +949,7 @@ async fn get_working_invidious_instance(client: &reqwest::Client) -> String {
         }
     }
 
+    // Final fallback
     "https://inv.nadeko.net".to_string()
 }
 
@@ -1058,19 +1099,6 @@ struct Replies {
     continuation: Option<String>,
 }
 
-fn get_random_invidious_instance() -> String {
-    let instances = vec![
-        "https://inv.nadeko.net",
-        "https://vid.puffyan.us",
-        "https://y.com.sb",
-    ];
-
-    instances
-        .choose(&mut rand::thread_rng())
-        .unwrap_or(&"https://inv.nadeko.net")
-        .to_string()
-}
-
 #[get("/youtube/comments")]
 async fn get_youtube_comments(
     query: web::Query<CommentsRequest>,
@@ -1081,8 +1109,7 @@ async fn get_youtube_comments(
     let video_id = &query.video_id;
 
     for _ in 0..3 {
-        let invidious_url =
-            env::var("INVIDIOUS_URL").unwrap_or_else(|_| get_random_invidious_instance());
+        let invidious_url = get_working_invidious_instance(&client).await;
 
         info!("Trying Invidious instance: {}", invidious_url);
 
@@ -1099,6 +1126,10 @@ async fn get_youtube_comments(
             Ok(resp) => resp,
             Err(e) => {
                 warn!("Failed to connect to {}: {}", invidious_url, e);
+                // Invalidate cache so the helper will try another instance next iteration
+                if let Ok(mut cache) = WORKING_INSTANCE.lock() {
+                    *cache = None;
+                }
                 continue;
             }
         };
@@ -1109,6 +1140,9 @@ async fn get_youtube_comments(
                 invidious_url,
                 response.status()
             );
+            if let Ok(mut cache) = WORKING_INSTANCE.lock() {
+                *cache = None;
+            }
             continue;
         }
 
@@ -1119,6 +1153,9 @@ async fn get_youtube_comments(
             }
             Err(e) => {
                 warn!("Failed to get response text from {}: {}", invidious_url, e);
+                if let Ok(mut cache) = WORKING_INSTANCE.lock() {
+                    *cache = None;
+                }
                 continue;
             }
         };
@@ -1127,6 +1164,9 @@ async fn get_youtube_comments(
             Ok(comments) => {
                 if comments.comments.is_empty() {
                     warn!("No comments returned from {}", invidious_url);
+                    if let Ok(mut cache) = WORKING_INSTANCE.lock() {
+                        *cache = None;
+                    }
                     continue;
                 }
                 return Ok(HttpResponse::Ok().json(comments));
@@ -1136,6 +1176,9 @@ async fn get_youtube_comments(
                     "Failed to parse comments from {}: {}\nResponse: {}",
                     invidious_url, e, response_text
                 );
+                if let Ok(mut cache) = WORKING_INSTANCE.lock() {
+                    *cache = None;
+                }
                 continue;
             }
         }

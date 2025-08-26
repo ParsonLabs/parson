@@ -26,7 +26,7 @@ FROM oven/bun:alpine AS frontend-builder
  RUN yarn build
  
  # Stage 3: Build the Rust backend
- FROM rust:slim AS backend-builder
+ FROM rust:1.79-bookworm-slim AS backend-builder
  WORKDIR /usr/src
  
  RUN apt-get update && apt-get install -y --no-install-recommends \

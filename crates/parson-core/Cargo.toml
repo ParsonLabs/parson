@@ -1,0 +1,14 @@
+[package]
+name = "parson-core"
+description = "Product-neutral identity, library, file, and event primitives for Parson hosts"
+version = "1.0.0"
+edition = "2024"
+rust-version = "1.97"
+license = "GPL-3.0-only"
+
+[dependencies]
+base64 = "0.22.1"
+diesel = { version = "2.3.11", default-features = false, features = ["sqlite"] }
+libsqlite3-sys = { version = "0.37.0", features = ["bundled"] }
+serde = { version = "1.0.228", features = ["derive"] }
+sha2 = "0.11.0"

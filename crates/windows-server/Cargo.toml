@@ -1,0 +1,40 @@
+[package]
+name = "parson-music-windows-server"
+description = "Background tray host for Parson for Windows"
+version = "1.0.0"
+edition = "2024"
+rust-version = "1.97"
+license = "GPL-3.0-only"
+build = "build.rs"
+
+[[bin]]
+name = "ParsonMusicServer"
+path = "src/main.rs"
+
+[target.'cfg(windows)'.dependencies]
+actix-web = "4"
+dirs = "6.0.0"
+parson-music = { path = "../backend" }
+reqwest = { version = "0.13.4", default-features = false, features = ["blocking", "json", "rustls"] }
+semver = "1.0.28"
+serde = { version = "1.0.228", features = ["derive"] }
+sha2 = "0.11.0"
+tokio = { version = "1.52.3", features = ["macros", "rt-multi-thread", "sync"] }
+tracing = "0.1.44"
+tracing-appender = "0.2.4"
+tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
+winreg = "0.55.0"
+windows-sys = { version = "0.61.2", features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Gdi",
+    "Win32_System_LibraryLoader",
+    "Win32_System_Threading",
+    "Win32_UI_Shell",
+    "Win32_UI_WindowsAndMessaging",
+] }
+
+[build-dependencies]
+embed-resource = "3.0.6"
+
+[target.'cfg(windows)'.dev-dependencies]
+tempfile = "3.27.0"

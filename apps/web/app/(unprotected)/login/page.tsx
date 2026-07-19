@@ -1,148 +1,82 @@
 "use client";
 
-import { useSession } from "@/components/Providers/AuthProvider";
-import getSession from "@/lib/Authentication/JWT/getSession";
-import getBaseURL from "@/lib/Server/getBaseURL";
-import { zodResolver } from '@hookform/resolvers/zod';
-import { getServerInfo } from "@music/sdk";
-import { Button } from '@music/ui/components/button';
-import {
-  Form,
-  FormControl,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from "@music/ui/components/form";
-import { Input } from '@music/ui/components/input';
-import { useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
-import { SubmitHandler, useForm } from 'react-hook-form';
-import * as z from 'zod';
+import { useState, type FormEvent } from "react";
+import { useRouter } from "next/navigation";
+import { login, refreshMediaToken } from "@parson/music-sdk";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { useSession } from "@/features/account/session-provider";
+import { toast } from "sonner";
+import Link from "next/link";
+import ParsonBrandMark from "@/components/icons/parson-brand-mark";
 
-const schema = z.object({
-  username: z.string().min(1, { message: 'Username is required' }),
-  password: z.string().min(1, { message: 'Password is required' }),
-});
-
-type FormData = z.infer<typeof schema>;
-
-export default function Login() {
-  const { push } = useRouter();
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
-  const [serverInfo, setServerInfo] = useState<{ login_disclaimer?: string } | null>(null);
+export default function LoginPage() {
+  const router = useRouter();
   const { setSession } = useSession();
-  
-  const form = useForm<FormData>({
-    resolver: zodResolver(schema),
-  });
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [submitting, setSubmitting] = useState(false);
 
-  useEffect(() => {
-    async function fetchServerInfo() {
-      try {
-        const info = await getServerInfo();
-        if (!info) {
-          setIsLoading(false)
-          push("/")
-          return
-        }
-        setServerInfo(info);
-      } catch (error) {
-        console.error('Error fetching server info:', error);
-      }
-    };
-
-    fetchServerInfo();
-  }, [push]);
-
-  const { handleSubmit } = form;
-
-  const onSubmit: SubmitHandler<FormData> = async (data) => {
-    if (isLoading) return;
-    setIsLoading(true);
-    setErrorMessage(null);
-
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setSubmitting(true);
     try {
-      const response = await fetch(`${getBaseURL()}/api/auth/login`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(data),
-        credentials: 'include'
-      });
-  
-      const result = await response.json();
-
-      const newSession = await getSession()
-      setSession(newSession)
-      push("/home")
-    } catch (error) {
-      setErrorMessage('An error occurred during login');
+      const result = await login({ username, password });
+      if (!result.status) {
+        toast(result.message || "Sign in failed.");
+        return;
+      }
+      if (!result.claims) throw new Error("Sign in response had no session");
+      const media = await refreshMediaToken();
+      if (!media.status || !media.media_token) {
+        throw new Error("Media authorization unavailable");
+      }
+      setSession(result.claims);
+      const next = new URLSearchParams(window.location.search).get("next");
+      router.replace(next === "/setup" ? next : "/");
+    } catch {
+      toast("Could not reach the server.");
     } finally {
-      setIsLoading(false);
+      setSubmitting(false);
     }
-  };
+  }
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen bg-zinc-950">
-      <h1 className="text-2xl font-bold text-center text-white pb-10">Sign In</h1>
-      {errorMessage && (
-        <div className="text-center text-red-600">
-          {errorMessage}
-        </div>
-      )}
-      <Form {...form}>
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-6 text-white w-80">
-          <FormField
-            control={form.control}
-            name="username"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel className="block text-sm font-medium text-white">Username</FormLabel>
-                <FormControl>
-                  <Input
-                    className="block w-full px-3 py-2 mt-1 border border-gray-600 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm text-white bg-gray-800"
-                    placeholder="Enter your username"
-                    {...field}
-                  />
-                </FormControl>
-                <FormMessage className="text-sm text-red-600">{form.formState.errors.username?.message?.toString()}</FormMessage>
-              </FormItem>
-            )}
-          />
-          <FormField
-            control={form.control}
-            name="password"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel className="block text-sm font-medium text-white">Password</FormLabel>
-                <FormControl>
-                  <Input
-                    type="password"
-                    className="block w-full px-3 py-2 mt-1 border border-gray-600 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm text-white bg-gray-800"
-                    placeholder="Enter your password"
-                    {...field}
-                  />
-                </FormControl>
-                <FormMessage className="text-sm text-red-600">{form.formState.errors.password?.message?.toString()}</FormMessage>
-              </FormItem>
-            )}
-          />
-          <Button
-            type="submit"
-            disabled={isLoading}
-            className="w-full px-4 py-2 mt-6 text-white bg-indigo-800 rounded-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {isLoading ? 'Logging in...' : 'Login'}
-          </Button>
-        </form>
-      </Form>
-
-      {serverInfo?.login_disclaimer && (
-        <p className="mt-4 text-center text-gray-400">{serverInfo.login_disclaimer}</p>
-      )}
-    </div>
+    <main className="flex min-h-screen min-h-dvh items-center justify-center px-5 py-24">
+      <form onSubmit={submit} className="w-full max-w-sm space-y-4">
+        <ParsonBrandMark className="mb-7 h-16 w-16 sm:hidden" />
+        <h1 className="pb-2 text-3xl font-bold tracking-tight">Welcome back</h1>
+        <Input
+          aria-label="Username"
+          autoComplete="username"
+          className="h-12 rounded-xl px-4 text-base"
+          placeholder="Username"
+          value={username}
+          onChange={(event) => setUsername(event.target.value)}
+        />
+        <Input
+          aria-label="Password"
+          autoComplete="current-password"
+          className="h-12 rounded-xl px-4 text-base"
+          placeholder="Password"
+          type="password"
+          value={password}
+          onChange={(event) => setPassword(event.target.value)}
+        />
+        <Button
+          className="h-12 w-full rounded-full bg-white text-base text-black hover:bg-zinc-200"
+          disabled={submitting}
+          type="submit"
+        >
+          {submitting ? "Signing in…" : "Sign in"}
+        </Button>
+        <Link
+          className="block min-h-12 rounded-full py-3 text-center text-sm font-medium text-zinc-500 hover:bg-white/[0.04] hover:text-white"
+          href="/connect"
+        >
+          Connect to another server
+        </Link>
+      </form>
+    </main>
   );
 }

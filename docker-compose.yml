@@ -1,10 +1,16 @@
 services:
-  music-server:
-    image: ghcr.io/willkirkmanm/music
-    container_name: parsonlabs-music
+  parson-music:
+    image: parson-music:1.0.0
     ports:
       - "1993:1993"
     volumes:
-      - "/path/to/config:/ParsonLabsMusic"
-      - "/path/to/music:/music"
+      - "/path/to/config:/Parson"
+      - "/path/to/music:/music:ro"
     restart: unless-stopped
+    healthcheck:
+      test:
+        ["CMD", "curl", "--fail", "--silent", "http://127.0.0.1:1993/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s

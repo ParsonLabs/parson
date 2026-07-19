@@ -1,0 +1,61 @@
+---
+title: Development
+description: Build, test, contribute, release, and integrate with the open-source Parson codebase.
+---
+
+Parson is open source under **GPL-3.0-only**. Source, issues, releases, and security reporting live in the [Parson repository](https://github.com/ParsonLabs/Parson).
+
+## Build from source
+
+Install Bun 1.3.14, Rust stable, FFmpeg, and platform tooling. From the repository root:
+
+```powershell
+bun install --frozen-lockfile
+cargo run -p parson-music
+```
+
+In another terminal:
+
+```powershell
+bun --filter parson-music-web dev
+```
+
+Open `http://localhost:3000`. The embedded production API/UI origin is `http://localhost:1993`.
+
+## Repository layout
+
+| Path                        | Purpose                                                                          |
+| --------------------------- | -------------------------------------------------------------------------------- |
+| `crates/parson-core`        | Product-independent accounts and library registry boundary                       |
+| `crates/backend`            | Rust music server, indexer, database, API, discovery, lyrics, and playback state |
+| `crates/windows-server`     | Native Windows notification-area server host and updater                         |
+| `apps/web`                  | Next.js web UI embedded by native/server releases                                |
+| `apps/desktop`              | Shared Linux and Windows Electron shell and native packaging                     |
+| `apps/mobile`               | Expo/React Native client for Android and iOS                                     |
+| `packages/parson-music-sdk` | Typed TypeScript API client                                                      |
+| `apps/site`                 | The Parson website and documentation                                             |
+
+## Tests
+
+Run the checks proportional to your change. The release suite includes TypeScript type checks and tests, web and site builds, mobile linting, Rust format/clippy/tests/build, dependency audits, and desktop packaging.
+
+## Contributions
+
+Keep product names, API ownership, request budgets, bounded collections, and local-first privacy behavior intact. Add regression tests for behavior changes. Do not commit secrets, private libraries, copyrighted recordings, or personal diagnostic data.
+
+## Release process
+
+Parson follows Semantic Versioning. Maintainers build and verify platform artifacts, sign release packages, publish the differentiated container tag, validate updater metadata/checksums, and smoke-test fresh install, migration, discovery, streaming, and rollback paths.
+
+## API and protocol compatibility
+
+- `/api/core/v1` owns accounts, discovery, setup, and library registrations.
+- `/api/music/v1` owns catalog, search, streaming, lyrics, playlists, queue, and playback behavior.
+- `/api/v1` remains a compatibility alias for existing clients.
+- `/.well-known/parson` exposes `protocolVersion` and capabilities for client negotiation.
+
+The TypeScript SDK is the practical API reference today. There is no separately versioned OpenAPI publication in Parson 1.0.x. Clients should check the discovery protocol version and ignore unknown JSON fields for forward compatibility.
+
+## Licensing
+
+Parson's original code is licensed `GPL-3.0-only`. Third-party dependencies and inherited template portions retain their own notices. Distributing modified binaries requires compliance with the GPL and applicable third-party terms.

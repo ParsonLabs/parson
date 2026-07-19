@@ -1,0 +1,23 @@
+{
+  "name": "@parson/music-sdk",
+  "version": "1.0.0",
+  "private": true,
+  "license": "GPL-3.0-only",
+  "type": "module",
+  "scripts": {
+    "test": "bun test"
+  },
+  "exports": {
+    ".": "./src/index.ts",
+    "./types": "./src/domain/types.ts",
+    "./resources/*": "./src/resources/*.ts"
+  },
+  "devDependencies": {
+    "@parson/typescript-config": "*",
+    "typescript": "7.0.2"
+  },
+  "dependencies": {
+    "cookies-next": "^6.1.1",
+    "jwt-decode": "4.0.0"
+  }
+}

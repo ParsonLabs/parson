@@ -1,0 +1,47 @@
+const {
+  copyFileSync,
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  unlinkSync,
+} = require("node:fs");
+const path = require("node:path");
+const { spawnSync } = require("node:child_process");
+
+const workspace = path.resolve(__dirname, "../../..");
+const binDirectory = path.join(workspace, "apps", "desktop", "electron", "bin");
+const windows = process.platform === "win32";
+const executable = `parson-music-server${windows ? ".exe" : ""}`;
+
+function run(command, args, cwd = workspace) {
+  const result = spawnSync(command, args, { cwd, stdio: "inherit" });
+  if (result.error) throw result.error;
+  if (result.status !== 0) {
+    throw new Error(`${command} exited with status ${result.status}`);
+  }
+}
+
+run("bun", ["run", "build"], path.join(workspace, "apps", "web"));
+run("cargo", [
+  "build",
+  "--manifest-path",
+  path.join(workspace, "Cargo.toml"),
+  "-p",
+  "parson-music",
+  "--release",
+]);
+
+mkdirSync(binDirectory, { recursive: true });
+const otherExecutable = path.join(
+  binDirectory,
+  windows ? "parson-music-server" : "parson-music-server.exe",
+);
+if (existsSync(otherExecutable)) unlinkSync(otherExecutable);
+const source = path.join(workspace, "target", "release", executable);
+const destination = path.join(binDirectory, executable);
+copyFileSync(source, destination);
+if (!windows) chmodSync(destination, 0o755);
+
+console.log(
+  `Prepared the shared Electron shell with the ${process.platform} backend.`,
+);

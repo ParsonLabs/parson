@@ -1,0 +1,40 @@
+---
+title: Download and install
+description: Requirements, updates, removal, and where the Windows app keeps its data.
+---
+
+## Requirements
+
+| App                | Requirement                                                                 |
+| ------------------ | --------------------------------------------------------------------------- |
+| Parson for Windows | 64-bit Windows 10 version 2004 (build 19041) or newer; Windows 11 supported |
+| Parson for Android | Android 8.0 (API 26) or newer                                               |
+| Web player         | A current browser that can reach the Parson host                            |
+
+Windows includes Electron's Chromium runtime, matching the Linux desktop rendering and audio surface. Some audio formats may need FFmpeg available to the server when they cannot be played directly by the client.
+
+## Install on Windows
+
+Download the latest signed installer from the official Parson release page, open it, and follow the Windows installation prompt. The Windows app contains both the music server and player; no separate server install is needed.
+
+## Update behavior
+
+The Windows notification-area host has **Check and install updates**. It downloads the official manifest and installer from Parson's GitHub releases, verifies the declared size and SHA-256 digest, stops the server, replaces it, and relaunches it. If replacement fails, it restores the previous executable.
+
+Updates do not replace your music or intentionally clear Parson data. Database migrations can make older application versions unable to read newer data; see [Updates and migrations](/docs/updates-and-migrations).
+
+## Uninstall
+
+Uninstall Parson from **Settings → Apps → Installed apps**. Your music files are never owned by Parson and remain where they are.
+
+Application data may remain so a reinstall can recover the library and accounts. Remove `%LOCALAPPDATA%\Parson` separately only when you intend to erase Parson's database, accounts, playlists, likes, history, lyrics cache, settings, logs, and cached artwork.
+
+## Application data
+
+The default Windows location is:
+
+```text
+%LOCALAPPDATA%\Parson
+```
+
+Important subfolders are `Database`, `Cache`, `Secrets`, `Logs`, `Discovery`, and `Updates`. `PARSON_DATA_DIR` can move the whole data directory in advanced installations.

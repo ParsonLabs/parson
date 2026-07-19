@@ -1,0 +1,25 @@
+---
+title: Rescanning and file changes
+description: What happens after files are added, renamed, moved, deleted, or retagged.
+---
+
+## Automatic file watching
+
+Parson starts a recursive native filesystem watcher for each library root. It waits briefly for copying to settle, then performs an incremental refresh. A periodic full reconciliation—normally every 24 hours—repairs missed or overflowed notifications. If watching is unavailable, Parson falls back to scheduled reconciliation.
+
+## What changes do
+
+| Change         | Result                                                                                                                    |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| New file       | Parsed and added after the copy settles                                                                                   |
+| Renamed file   | Reconciled by path and, where enabled, stable file identity                                                               |
+| Moved file     | Removed from the old path and indexed at the new path; its catalog identity is retained when tags identify the same track |
+| Deleted file   | Removed on refresh; the rest of the catalog remains available                                                             |
+| Tag change     | Reparsed when file size or modified time changes; affected artists, albums, releases, and search records are rebuilt      |
+| Artwork change | Cover selection and derivatives are refreshed for affected releases                                                       |
+
+## Manual rescan
+
+Use **Settings → Library → Refresh** when you do not want to wait, after reconnecting an external root, or when a tool preserved a file's old modified time. A normal refresh uses incremental discovery. Repair diagnostics can force a complete filesystem reconciliation.
+
+Unchanged files reuse stored metadata. They are not fully reparsed on every rescan.

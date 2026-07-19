@@ -1,1 +1,5 @@
-module.exports = require('@music/ui/postcss.config');
+module.exports = {
+  plugins: {
+    "@tailwindcss/postcss": {},
+  },
+};

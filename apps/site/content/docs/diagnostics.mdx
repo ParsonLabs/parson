@@ -1,0 +1,46 @@
+---
+title: Diagnostics
+description: Logs, health checks, version information, and safe support bundles.
+---
+
+## Logs
+
+On Windows, logs are under:
+
+```text
+%LOCALAPPDATA%\Parson\Logs
+```
+
+The notification-area menu provides **Open logs**. The server writes daily rolling `server.log` files and records its version at startup. Container deployments write structured logs to standard output unless the operator redirects them.
+
+## Export diagnostics
+
+Parson 1.0.x does not yet include a one-click diagnostics exporter. For support, collect only:
+
+- the relevant log window;
+- the response from `/health/ready`;
+- Parson and Windows/Android versions;
+- the failed scan's timing/warning summary; and
+- reproducible steps.
+
+Do not send databases, `Secrets`, music files, full artwork caches, or the entire data directory unless you have explicitly agreed on a private recovery process.
+
+## Redaction
+
+Logs are **not guaranteed to be fully redacted**. They can contain library paths, request paths, hostnames/addresses, account IDs, error details, and the temporary first-setup code. Review them before sharing. Remove usernames, local paths, addresses, tokens, cookies, setup codes, and any track metadata you consider private.
+
+Parson does not intentionally log password values or the full `session.key`.
+
+## Health checks
+
+| Endpoint                  | Meaning                                                                                                                                      |
+| ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /health`             | Process is running and can answer HTTP                                                                                                       |
+| `GET /health/ready`       | Database and library lifecycle are usable; includes version, uptime, database-pool state, library state/message, and recovery-snapshot count |
+| `GET /.well-known/parson` | Discovery identity, protocol version, product/server version, friendly name, and capabilities                                                |
+
+`/health/ready` returns `503` when the database is unavailable or the library is failed; indexing/empty states are described in its JSON body.
+
+## Version information
+
+Use the notification-area host, installed-app details, or the `serverVersion` value in `/.well-known/parson`. Include both server and client versions when reporting a cross-device issue.

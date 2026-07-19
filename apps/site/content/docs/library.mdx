@@ -1,0 +1,58 @@
+---
+title: Library
+description: Add folders and understand how Parson turns imperfect files into a useful music library.
+---
+
+## Adding your music
+
+During setup, choose the folder that contains your music and select **Use this folder**. After setup, add or refresh roots from **Settings → Library**. Each selected folder is registered independently.
+
+You can select one or more:
+
+- local folders and local drives;
+- removable or external drives; and
+- network folders already mounted and readable by the Windows account running Parson.
+
+Parson reads files in place. It does not rename, move, or rewrite the source audio.
+
+### When a folder is unavailable
+
+An unavailable root fails that refresh, but Parson preserves the last known-good catalog from other roots—and the previous available catalog—rather than replacing everything with an empty library. Reconnect or remount the folder, then refresh it. Tracks on the offline root cannot play until the path is readable again.
+
+## How Parson organizes music
+
+Parson uses tags first, then bounded, deterministic inference when tags are incomplete or inconsistent. Folder names are evidence, not an instruction to mirror the disk layout.
+
+### Artists and album artists
+
+Track artists are the performers credited on a recording. Album artists own the release in the library. When album-artist tags are present, Parson uses them. When they are missing, it considers the artists shared across tracks in the same album folder and known aliases. Featuring credits stay attached to tracks without fragmenting the album artist unnecessarily.
+
+### Albums and editions
+
+Albums are identified from normalized album title plus resolved album artist. Parson recognizes edition qualifiers such as deluxe, anniversary, remastered, expanded, special, collector's, limited, legacy, reissue, regional, mono/stereo, and bonus editions. It links confident variants into a release group while preserving the edition's visible title and tracks.
+
+An original release and its deluxe edition remain separate albums. If an edition has no suitable cover, it may inherit the original release's artwork; its own good square cover always wins.
+
+### Discs
+
+Disc numbers order tracks inside one release. Folder or title suffixes such as `CD 1`, `Disc 2`, and `Disk 1 of 2` are understood as disc evidence, not automatically as separate albums. Release-level artwork can be found above a disc subfolder.
+
+### Compilations
+
+An album artist such as **Various Artists**, a compilation folder, or strong multi-artist evidence classifies a release as a compilation. Individual track artists remain searchable and visible.
+
+### Singles, remixes, live releases, and bootlegs
+
+Parson classifies releases using a combination of album title, folder hierarchy, track count, track-title markers, and album artist. Categories include Album, EP, Single, Remix, Compilation, Live, Demos & Rarities, Bootleg, Soundtrack, Acapella, and Bonus Audio. A single weak word is not enough when the rest of the evidence disagrees.
+
+### Loose tracks
+
+A playable file still enters the library when its folder is not a conventional album layout. Its embedded tags provide the artist, album, title, track and disc numbers when available. Missing album context falls back conservatively rather than guessing a famous release.
+
+### Missing or malformed tags
+
+Parson normalizes Unicode, whitespace, dates, artist identities, track numbers, and common separators. Missing values fall back to safe labels such as **Unknown Artist**. Invalid dates and numbers are ignored. A file that cannot be parsed is skipped and recorded as a bounded scan warning; it does not fail the whole library.
+
+## Avoiding accidental merges
+
+Two recordings are treated as duplicates only when their release slot, normalized title, artist context, and duration agree closely. Editions stay distinct from originals. If two albums still merge or one album splits, correct the album/album-artist tags or use Parson's metadata editor, then rescan. See [Troubleshooting](/docs/troubleshooting#an-album-is-split).

@@ -1,0 +1,42 @@
+---
+title: Accounts, privacy, and security
+description: Permissions, passwords, sessions, external requests, and Parson's security boundary.
+---
+
+## Accounts and permissions
+
+The first account is an **administrator**. Administrators can create additional user or administrator accounts from Settings. Normal users can listen and manage their own playlists, likes, history, profile, and playback preferences; administrative server and account operations remain restricted.
+
+## Passwords and reset
+
+Passwords are salted and hashed with Argon2. Parson never stores the original password. A signed-in user can change their password by providing the current one; doing so revokes existing sessions.
+
+There is no email-based or built-in forgotten-password reset in Parson 1.0.x because there is no Parson cloud identity. An administrator should create a replacement account, or an operator can recover the database using documented administrative tooling when available. Do not edit password hashes by hand.
+
+## Sessions and devices
+
+Access and refresh tokens are signed with the private key in `Secrets\session.key`. Logout and password changes increment the account's token generation, invalidating older credentials. Clients should store credentials in platform-protected storage; Android app data is excluded from cloud/device-transfer backup.
+
+The temporary first-run setup code is 12 uppercase hexadecimal characters derived from the private session key. It is printed only while remote first-account setup is needed. Keep logs private.
+
+## Privacy
+
+### What stays local
+
+Music files, file paths, tags, artwork, accounts, passwords hashes, sessions, playlists, likes, history, recommendations, queues, search indexes, and diagnostics stay on the Parson host or on connected devices. Offline downloads stay on the Android device.
+
+### External requests Parson may make
+
+- Opening uncached lyrics sends track title, artist, album, and duration to `lrclib.net`.
+- Choosing **Check and install updates** contacts the official GitHub release endpoint, unless an operator configured a custom update manifest.
+- Google Cast uses Google's Cast infrastructure when you choose a Cast target.
+
+Parson 1.0.x has **no usage analytics, telemetry upload, or automatic crash-reporting service**. The term “playback telemetry” in source code means local listening events used for your history and recommendations; those events are not sent to ParsonLabs.
+
+### What ParsonLabs can see
+
+ParsonLabs cannot browse your library, accounts, history, or logs through a built-in service. It can see ordinary download traffic to infrastructure it operates and information you deliberately include in a support request or vulnerability report. LRCLIB, GitHub, your VPN/proxy provider, and Cast infrastructure have their own network visibility.
+
+## Security updates and vulnerabilities
+
+Security fixes are provided for the latest Parson 1.0.x release. Report vulnerabilities privately through the repository's **GitHub Security Advisories**; do not open a public exploit report. Include the version, reproduction steps, impact, and any proposed mitigation. The project aims to acknowledge reports within seven days.

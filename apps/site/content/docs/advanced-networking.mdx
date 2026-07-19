@@ -1,0 +1,43 @@
+---
+title: Advanced networking
+description: Hostnames, HTTPS, reverse proxies, firewalls, VPNs, and manual discovery.
+---
+
+Normal trusted-LAN use needs none of this page. Parson listens on port `1993` by default and advertises itself locally.
+
+## Custom hostname
+
+Point a DNS name at the Windows host, then connect clients using the complete origin. Local DNS, a router hostname, or a hosts-file entry can be enough on a private network. For an internet-visible hostname, use HTTPS.
+
+## Reverse proxy and TLS
+
+Terminate TLS at a reverse proxy such as Caddy, nginx, or Traefik and proxy the complete origin to Parson. Set:
+
+```text
+PARSON_PUBLIC_URL=https://music.example.com
+```
+
+The value must be a bare origin with no path. It enables secure cookies and allows that browser origin. Proxy WebSocket upgrades as well as normal HTTP and range requests. Do not expose Parson directly over plain HTTP to the internet.
+
+## Firewall rules
+
+Allow inbound TCP to the configured Parson port only from networks that should connect. Local discovery also needs multicast DNS on the LAN. Do not expose the data directory, database files, logs, or session key as shared files.
+
+## Tailscale or another VPN
+
+A private VPN is often the lowest-friction remote option. Install it on the host and client, connect using the host's VPN DNS name or address, and keep the Windows host running. Discovery may not cross the VPN, so use a manual endpoint.
+
+## Manual endpoint
+
+Use the complete origin, including scheme and a non-default port when applicable:
+
+```text
+http://192.168.1.20:1993
+https://music.example.com
+```
+
+Parson rejects embedded usernames/passwords and ignores URL paths. Android emulators can reach a development host at `http://10.0.2.2:1993`.
+
+## Custom discovery behavior
+
+`PARSON_LIBRARY_NAME` changes the nearby friendly name. `PARSON_PORT` changes the listener; `PARSON_BIND_ADDRESS` controls the bind address. A loopback-only bind disables LAN discovery. The native service type is `_parson._tcp.local.` and the discovery identity is persisted under `Discovery\instance-id`.

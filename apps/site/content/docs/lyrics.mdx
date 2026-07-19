@@ -1,0 +1,30 @@
+---
+title: Lyrics
+description: Where lyrics come from, how synced lines work, and what stays cached.
+---
+
+## How lookup works
+
+When you open lyrics, Parson checks its memory and persistent cache. If there is no valid cached result, the **Windows host** asks LRCLIB using the track title, artist, album, and duration. It tries an exact match first, then bounded search fallbacks. The phone does not contact LRCLIB directly.
+
+The request may reveal those four metadata fields and your host's public IP address to LRCLIB. Audio, account details, file paths, playlists, likes, and history are not sent.
+
+## Synced and plain lyrics
+
+Synced lyrics contain timestamps and follow playback line by line. Plain lyrics are displayed as text without timing. When LRCLIB returns both, Parson uses synced lines for the active view and retains plain text as a fallback.
+
+## Cached lyrics
+
+Successful and unsuccessful lookups are cached to avoid repeated requests. The persistent cache is stored at:
+
+```text
+%LOCALAPPDATA%\Parson\Cache\Lyrics\lyrics.db
+```
+
+Cached lyrics are also indexed locally for lyric search. Cache entries expire and can be refreshed by normal use.
+
+## Local lyrics and providers
+
+Parson 1.0.x does not read embedded lyric tags or `.lrc` files, so there is no local-lyrics priority. LRCLIB is the only built-in provider. A custom provider endpoint and a lyrics-specific local-only switch are not currently available.
+
+For a fully local deployment, simply do not open uncached lyrics or block `lrclib.net` at the host firewall. Already cached lyrics remain available until their cache entry expires.

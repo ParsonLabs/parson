@@ -6,12 +6,16 @@
   "scripts": {
     "dev": "next dev --webpack",
     "build": "next build --webpack",
+    "preview": "opennextjs-cloudflare build && opennextjs-cloudflare preview",
+    "deploy": "opennextjs-cloudflare build && opennextjs-cloudflare deploy",
+    "cf-typegen": "wrangler types --env-interface CloudflareEnv cloudflare-env.d.ts",
     "type-check": "tsc --noEmit",
     "start": "next start",
     "screenshots": "node capture-screenshots.cjs",
     "postinstall": "fumadocs-mdx"
   },
   "dependencies": {
+    "@opennextjs/cloudflare": "1.20.1",
     "fumadocs-core": "16.11.5",
     "fumadocs-mdx": "15.2.0",
     "fumadocs-ui": "16.11.5",
@@ -29,6 +33,7 @@
     "playwright": "1.61.1",
     "postcss": "^8.5.19",
     "tailwindcss": "^4.3.2",
-    "typescript": "6.0.3"
+    "typescript": "6.0.3",
+    "wrangler": "4.112.0"
   }
 }

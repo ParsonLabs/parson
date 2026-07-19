@@ -1,0 +1,11 @@
+{
+  "extends": "@parson/typescript-config/base.json",
+  "compilerOptions": {
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "paths": {
+      "@": ["./src/"],
+      "@parson/music-sdk": ["./src/index.ts"]
+    }
+  }
+}

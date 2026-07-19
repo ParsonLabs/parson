@@ -1,0 +1,26 @@
+---
+title: Updates and migrations
+description: Automatic updates, database changes, rollback limits, and sensible precautions.
+---
+
+## Automatic updates
+
+The Windows notification-area host updates on demand through **Check and install updates**. It downloads the official update manifest and executable, verifies size and SHA-256, stops the server, replaces the executable, and relaunches it. A failed executable replacement rolls back automatically.
+
+Parson does not silently replace the application while you are listening.
+
+## Database migrations
+
+Parson applies bundled SQLite migrations when a newer version first opens the data directory. Migrations cover schema, indexes, and compatibility transitions such as the move from `music.db` to `parson-music.db`.
+
+Before a major or operationally important update:
+
+1. stop Parson;
+2. back up `%LOCALAPPDATA%\Parson`; and
+3. keep the installer or executable for the version you are leaving.
+
+## Rollback limitations
+
+The updater can restore an executable when replacement itself fails. It cannot promise that an older executable can read a database already migrated by a newer release. Restoring the old application may also require restoring the matching pre-update data backup.
+
+Do not copy one database file from a newer data folder into an older partial backup. Accounts and music data are separated across two databases and should be restored as one consistent data directory.

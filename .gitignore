@@ -1,45 +1,34 @@
-# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+node_modules/
 
-# Dependencies
-node_modules
-.pnp
-.pnp.js
-
-# Local env files
-.env
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
-
-# Testing
-coverage
-
-# Turbo
-.turbo
-
-# Vercel
-.vercel
-
-# Build Outputs
 .next/
+.turbo/
 out/
-build
-dist
+dist/
+target/
+target-*/
+artifacts/
+coverage/
+**/bin/
+**/obj/
+**/.source/
+**/next-env.d.ts
+*.tsbuildinfo
 
-# Debug
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
+apps/mobile/.expo/
+apps/mobile/android/
+apps/mobile/ios/
 
-# Misc
-.DS_Store
+.env
+.env.*.local
+.vercel/
+*.db
+*.sqlite
+*.sqlite3
 *.pem
 
-# Cargo
-/target
+*.log
+*.lockb
+*.py[cod]
+__pycache__/
 
-lrclib*
-deprecated
-data.ms
-meilisearch
+.DS_Store

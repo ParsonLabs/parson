@@ -1,10 +1,5 @@
-import { Suspense } from "react";
-import UsernameComponent from "./UsernameComponent";
+import { redirect } from "next/navigation";
 
 export default function ProfilePage() {
-  return (
-    <Suspense>
-      <UsernameComponent />
-    </Suspense>
-  )
+  redirect("/");
 }

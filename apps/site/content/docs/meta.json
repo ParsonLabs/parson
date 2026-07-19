@@ -1,0 +1,27 @@
+{
+  "title": "Parson",
+  "pages": [
+    "index",
+    "start-here",
+    "download-and-install",
+    "---Library---",
+    "library",
+    "supported-files",
+    "rescanning",
+    "---Use Parson---",
+    "listening",
+    "lyrics",
+    "playlists-likes-history",
+    "connecting-devices",
+    "advanced-networking",
+    "---Keep it safe---",
+    "accounts-privacy-security",
+    "data-safety",
+    "updates-and-migrations",
+    "---Reference---",
+    "troubleshooting",
+    "performance",
+    "diagnostics",
+    "development"
+  ]
+}

@@ -1,0 +1,143 @@
+@import "tailwindcss";
+
+@theme inline {
+  --color-background: hsl(var(--background));
+  --color-foreground: hsl(var(--foreground));
+  --color-card: hsl(var(--card));
+  --color-card-foreground: hsl(var(--card-foreground));
+  --color-popover: hsl(var(--popover));
+  --color-popover-foreground: hsl(var(--popover-foreground));
+  --color-primary: hsl(var(--primary));
+  --color-primary-foreground: hsl(var(--primary-foreground));
+  --color-secondary: hsl(var(--secondary));
+  --color-secondary-foreground: hsl(var(--secondary-foreground));
+  --color-muted: hsl(var(--muted));
+  --color-muted-foreground: hsl(var(--muted-foreground));
+  --color-accent: hsl(var(--accent));
+  --color-accent-foreground: hsl(var(--accent-foreground));
+  --color-destructive: hsl(var(--destructive));
+  --color-destructive-foreground: hsl(var(--destructive-foreground));
+  --color-border: hsl(var(--border));
+  --color-input: hsl(var(--input));
+  --color-ring: hsl(var(--ring));
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+}
+
+:root {
+  --background: 0 0% 3%;
+  --foreground: 0 0% 98%;
+  --card: 0 0% 7%;
+  --card-foreground: 0 0% 98%;
+  --popover: 0 0% 6%;
+  --popover-foreground: 0 0% 98%;
+  --primary: 0 0% 96%;
+  --primary-foreground: 0 0% 3%;
+  --secondary: 0 0% 12%;
+  --secondary-foreground: 0 0% 96%;
+  --muted: 0 0% 12%;
+  --muted-foreground: 0 0% 63%;
+  --accent: 0 0% 92%;
+  --accent-foreground: 0 0% 3%;
+  --destructive: 0 72% 51%;
+  --destructive-foreground: 0 0% 98%;
+  --border: 0 0% 15%;
+  --input: 0 0% 15%;
+  --ring: 0 0% 74%;
+}
+
+* {
+  border-color: hsl(var(--border));
+  scrollbar-color: rgba(255, 255, 255, 0.22) transparent;
+}
+
+html,
+body {
+  min-height: 100%;
+  background: #000;
+  color: hsl(var(--foreground));
+}
+
+html {
+  scrollbar-gutter: stable;
+}
+
+body {
+  letter-spacing: 0;
+}
+
+.electron-titlebar-drag {
+  -webkit-app-region: drag;
+}
+
+.electron-titlebar-no-drag {
+  -webkit-app-region: no-drag;
+}
+
+@keyframes player-title-marquee {
+  0% {
+    transform: translateX(0);
+  }
+  100% {
+    transform: translateX(calc(-50% - 1rem));
+  }
+}
+
+@keyframes control-tooltip {
+  0%,
+  72% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+.player-title-marquee {
+  animation: player-title-marquee 12s linear infinite alternate;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .player-title-marquee {
+    animation: none;
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .player-title-marquee [aria-hidden="true"] {
+    display: none;
+  }
+}
+
+::selection {
+  background: rgba(255, 255, 255, 0.22);
+  color: #fff;
+}
+
+a:focus-visible,
+button:focus-visible {
+  outline: 2px solid rgba(255, 255, 255, 0.3);
+  outline-offset: 3px;
+}
+
+.tidal-route {
+  margin-inline: auto;
+  min-height: 100%;
+  width: 100%;
+  max-width: 920px;
+  padding: 1.5rem 1rem 3rem;
+}
+
+@media (min-width: 640px) {
+  .tidal-route {
+    padding-inline: 1.5rem;
+  }
+}
+
+@media (min-width: 1024px) {
+  .tidal-route {
+    padding-inline: 2rem;
+  }
+}

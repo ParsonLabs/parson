@@ -1,0 +1,2 @@
+#define APP_ICON 1
+APP_ICON ICON "parson.ico"

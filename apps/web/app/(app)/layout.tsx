@@ -1,30 +1,13 @@
-import "@music/ui/globals.css";
-import { cn } from "@music/ui/lib/utils";
-import { Metadata, Viewport } from "next";
-import { Inter as FontSans } from "next/font/google";
-import MainLayout from "./main-layout";
+import type { ReactNode } from "react";
+import AppShell from "./app-shell";
+import AppProviders from "@/components/app/providers";
+import PlayerBar from "@/features/player/player-bar";
 
-const fontSans = FontSans({
-  subsets: ["latin"],
-  variable: "--font-sans",
-})
-
-export const viewport: Viewport = {
-  themeColor: "#FFFFFF",
-};
-
-export default async function RootLayout({ children }: any) {
+export default function AppLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="en" suppressHydrationWarning>
-      <head />
-      <body className={cn(
-          "min-h-screen bg-background font-sans antialiased bg-zinc-950 texxt-white",
-          fontSans.variable
-        )}>
-        <MainLayout>
-          {children}
-        </MainLayout>
-      </body>
-    </html>
+    <AppProviders>
+      <AppShell>{children}</AppShell>
+      <PlayerBar />
+    </AppProviders>
   );
 }

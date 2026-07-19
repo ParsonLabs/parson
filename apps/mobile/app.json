@@ -1,0 +1,96 @@
+{
+  "expo": {
+    "name": "Parson",
+    "slug": "parson",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/images/parson-icon.png",
+    "scheme": "parson",
+    "userInterfaceStyle": "dark",
+    "backgroundColor": "#000000",
+    "ios": {
+      "bundleIdentifier": "com.parsonlabs.parson",
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSLocalNetworkUsageDescription": "Parson finds music libraries running on your local network.",
+        "NSBonjourServices": ["_parson._tcp"]
+      }
+    },
+    "android": {
+      "package": "com.parsonlabs.parson",
+      "adaptiveIcon": {
+        "backgroundColor": "#000000",
+        "foregroundImage": "./assets/images/parson-maskable.png",
+        "monochromeImage": "./assets/images/parson-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": true,
+      "permissions": [
+        "android.permission.INTERNET",
+        "android.permission.ACCESS_NETWORK_STATE",
+        "android.permission.CHANGE_WIFI_MULTICAST_STATE",
+        "android.permission.POST_NOTIFICATIONS"
+      ],
+      "blockedPermissions": [
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.SYSTEM_ALERT_WINDOW",
+        "android.permission.WRITE_EXTERNAL_STORAGE"
+      ]
+    },
+    "web": {
+      "output": "static",
+      "favicon": "./assets/images/parson-icon.png"
+    },
+    "plugins": [
+      "./plugins/with-fast-player-transitions",
+      "expo-router",
+      [
+        "expo-navigation-bar",
+        {
+          "style": "light",
+          "hidden": false,
+          "enforceContrast": false
+        }
+      ],
+      [
+        "react-native-audio-api",
+        {
+          "iosBackgroundMode": true,
+          "androidForegroundService": false,
+          "androidFSTypes": ["mediaPlayback"]
+        }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "usesCleartextTraffic": true,
+            "enableMinifyInReleaseBuilds": true,
+            "enableShrinkResourcesInReleaseBuilds": true
+          }
+        }
+      ],
+      "expo-secure-store",
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#000000",
+          "image": "./assets/images/parson-icon.png",
+          "imageWidth": 112
+        }
+      ],
+      [
+        "expo-audio",
+        {
+          "recordAudioAndroid": false,
+          "microphonePermission": false,
+          "enableBackgroundPlayback": true
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true,
+      "reactCompiler": true
+    }
+  }
+}

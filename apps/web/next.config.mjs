@@ -1,29 +1,19 @@
-import withPWAInit from "@ducanh2912/next-pwa"
-
-const withPWA = withPWAInit({
-  dest: "public"
-})
+import { fileURLToPath } from "node:url";
 
 /** @type {import('next').NextConfig} */
-const nextConfig = withPWA({
+const nextConfig = {
   output: "export",
-  trailingSlash: true,
-  transpilePackages: ["@music/sdk"],
-  typescript: {
-    ignoreBuildErrors: true
-  },
-  eslint: {
-    ignoreDuringBuilds: true
-  },
-  
+  transpilePackages: ["@parson/music-sdk"],
+  // TypeScript 7 is checked separately because Next still imports its removed JS API.
+  typescript: { ignoreBuildErrors: true },
   images: {
     unoptimized: true,
-    remotePatterns: [
-      {
-        hostname: "localhost"
-      }
-    ]
+    remotePatterns: [{ protocol: "http", hostname: "**" }],
   },
-});
+  webpack(config) {
+    config.resolve.alias["@"] = fileURLToPath(new URL(".", import.meta.url));
+    return config;
+  },
+};
 
 export default nextConfig;

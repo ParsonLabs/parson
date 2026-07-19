@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="color-scheme" content="dark" />
+    <title>Parson could not start</title>
+    <style>
+      html,
+      body {
+        min-height: 100%;
+        margin: 0;
+        background: #000;
+        color: #fff;
+        font-family: system-ui, sans-serif;
+      }
+      body {
+        display: grid;
+        place-items: center;
+      }
+      main {
+        max-width: 520px;
+        padding: 32px;
+        text-align: center;
+      }
+      h1 {
+        font-size: 24px;
+      }
+      p {
+        color: #a1a1aa;
+        line-height: 1.6;
+      }
+      nav {
+        -webkit-app-region: drag;
+        position: fixed;
+        inset: 0 0 auto;
+        height: 56px;
+      }
+      nav span {
+        position: absolute;
+        right: 0;
+        top: 0;
+        display: flex;
+        height: 56px;
+        -webkit-app-region: no-drag;
+      }
+      button {
+        width: 48px;
+        border: 0;
+        background: transparent;
+        color: #a1a1aa;
+        font: 18px system-ui;
+      }
+      button:hover {
+        background: #ffffff18;
+        color: #fff;
+      }
+      button:last-child:hover {
+        background: #dc2626;
+      }
+    </style>
+  </head>
+  <body>
+    <nav aria-label="Window title bar">
+      <span
+        ><button data-window="minimize" aria-label="Minimize">−</button
+        ><button data-window="toggleMaximize" aria-label="Maximize">□</button
+        ><button data-window="close" aria-label="Close">×</button></span
+      >
+    </nav>
+    <main>
+      <h1>Parson could not start</h1>
+      <p id="detail">The local server did not become available.</p>
+    </main>
+    <script>
+      document.getElementById("detail").textContent =
+        new URLSearchParams(location.search).get("detail") ||
+        "The local server did not become available.";
+      document
+        .querySelectorAll("[data-window]")
+        .forEach((button) =>
+          button.addEventListener("click", () =>
+            window.__PARSON_ELECTRON__?.windowControls[
+              button.dataset.window
+            ]?.(),
+          ),
+        );
+    </script>
+  </body>
+</html>

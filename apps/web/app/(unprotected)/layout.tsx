@@ -1,38 +1,24 @@
-import "@music/ui/globals.css"
-import { Inter as FontSans } from "next/font/google"
+import type { ReactNode } from "react";
+import Image from "next/image";
 
-import pl from "@/assets/pl-tp.png"
-import { cn } from "@music/ui/lib/utils"
-import { Metadata } from "next"
-import Image from "next/image"
-
-const fontSans = FontSans({
-  subsets: ["latin"],
-  variable: "--font-sans",
-})
-
-type RootLayoutProps = {
-  children: React.ReactNode
-}
-
-export default function RootLayout({ children }: RootLayoutProps) {
+export default function UnprotectedLayout({
+  children,
+}: {
+  children: ReactNode;
+}) {
   return (
-    <html lang="en" suppressHydrationWarning>
-      <head />
-      <body
-        className={cn(
-          "min-h-screen bg-background font-sans antialiased bg-zinc-950",
-          fontSans.variable
-        )}>
-          <div className="flex flex-row text-white items-center font-bold pl-4 pt-3 fixed">
-            <Image src={pl} alt="ParsonLabs" height={30} width={30} priority />
-            <div className="md:text-xl text-white font-bold pl-3">
-              ParsonLabs Music
-            </div>
-          </div>
-
-        {children}
-      </body>
-    </html>
-  )
+    <div className="min-h-screen bg-black text-white">
+      <div className="fixed left-5 top-4 z-10 hidden sm:block">
+        <Image
+          alt="Parson"
+          className="h-5 w-auto"
+          height={64}
+          priority
+          src="/images/brand/parson-wordmark.svg"
+          width={220}
+        />
+      </div>
+      {children}
+    </div>
+  );
 }

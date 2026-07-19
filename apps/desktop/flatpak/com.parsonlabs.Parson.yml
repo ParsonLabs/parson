@@ -1,0 +1,22 @@
+app-id: com.parsonlabs.Parson
+runtime: org.gnome.Platform
+runtime-version: "49"
+sdk: org.gnome.Sdk
+command: parson-music-linux
+finish-args:
+  - --share=ipc
+  - --share=network
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --socket=pulseaudio
+  - --device=dri
+  - --talk-name=org.freedesktop.Notifications
+  - --talk-name=org.freedesktop.portal.Desktop
+modules:
+  - name: parson
+    buildsystem: simple
+    build-commands:
+      - install -Dm755 Parson.AppImage /app/bin/parson-music-linux
+    sources:
+      - type: file
+        path: Parson.AppImage

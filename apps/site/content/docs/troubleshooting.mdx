@@ -1,0 +1,108 @@
+---
+title: Troubleshooting
+description: Find the symptom, try the quick fix, then inspect only what matters.
+---
+
+## Parson cannot find my music
+
+**Cause →** The selected path is wrong, unreadable by the Windows account, excluded, or contains no supported extensions.
+
+**Quick fix →** Open **Settings → Library**, select the folder that directly contains the library, and refresh. Confirm at least one file uses a [supported extension](/docs/supported-files).
+
+**Deeper diagnostics →** Check the scan event and `%LOCALAPPDATA%\Parson\Logs`. Verify permissions, hidden/system attributes, and `PARSON_SCAN_EXCLUDED_DIRS` if configured.
+
+## An album is split
+
+**Cause →** Album-title or album-artist tags disagree, or one group has an edition qualifier that correctly makes it a separate release.
+
+**Quick fix →** Compare **Album** and **Album artist** across the tracks, correct the outlier in Parson's metadata editor or your tagger, then refresh.
+
+**Deeper diagnostics →** Compare disc numbers, release dates, MusicBrainz release IDs, normalized spelling, and folder boundaries. Keep true deluxe/remastered editions distinct.
+
+## Two albums were merged
+
+**Cause →** Tracks share the same normalized album title and resolved album artist, and there is not enough edition/release evidence to separate them.
+
+**Quick fix →** Give each release an accurate album artist and distinct edition title, such as `Album (Deluxe Edition)`, then refresh.
+
+**Deeper diagnostics →** Check release IDs, dates, disc tags, durations, and source folders. Report a reproducible false merge with sanitized tags if the evidence is already distinct.
+
+## Artwork is wrong or missing
+
+**Cause →** No usable embedded/external image was found, a nearby image ranked higher, or the cache still represents old files.
+
+**Quick fix →** Place a square `cover.jpg` in the release folder or upload a cover in the album editor, then refresh.
+
+**Deeper diagnostics →** Check for tiny icons, wide booklet scans, multiple `front`/`folder` images, permissions, and disc-folder placement. Inspect scan warnings and artwork cache writes.
+
+## Duplicate tracks appear
+
+**Cause →** The same recording exists in multiple roots or files differ enough in album slot, artist, title, or duration to avoid duplicate reconciliation.
+
+**Quick fix →** Remove the overlapping library root or correct the duplicate files' tags, then run a manual refresh.
+
+**Deeper diagnostics →** Compare normalized title, album artist, album, disc/track number, duration, and path. File copies on different releases may be intentional and remain visible in each release.
+
+## A track will not play
+
+**Cause →** The source is offline/corrupt, the client cannot direct-play it, or FFmpeg is unavailable for required transcoding.
+
+**Quick fix →** Confirm the file plays locally, reconnect its drive, and try another client. Install FFmpeg on the server `PATH` when transcoding is required.
+
+**Deeper diagnostics →** Check the stream request in server logs, file permissions, range responses, codec/container details, and free space in the transcode cache.
+
+## Lyrics are unavailable
+
+**Cause →** LRCLIB has no confident match, the host is offline, the provider timed out, or a negative result is cached.
+
+**Quick fix →** Verify title, artist, album, and duration, then try later.
+
+**Deeper diagnostics →** Check host access to `lrclib.net` and server logs for `lyrics_not_found`, `lyrics_provider_unavailable`, or capacity errors. Inspect `Cache\Lyrics\lyrics.db` only with Parson stopped.
+
+## Android cannot find Parson
+
+**Cause →** Devices are on different networks, Nearby permission is denied, multicast discovery is blocked, or Parson is loopback-only.
+
+**Quick fix →** Put both devices on the same Wi-Fi, allow Nearby devices, restart discovery, or enter the server origin manually.
+
+**Deeper diagnostics →** Open `http://HOST:1993/.well-known/parson` from the phone, check Windows Firewall and AP isolation, and verify `_parson._tcp.local.` advertising in logs.
+
+## Remote access stopped working
+
+**Cause →** The host slept, public address/DNS changed, TLS expired, the proxy lost WebSocket/range support, or VPN routing changed.
+
+**Quick fix →** Wake the host, verify the VPN/proxy, and open the configured HTTPS origin in a browser.
+
+**Deeper diagnostics →** Test `/health` and `/health/ready`, inspect proxy and Parson logs, confirm `PARSON_PUBLIC_URL`, certificate validity, forwarded host, WebSocket upgrades, and firewall rules.
+
+## Scan appears stuck
+
+**Cause →** A large cold scan, slow/network storage, an in-progress copy, a difficult file, or database contention can make a phase look quiet.
+
+**Quick fix →** Leave Parson running and check whether the file count or phase changes. Do not repeatedly restart a healthy scan.
+
+**Deeper diagnostics →** Inspect scan events and logs for enumeration, parsing, database staging, commit, inference, artwork, and export timings. Look for one unreadable file or an unavailable root.
+
+## Parson uses too much memory or CPU
+
+**Cause →** Initial parsing, artwork processing, transcoding, or a very large search/catalog build is active.
+
+**Quick fix →** Let the scan finish, stop unused streams, and avoid scanning a parent drive instead of the music root.
+
+**Deeper diagnostics →** Compare activity with scan and transcode logs. Advanced operators can reduce `PARSON_SCAN_THREADS`, parser threads, or transcode concurrency; record the change because it trades speed for resource use.
+
+## The Windows app opens blank
+
+**Cause →** The embedded server is still starting, Electron failed to load the product surface, or static assets from different versions are mixed.
+
+**Quick fix →** Exit Parson from the notification area, start it again, and open `http://127.0.0.1:1993` in a browser.
+
+**Deeper diagnostics →** Check `Logs`, `/health/ready`, free disk space, and antivirus quarantine. Reinstall the same version without deleting the data directory.
+
+## The library folder is offline
+
+**Cause →** An external drive, mapped share, NAS, or its credentials are unavailable to the account running Parson.
+
+**Quick fix →** Reconnect the drive/share using the same path and refresh that root.
+
+**Deeper diagnostics →** Verify drive letter or UNC mapping after sign-in, service-account permissions, sleep behavior, and network availability. Parson preserves the prior catalog, but those tracks cannot stream until the source returns.

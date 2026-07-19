@@ -1,0 +1,41 @@
+---
+title: Connecting devices
+description: Connect Android nearby, recover when discovery fails, and understand local, remote, and offline use.
+---
+
+## Connect Android
+
+1. Start Parson on Windows.
+2. Connect Windows and Android to the same trusted network.
+3. Open Parson on Android and select your library under **Nearby**.
+4. Sign in with a Parson account.
+
+Android discovers `_parson._tcp` services for a short window and validates each server through `/.well-known/parson`. Android 17 and newer may ask for Nearby devices access. Discovery stops after connection.
+
+## Pairing and approval
+
+Parson 1.0.x uses account sign-in as device approval; it does not have a second QR pairing ceremony for normal devices. The discovery manifest says pairing is required because a device must authenticate before library access.
+
+The 12-character setup code is only for creating the **first** account from a non-local device. It is not a reusable device credential.
+
+## Manual fallback
+
+If the library does not appear, choose **Enter address** and enter the full origin shown by Parson. On a trusted local network it normally looks like `http://computer-name:1993`. Remote deployments should use an HTTPS hostname. A QR fallback is not currently built in.
+
+## Revoke a device
+
+Sign out to revoke the account's current token generation. Changing the account password also invalidates existing sessions. Parson 1.0.x does not yet provide a named per-device session list; revocation applies to that account's sessions rather than one labeled handset.
+
+## Local connection behavior
+
+The Windows host serves the web UI, API, artwork, and audio. It must remain running and awake while another device streams. If Windows sleeps, shuts down, changes network, or loses access to the music folder, playback stops.
+
+When switching Wi-Fi networks, nearby discovery runs again. A manually saved local address may change if the router assigns a different address; select the discovered library again or give the host a stable local name/address in your router.
+
+## Remote access
+
+Remote access is possible through an HTTPS reverse proxy, Tailscale, or another trusted VPN. It is not a ParsonLabs relay: your device connects to your own host. Keep the Windows host running and see [Advanced networking](/docs/advanced-networking).
+
+## Offline downloads
+
+Android can download individual songs and complete albums. Downloaded items play from the device without the Windows host or network. Removing a download removes only the device copy, not the server's source file.

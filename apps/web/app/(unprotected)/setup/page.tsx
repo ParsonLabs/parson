@@ -1,17 +1,22 @@
-import { Button } from "@music/ui/components/button";
-import Link from "next/link";
+import SetupFlow from "@/features/setup/setup-flow";
+import type { Metadata } from "next";
+import { Suspense } from "react";
 
-export default function Setup() {
+export const metadata: Metadata = {
+  title: "Set up Parson",
+  description: "Create your account and add your music.",
+};
+
+export default function SetupPage() {
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center">
-      <p className="text text-center text-4xl py-14 text-white">Setup ParsonLabs Music</p>
-      <div className="flex flex-col items-center justify-center">
-        <Link href="/setup/server" className="flex items-center justify-center">
-          <Button className="w-full px-6 py-4 mt-6 text-lg text-white bg-indigo-800 rounded-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
-            Get Started
-          </Button>
-        </Link>
-      </div>
-    </div>
+    <Suspense
+      fallback={
+        <main className="grid min-h-screen place-items-center bg-black text-sm text-zinc-400">
+          Getting things ready
+        </main>
+      }
+    >
+      <SetupFlow />
+    </Suspense>
   );
 }

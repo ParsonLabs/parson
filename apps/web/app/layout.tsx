@@ -1,58 +1,68 @@
-import "@music/ui/globals.css";
-import { Inter as FontSans } from "next/font/google";
-import { Metadata, Viewport } from "next";
-import SplashScreen from "@/components/Layout/SplashScreen";
-import { cn } from "@music/ui/lib/utils";
-import AuthProvider from "@/components/Providers/AuthProvider";
+import "./globals.css";
+
+import type { Metadata, Viewport } from "next";
+import { Inter } from "next/font/google";
+import type { ReactNode } from "react";
+import SessionProvider from "@/features/account/session-provider";
+import AppBootstrap from "@/components/app/splash-screen";
+
+import { Toaster } from "sonner";
+const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  applicationName: "ParsonLabs Music",
-  title: {
-    default: "ParsonLabs Music",
-    template: "%s | ParsonLabs Music",
-  },
+  metadataBase: new URL(
+    process.env.NEXT_PUBLIC_SITE_URL ?? "https://parson.dev",
+  ),
+  applicationName: "Parson",
+  title: "Parson",
   description: "Own your music.",
-  manifest: "/manifest.json",
-  appleWebApp: {
-    capable: true,
-    statusBarStyle: "default",
-    title: "ParsonLabs Music",
-  },
-  formatDetection: {
-    telephone: false,
+  manifest: "/site.webmanifest",
+  icons: {
+    icon: [
+      { url: "/favicon.ico", sizes: "any" },
+      { url: "/icons/icon.svg", type: "image/svg+xml" },
+      { url: "/icons/favicon-32x32.png", sizes: "32x32", type: "image/png" },
+      { url: "/icons/favicon-16x16.png", sizes: "16x16", type: "image/png" },
+    ],
+    apple: [{ url: "/icons/apple-touch-icon.png", sizes: "180x180" }],
   },
   openGraph: {
-    type: "website",
-    title: {
-      default: "ParsonLabs Music",
-      template: "%s | ParsonLabs Music",
-    },
+    title: "Parson",
     description: "Own your music.",
+    images: [{ url: "/images/og/parson.jpg", width: 1200, height: 630 }],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Parson",
+    description: "Own your music.",
+    images: ["/images/og/parson.jpg"],
   },
 };
 
-const fontSans = FontSans({
-  subsets: ["latin"],
-  variable: "--font-sans",
-})
+export const viewport: Viewport = { themeColor: "#000000" };
 
-export const viewport: Viewport = {
-  themeColor: "#FFFFFF",
-};
-
-export default async function RootLayout({ children }: any) {
+export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="en" suppressHydrationWarning>
-      <head />
-      <body className={cn(
-          "min-h-screen bg-background font-sans antialiased bg-zinc-950 texxt-white",
-          fontSans.variable
-        )}>
-        <AuthProvider>
-          <SplashScreen>
-            {children}
-          </SplashScreen>
-        </AuthProvider>
+    <html lang="en" className="dark">
+      <body
+        className={`${inter.className} min-h-screen bg-black text-white antialiased`}
+      >
+        <SessionProvider>
+          <AppBootstrap>{children}</AppBootstrap>
+          <Toaster
+            closeButton={false}
+            position="bottom-right"
+            theme="dark"
+            toastOptions={{
+              classNames: {
+                toast: "!border-white/10 !bg-black !text-white !shadow-2xl",
+                description: "!text-zinc-400",
+                actionButton: "!bg-white !text-black",
+                cancelButton: "!bg-zinc-900 !text-white",
+              },
+            }}
+          />
+        </SessionProvider>
       </body>
     </html>
   );

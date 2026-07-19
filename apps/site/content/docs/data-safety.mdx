@@ -1,0 +1,41 @@
+---
+title: Data safety
+description: Back up Parson, restore it, and move a library to another computer.
+---
+
+## What to back up
+
+Stop Parson before copying `%LOCALAPPDATA%\Parson`. Back up the entire folder when possible.
+
+| Data                                                           | Default location                                     |
+| -------------------------------------------------------------- | ---------------------------------------------------- |
+| Accounts and core library registrations                        | `Database\parson-core.db`                            |
+| Catalog, playlists, likes, history, queues, metadata overrides | `Database\parson-music.db`                           |
+| Verified database recovery snapshots                           | Beside `parson-music.db`                             |
+| Artwork and catalog cache                                      | `Cache` and artwork folders under the data directory |
+| Lyrics cache                                                   | `Cache\Lyrics\lyrics.db`                             |
+| Session signing key                                            | `Secrets\session.key`                                |
+| Library roots and settings                                     | Inside the data directory and databases              |
+
+Your audio files are separate. Back them up with your normal music-library backup.
+
+## Restore
+
+1. Install the same or a newer compatible Parson version.
+2. Make sure Parson is stopped.
+3. Restore the saved data folder to `%LOCALAPPDATA%\Parson`, or set `PARSON_DATA_DIR` to the restored folder.
+4. Start Parson and verify that accounts and the library load.
+
+Keep `session.key` private. Restoring it preserves the signing identity; omitting it forces new credentials and can invalidate devices.
+
+## Move to a new computer
+
+1. **Install Parson.** Use the current installer on the new machine.
+2. **Restore Parson data.** Stop Parson and copy the backed-up data folder into place.
+3. **Point it at the music folder.** If the drive letter or network path changed, update the registered root in Settings.
+4. **Verify the library.** Refresh and test several albums, artwork, playlists, likes, history, and lyrics.
+5. **Reconnect devices if necessary.** Saved local addresses may point to the old machine. Discover the new host or enter its new address.
+
+## Recovery snapshots
+
+After a successful catalog-changing import, Parson creates a verified SQLite snapshot in the background and normally keeps the newest three. If startup reports a failed database integrity check, stop Parson, preserve the failed database, and restore the newest healthy `parson-music.db.snapshot-*.db` file in its place.

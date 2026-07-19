@@ -1,64 +1,86 @@
 [package]
-name = "music-server"
-description = "ParsonLabs Music is the Self Hosted Audio streaming alternative to YouTube Music, Spotify & Apple Music, providing Unrestricted Access to your library in Uncompressed, Lossless Quality"
-version = "0.1.0"
-edition = "2021"
-authors = ["WillKirkmanM <will@parsonlabs.com>"]
-license = "GPL-3.0"
+name = "parson-music"
+description = "The music product behind Parson, a self-hosted lossless audio streaming app"
+version = "1.0.0"
+edition = "2024"
+rust-version = "1.97"
+license = "GPL-3.0-only"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[[bin]]
+name = "parson-music-server"
+path = "src/main.rs"
+required-features = ["server"]
+
+[features]
+default = ["server"]
+server = [
+    "dep:actix-cors",
+    "dep:actix-multipart",
+    "dep:actix-web",
+    "dep:actix-web-httpauth",
+    "dep:actix-ws",
+    "dep:argon2",
+    "dep:bytes",
+    "dep:futures",
+    "dep:jsonwebtoken",
+    "dep:mime_guess",
+    "dep:mdns-sd",
+    "dep:ravif",
+    "dep:reqwest",
+    "dep:rust-embed",
+    "dep:tokio-util",
+    "dep:tracing-subscriber",
+    "dep:webp",
+]
 
 [dependencies]
-actix-cors = "0.7.0"
-actix-embed = "0.1.0"
-actix-files = "0.6.6"
-actix-multipart = "0.7.2"
-actix-web = "4"
-actix-web-httpauth = "0.8.2"
-actix-web-rust-embed-responder = "2.2.3"
-actix-ws = "0.2.5"
-argon2 = "0.5.3"
-audiotags = "0.5"
-bytes = "1.9.0"
-chrono = { version = "0.4.38", features = ["serde"] }
-diesel = { version = "2.2.8", default-features = false, features = ["chrono", "numeric", "r2d2", "sqlite"] }
-diesel_cli = { version = "2.2.8", default-features = false, features = ["sqlite"] }
-diesel_migrations = { version = "2.2.0", features = ["sqlite"] }
-dirs = "5.0.1"
-dotenvy = "0.15.0"
-fancy-regex = "0.13.0"
-futures = "0.3.31"
-image = "0.25.5"
-itertools = "0.14.0"
-jsonwebtoken = "9.3.0"
-lazy_static = "1.5.0"
-levenshtein = "1.0.5"
-libsqlite3-sys = { version = "0.30.0", features = ["bundled"] }
-lofty = "0.18.2"
-lru = "0.13.0"
-lru_time_cache = "0.11.11"
-mime_guess = "2.0.5"
-notify = "7.0.0"
-parking_lot = "0.12.3"
-rand = "0.8.5"
-ravif = "0.11.9"
-rayon = "1.8.0"
-regex = "1.10.3"
-reqwest = { version = "0.12.3", features = ["json"] }
-rust-embed = "8.5.0"
-scraper = "0.20.0"
-self_update = { version = "0.41.0", features = ["archive-zip"] }
-serde = { version = "1.0.190", features = ["derive"] }
-serde_json = "1.0.107"
-tantivy = "0.24.0"
-tokio = { version = "1.36.0", features = ["full"] }
-tokio-util = "*"
-tracing = "0.1.40"
-tracing-subscriber = { version = "0.3.17", features = ["registry", "env-filter"] }
-url = "2.5.4"
-uuid = { version = "1.10.0", features = ["v4", "fast-rng", "macro-diagnostics", "serde"] }
-walkdir = "2.4.0"
-webp = "0.3.0"
+actix-cors = { version = "0.7.1", optional = true }
+actix-multipart = { version = "0.8.0", optional = true }
+actix-web = { version = "4", features = ["compress-brotli", "compress-gzip", "compress-zstd"], optional = true }
+actix-web-httpauth = { version = "0.8.2", optional = true }
+actix-ws = { version = "0.4.0", optional = true }
+argon2 = { version = "0.5.3", optional = true }
+base64 = "0.22.1"
+bytes = { version = "1.12.1", optional = true }
+chrono = { version = "0.4.45", features = ["serde"] }
+diesel = { version = "2.3.11", default-features = false, features = ["chrono", "numeric", "r2d2", "sqlite"] }
+diesel_migrations = { version = "2.3.2", features = ["sqlite"] }
+dirs = "6.0.0"
+dotenvy = "0.15.7"
+futures = { version = "0.3.32", optional = true }
+globset = "0.4.18"
+image = { version = "0.25.10", default-features = false, features = ["jpeg", "png", "webp"] }
+id3 = "1.17.0"
+jsonwebtoken = { version = "10.4.0", default-features = false, features = ["aws_lc_rs"], optional = true }
+libsqlite3-sys = { version = "0.37.0", features = ["bundled"] }
+lofty = "0.24.0"
+mime_guess = { version = "2.0.5", optional = true }
+mdns-sd = { version = "0.17.1", optional = true }
+notify = "8.2.0"
+percent-encoding = "2.3.2"
+rand = "0.10.2"
+ravif = { version = "0.13.0", optional = true }
+rayon = "1.12.0"
+regex = "1.13.0"
+reqwest = { version = "0.13.4", default-features = false, features = ["json", "query", "rustls"], optional = true }
+rust-embed = { version = "8.12.0", optional = true }
+serde = { version = "1.0.228", features = ["derive", "rc"] }
+serde_json = "1.0.150"
+sha2 = "0.11.0"
+tokio = { version = "1.52.3", features = ["fs", "io-util", "macros", "process", "rt", "sync", "time"] }
+tokio-util = { version = "0.7", features = ["io"], optional = true }
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.23", features = ["registry", "env-filter"], optional = true }
+unicode-normalization = "0.1.25"
+uuid = { version = "1.23.5", features = ["v4", "fast-rng", "macro-diagnostics", "serde"] }
+jwalk = "0.8.1"
+parson-core = { path = "../parson-core" }
+webp = { version = "0.3.1", optional = true }
+zstd = "0.13.3"
 
-[target.'cfg(not(target_os = "windows"))'.dependencies]
-openssl = { version = "0.10.66", features = ["vendored"] }
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_Security", "Win32_Storage_FileSystem", "Win32_System_IO", "Win32_System_Ioctl", "Win32_System_Threading"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+libc = "0.2.183"
+tokio-uring = "0.5.0"

@@ -1,0 +1,55 @@
+---
+title: Performance and indexing
+description: What indexing measures, what a benchmark must disclose, and the current reference results.
+---
+
+## Indexing explained
+
+**Indexing** is the complete operation that turns filesystem state into a searchable, playable catalog. It includes:
+
+1. **Discovery** — enumerate supported audio and image files and collect path, size, modified time, and optional stable identity.
+2. **Metadata parsing** — read container/tag regions for titles, artists, album artists, albums, dates, disc/track numbers, duration, genres, IDs, and embedded-art offsets.
+3. **Database insertion** — stage normalized file and catalog records in bounded batches, then atomically commit them.
+4. **Normalization and inference** — resolve artist aliases, album artists, editions, release groups, types, duplicates, and presentation data.
+5. **Search-index generation** — build normalized artist, album, track, genre, and cached-lyrics search documents.
+6. **Artwork processing** — choose embedded or external covers and create/cache usable derivatives.
+7. **Catalog export** — build the bounded in-memory read model clients use.
+
+### Cold scan and rescan
+
+A **cold scan** has no reusable file snapshots and parses the full library. A **warm rescan** discovers the root but reuses unchanged metadata. An **incremental scan** parses only changed/new files and rebuilds affected catalog projections. A manual repair additionally forces full filesystem reconciliation; it does not necessarily reparse unchanged media.
+
+## Production timing fields
+
+Every completed scan can report enumeration, parsing wall time, parse overlap, bytes read, file opens, metadata operations, reads, seeks, parser fallbacks, parser threads, storage queue depth, CPU time/utilization, unchanged detection, cover discovery, tag parsing, duration analysis, database staging/commit, inference, catalog export, and total wall time.
+
+## Published reference results
+
+These are engineering fixtures, not a promise for user libraries:
+
+| Dataset / procedure                                                     | Cache state                      | Raw result                                                                                  |
+| ----------------------------------------------------------------------- | -------------------------------- | ------------------------------------------------------------------------------------------- |
+| 100,000 tracks                                                          | Cold metadata and database state | About 64.8 s (roughly 1 min 5 s); about 1,542 tracks/s                                      |
+| 1,000,000 synthetic tracks; build search index, then 1,000 searches     | Generated fixture in process     | 5.625 s build; 60 ms total search (60 µs mean)                                              |
+| 1,000,000 history rows + 1,000,000 likes; indexed 100-row deep reads    | Warm SQLite fixture              | 62.4 µs history; 33.1 µs likes                                                              |
+| 100,000 valid audio paths in 1,000 album folders; clean enriched import | Fixture run, 2026-07-17          | 15.66 s                                                                                     |
+| Same 100,000-path fixture; unchanged scan                               | Warm metadata/database state     | 6.74 s total: 0.40 s enumeration, 0.30 s unchanged detection, 5.23 s staging, 0.37 s export |
+
+Real scan time can differ substantially. CPU and available threads, SSD versus hard drive or network storage, filesystem cache state, average file size, audio-format mix, malformed tags, duration frame scans, embedded artwork, folder layout, antivirus activity, and other system load all affect throughput. Warm and incremental rescans are also not comparable to a cold first scan.
+
+The historical fixture record does not identify every hardware and storage detail, so these numbers are **informational only** and are not presented as a release guarantee. Memory use was not recorded for those runs. Search latency is shown above; scan memory is bounded by the implementation but not published as a measured figure here.
+
+## Benchmark publication standard
+
+Any result labeled a Parson benchmark must publish:
+
+- CPU, core/thread count, RAM, OS, and Parson commit/version;
+- storage model, interface, filesystem, and whether it is local or networked;
+- dataset source or generator, format mix, file count, album/artist count, total bytes, and library size;
+- cold/warm cache state and exactly how caches were evicted or preserved;
+- exact command or procedure and configuration overrides;
+- raw per-run results, not only the best run;
+- peak resident memory, CPU time/utilization, I/O counts/bytes, and database size; and
+- search index time plus p50/p95/p99 query latency.
+
+Run the external-library cold/warm benchmark only with `PARSON_TEST_LIBRARY` set to the intended music root—never a parent volume. The profile-guided build helpers live in `crates/backend/tools`.

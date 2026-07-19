@@ -1,0 +1,34 @@
+{
+  "name": "parson-site",
+  "version": "1.0.0",
+  "private": true,
+  "license": "GPL-3.0-only",
+  "scripts": {
+    "dev": "next dev --webpack",
+    "build": "next build --webpack",
+    "type-check": "tsc --noEmit",
+    "start": "next start",
+    "screenshots": "node capture-screenshots.cjs",
+    "postinstall": "fumadocs-mdx"
+  },
+  "dependencies": {
+    "fumadocs-core": "16.11.5",
+    "fumadocs-mdx": "15.2.0",
+    "fumadocs-ui": "16.11.5",
+    "lucide-react": "1.24.0",
+    "next": "16.2.10",
+    "react": "19",
+    "react-dom": "19"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.3.2",
+    "@types/mdx": "^2.0.13",
+    "@types/node": "^26.1.1",
+    "@types/react": "19.2.17",
+    "@types/react-dom": "19.2.3",
+    "playwright": "1.61.1",
+    "postcss": "^8.5.19",
+    "tailwindcss": "^4.3.2",
+    "typescript": "6.0.3"
+  }
+}

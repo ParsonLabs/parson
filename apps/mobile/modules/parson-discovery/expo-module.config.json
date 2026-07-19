@@ -1,0 +1,9 @@
+{
+  "platforms": ["android", "apple"],
+  "apple": {
+    "modules": ["ParsonDiscoveryModule"]
+  },
+  "android": {
+    "modules": ["com.parsonlabs.discovery.ParsonDiscoveryModule"]
+  }
+}

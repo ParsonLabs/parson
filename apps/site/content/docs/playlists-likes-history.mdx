@@ -1,0 +1,22 @@
+---
+title: Playlists, likes, and history
+description: Personal library data and the small set of things worth backing up.
+---
+
+## Creating playlists
+
+Open a song or album menu and choose **Add to playlist**, or create an empty playlist from the library. A playlist can contain up to 5,000 unique tracks; an account can own up to 1,000 playlists. Removing a track from a playlist does not remove the source file or library entry.
+
+## Liked songs
+
+Select the heart on a song to add it to **Liked songs**. Likes are private to the current account and sync between clients because they live on the host.
+
+## Listening history
+
+Parson records qualified playback locally to power recent listening and recommendations. Raw history is bounded to roughly 20,000 recent records per user; compact lifetime aggregates retain preference signals without letting the event table grow forever.
+
+## Export and backup
+
+There is no separate playlist/likes/history export in Parson 1.0.x. These records live in `parson-music.db`, so back up the Parson data directory to preserve them together. Restoring only the music files does not restore accounts, playlists, likes, or history.
+
+See [Backup and restore](/docs/data-safety) for the exact folders and a move-to-new-computer checklist.

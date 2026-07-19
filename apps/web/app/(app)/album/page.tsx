@@ -1,10 +1,17 @@
 import { Suspense } from "react";
-import AlbumComponent from "./AlbumComponent";
+import AlbumDetails from "./album-details";
+import type { Metadata } from "next";
+import RouteLoading from "@/components/app/route-loading";
+
+export const metadata: Metadata = {
+  title: "Album",
+  description: "Album details and tracks.",
+};
 
 export default function AlbumPage() {
   return (
-    <Suspense>
-      <AlbumComponent />
+    <Suspense fallback={<RouteLoading />}>
+      <AlbumDetails />
     </Suspense>
-  )
+  );
 }

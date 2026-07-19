@@ -1,8 +1,8 @@
 {
-  "name": "@music/typescript-config",
-  "version": "0.0.0",
+  "name": "@parson/typescript-config",
+  "version": "1.0.0",
   "private": true,
-  "license": "MIT",
+  "license": "GPL-3.0-only",
   "publishConfig": {
     "access": "public"
   }

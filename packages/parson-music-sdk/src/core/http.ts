@@ -30,6 +30,7 @@ export interface ApiRequestConfig extends Omit<RequestInit, "body"> {
   data?: unknown;
   params?: object;
   responseType?: "json" | "text" | "blob";
+  skipAuth?: boolean;
   timeout?: number;
   _retryCount?: number;
 }
@@ -305,6 +306,16 @@ export const isAuthLifecycleURL = (url: string): boolean => {
   }
 };
 
+const isAnonymousAuthURL = (url: string): boolean => {
+  try {
+    return /(?:^|\/)auth\/(?:login|register|refresh)\/?$/.test(
+      new URL(url, "http://localhost").pathname,
+    );
+  } catch {
+    return false;
+  }
+};
+
 export const shouldAttemptAuthRefresh = (
   url: string,
   status: number,
@@ -314,11 +325,21 @@ export const shouldAttemptAuthRefresh = (
 
 const addAuthHeader = async (url: string, headers: Headers) => {
   // Refreshing before authentication requests creates signed-out redirect loops.
-  if (isAuthLifecycleURL(url)) return;
+  if (isAnonymousAuthURL(url)) return;
+
+  const authorization = await getFreshAuthorizationHeaders();
+  if (authorization.Authorization)
+    headers.set("Authorization", authorization.Authorization);
+};
+
+export const getFreshAuthorizationHeaders = async (): Promise<
+  Record<string, string>
+> => {
+  const headers: Record<string, string> = {};
 
   const accessToken = getAccessToken();
 
-  if (!accessToken) return;
+  if (!accessToken) return headers;
 
   try {
     const decoded = jwtDecode<{ exp: number }>(accessToken.toString());
@@ -326,14 +347,15 @@ const addAuthHeader = async (url: string, headers: Headers) => {
 
     if (decoded.exp && decoded.exp - currentTime < REFRESH_THRESHOLD_SECONDS) {
       const newToken = await getFreshAccessToken();
-      headers.set("Authorization", `Bearer ${newToken ?? accessToken}`);
-      return;
+      headers.Authorization = `Bearer ${newToken ?? accessToken}`;
+      return headers;
     }
   } catch (error) {
     console.error("Token validation failed:", error);
   }
 
-  headers.set("Authorization", `Bearer ${accessToken}`);
+  headers.Authorization = `Bearer ${accessToken}`;
+  return headers;
 };
 
 const request = async <T = any>(
@@ -347,7 +369,7 @@ const request = async <T = any>(
   try {
     const url = resolveURL(path, config);
     const { body, headers } = buildBodyAndHeaders(config);
-    await addAuthHeader(url, headers);
+    if (!config.skipAuth) await addAuthHeader(url, headers);
     timeout = setTimeout(() => {
       const reason =
         typeof DOMException === "undefined"
@@ -364,6 +386,7 @@ const request = async <T = any>(
       data: _data,
       params: _params,
       responseType: _responseType,
+      skipAuth: _skipAuth,
       timeout: _timeout,
       _retryCount,
       ...requestInit

@@ -6,8 +6,10 @@ import {
   setBitrate,
 } from "@parson/music-sdk";
 import { LogOut, Radio, Server } from "lucide-react-native";
-import { useState } from "react";
+import { useRouter } from "expo-router";
+import { useRef, useState } from "react";
 import {
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -31,11 +33,15 @@ const labels: Record<Tab, string> = {
 };
 
 export default function SettingsScreen() {
+  const router = useRouter();
   const session = useSession();
   const admin = session.claims?.role === "admin";
-  const tabs: Tab[] = admin
-    ? ["account", "playback", "server", "library", "users"]
-    : ["account", "playback", "server"];
+  const tabs: Tab[] =
+    session.phase === "offline"
+      ? ["account", "server"]
+      : admin
+        ? ["account", "playback", "server", "library", "users"]
+        : ["account", "playback", "server"];
   const [tab, setTab] = useState<Tab>("account");
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -45,18 +51,41 @@ export default function SettingsScreen() {
   const [newUsername, setNewUsername] = useState("");
   const [newUserPassword, setNewUserPassword] = useState("");
   const [newUserAdmin, setNewUserAdmin] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const busyRef = useRef(false);
+  const beginOperation = () => {
+    if (busyRef.current) return false;
+    busyRef.current = true;
+    setBusy(true);
+    return true;
+  };
+  const finishOperation = () => {
+    busyRef.current = false;
+    setBusy(false);
+  };
+  const leaveAuthenticatedApp = async (action: () => Promise<void>) => {
+    await action();
+    if (Platform.OS === "web") globalThis.location.replace("/");
+    else router.replace("/");
+  };
   const savePassword = async () => {
+    if (!beginOperation()) return;
     setMessage("Updating password…");
     try {
       await changePassword(currentPassword, newPassword);
       setCurrentPassword("");
       setNewPassword("");
-      setMessage("Password updated.");
+      setMessage("Password updated. Sign in again with your new password.");
+      await leaveAuthenticatedApp(session.logout);
     } catch {
       setMessage("Could not update password.");
+    } finally {
+      finishOperation();
     }
   };
   const saveQuality = async (bitrate: number) => {
+    if (!beginOperation()) return;
+    const previous = quality;
     setQuality(bitrate);
     setMessage("Updating quality…");
     try {
@@ -64,11 +93,14 @@ export default function SettingsScreen() {
       session.updateBitrate(bitrate);
       setMessage("Quality updated.");
     } catch {
+      setQuality(previous);
       setMessage("Could not update quality.");
+    } finally {
+      finishOperation();
     }
   };
   const indexFolder = async () => {
-    if (!libraryPath.trim()) return;
+    if (!libraryPath.trim() || !beginOperation()) return;
     setMessage("Indexing…");
     try {
       const result = await indexLibrary(libraryPath.trim());
@@ -77,9 +109,12 @@ export default function SettingsScreen() {
       );
     } catch {
       setMessage("Could not index this folder.");
+    } finally {
+      finishOperation();
     }
   };
   const refreshLibrary = async () => {
+    if (!beginOperation()) return;
     setMessage("Refreshing…");
     try {
       const result = await refreshCurrentLibrary();
@@ -88,10 +123,17 @@ export default function SettingsScreen() {
       );
     } catch {
       setMessage("Current library could not be refreshed.");
+    } finally {
+      finishOperation();
     }
   };
   const createUser = async () => {
-    if (newUsername.trim().length < 2 || newUserPassword.length < 8) return;
+    if (
+      newUsername.trim().length < 2 ||
+      newUserPassword.length < 8 ||
+      !beginOperation()
+    )
+      return;
     setMessage("Creating…");
     try {
       const result = await register({
@@ -109,6 +151,8 @@ export default function SettingsScreen() {
       setMessage("User created.");
     } catch {
       setMessage("Could not create user.");
+    } finally {
+      finishOperation();
     }
   };
   return (
@@ -128,8 +172,15 @@ export default function SettingsScreen() {
           >
             {tabs.map((value) => (
               <Pressable
+                accessibilityRole="tab"
+                accessibilityState={{ selected: tab === value }}
+                disabled={busy}
                 key={value}
-                style={[styles.tab, tab === value && styles.activeTab]}
+                style={[
+                  styles.tab,
+                  tab === value && styles.activeTab,
+                  busy && styles.disabled,
+                ]}
                 onPress={() => {
                   setTab(value);
                   setMessage("");
@@ -149,25 +200,33 @@ export default function SettingsScreen() {
           <View style={styles.panel}>
             {tab === "account" ? (
               <AccountSettings
+                busy={busy}
                 currentPassword={currentPassword}
                 newPassword={newPassword}
                 onCurrentPasswordChange={setCurrentPassword}
-                onLogout={session.logout}
+                onLogout={() => leaveAuthenticatedApp(session.logout)}
                 onNewPasswordChange={setNewPassword}
                 onSave={savePassword}
+                offline={session.phase === "offline"}
               />
             ) : tab === "playback" ? (
-              <PlaybackSettings onSave={saveQuality} quality={quality} />
+              <PlaybackSettings
+                busy={busy}
+                onSave={saveQuality}
+                quality={quality}
+              />
             ) : tab === "server" ? (
               <ServerSettings
+                busy={busy}
                 offline={session.phase === "offline"}
                 libraryName={session.libraryName}
-                onChange={session.changeServer}
+                onChange={() => leaveAuthenticatedApp(session.changeServer)}
                 onRetry={session.retry}
                 origin={session.origin}
               />
             ) : tab === "library" ? (
               <LibrarySettings
+                busy={busy}
                 onIndex={indexFolder}
                 onPathChange={setLibraryPath}
                 onRefresh={refreshLibrary}
@@ -176,6 +235,7 @@ export default function SettingsScreen() {
             ) : (
               <UserSettings
                 admin={newUserAdmin}
+                busy={busy}
                 onAdminChange={setNewUserAdmin}
                 onCreate={createUser}
                 onPasswordChange={setNewUserPassword}
@@ -184,7 +244,11 @@ export default function SettingsScreen() {
                 username={newUsername}
               />
             )}
-            {message ? <Text style={styles.message}>{message}</Text> : null}
+            {message ? (
+              <Text accessibilityLiveRegion="polite" style={styles.message}>
+                {message}
+              </Text>
+            ) : null}
           </View>
         </ScrollView>
       </SafeAreaView>
@@ -193,44 +257,71 @@ export default function SettingsScreen() {
 }
 
 function AccountSettings({
+  busy,
   currentPassword,
   newPassword,
   onCurrentPasswordChange,
   onLogout,
   onNewPasswordChange,
   onSave,
+  offline,
 }: {
+  busy: boolean;
   currentPassword: string;
   newPassword: string;
   onCurrentPasswordChange: (value: string) => void;
   onLogout: () => Promise<void>;
   onNewPasswordChange: (value: string) => void;
   onSave: () => Promise<void>;
+  offline: boolean;
 }) {
   return (
     <>
       <Text style={styles.heading}>Change password</Text>
+      {offline ? (
+        <Text style={styles.offlineNote}>
+          Reconnect to change account settings.
+        </Text>
+      ) : null}
       <TextInput
+        accessibilityLabel="Current password"
         secureTextEntry
         placeholder="Current password"
         placeholderTextColor={palette.muted}
         style={styles.input}
         value={currentPassword}
+        editable={!busy && !offline}
         onChangeText={onCurrentPasswordChange}
       />
       <TextInput
+        accessibilityLabel="New password"
         secureTextEntry
         placeholder="New password"
         placeholderTextColor={palette.muted}
         style={styles.input}
         value={newPassword}
+        editable={!busy && !offline}
         onChangeText={onNewPasswordChange}
       />
-      <Pressable style={styles.primary} onPress={() => void onSave()}>
+      <Pressable
+        accessibilityRole="button"
+        disabled={busy || offline || !currentPassword || newPassword.length < 8}
+        style={[
+          styles.primary,
+          (busy || offline || !currentPassword || newPassword.length < 8) &&
+            styles.disabled,
+        ]}
+        onPress={() => void onSave()}
+      >
         <Text style={styles.primaryText}>Update password</Text>
       </Pressable>
       <View style={styles.divider} />
-      <Pressable style={styles.action} onPress={() => void onLogout()}>
+      <Pressable
+        accessibilityRole="button"
+        disabled={busy}
+        style={[styles.action, busy && styles.disabled]}
+        onPress={() => void onLogout()}
+      >
         <LogOut color="white" size={21} />
         <Text style={styles.actionText}>Log out</Text>
       </Pressable>
@@ -246,9 +337,11 @@ const qualityOptions = [
 ] as const;
 
 function PlaybackSettings({
+  busy,
   onSave,
   quality,
 }: {
+  busy: boolean;
   onSave: (bitrate: number) => Promise<void>;
   quality: number;
 }) {
@@ -257,8 +350,15 @@ function PlaybackSettings({
       <Text style={styles.heading}>Audio quality</Text>
       {qualityOptions.map(([bitrate, label]) => (
         <Pressable
+          accessibilityRole="radio"
+          accessibilityState={{ selected: quality === bitrate }}
+          disabled={busy}
           key={bitrate}
-          style={[styles.quality, quality === bitrate && styles.selected]}
+          style={[
+            styles.quality,
+            quality === bitrate && styles.selected,
+            busy && styles.disabled,
+          ]}
           onPress={() => void onSave(bitrate)}
         >
           <Text style={styles.actionText}>
@@ -272,12 +372,14 @@ function PlaybackSettings({
 }
 
 function ServerSettings({
+  busy,
   offline,
   libraryName,
   onChange,
   onRetry,
   origin,
 }: {
+  busy: boolean;
   offline: boolean;
   libraryName: string | null;
   onChange: () => Promise<void>;
@@ -298,11 +400,21 @@ function ServerSettings({
         </View>
       </View>
       {offline ? (
-        <Pressable style={styles.primary} onPress={() => void onRetry()}>
+        <Pressable
+          accessibilityRole="button"
+          disabled={busy}
+          style={[styles.primary, busy && styles.disabled]}
+          onPress={() => void onRetry()}
+        >
           <Text style={styles.primaryText}>Reconnect</Text>
         </Pressable>
       ) : null}
-      <Pressable style={styles.action} onPress={() => void onChange()}>
+      <Pressable
+        accessibilityRole="button"
+        disabled={busy}
+        style={[styles.action, busy && styles.disabled]}
+        onPress={() => void onChange()}
+      >
         <Server color="white" size={21} />
         <Text style={styles.actionText}>Change server</Text>
       </Pressable>
@@ -311,11 +423,13 @@ function ServerSettings({
 }
 
 function LibrarySettings({
+  busy,
   onIndex,
   onPathChange,
   onRefresh,
   path,
 }: {
+  busy: boolean;
   onIndex: () => Promise<void>;
   onPathChange: (value: string) => void;
   onRefresh: () => Promise<void>;
@@ -325,18 +439,30 @@ function LibrarySettings({
     <>
       <Text style={styles.heading}>Library</Text>
       <TextInput
+        accessibilityLabel="Music folder path"
         autoCapitalize="none"
         autoCorrect={false}
         placeholder="Music folder path"
         placeholderTextColor={palette.muted}
         style={styles.input}
         value={path}
+        editable={!busy}
         onChangeText={onPathChange}
       />
-      <Pressable style={styles.primary} onPress={() => void onIndex()}>
+      <Pressable
+        accessibilityRole="button"
+        disabled={busy || !path.trim()}
+        style={[styles.primary, (busy || !path.trim()) && styles.disabled]}
+        onPress={() => void onIndex()}
+      >
         <Text style={styles.primaryText}>Index folder</Text>
       </Pressable>
-      <Pressable style={styles.action} onPress={() => void onRefresh()}>
+      <Pressable
+        accessibilityRole="button"
+        disabled={busy}
+        style={[styles.action, busy && styles.disabled]}
+        onPress={() => void onRefresh()}
+      >
         <Radio color="white" size={21} />
         <Text style={styles.actionText}>Refresh current library</Text>
       </Pressable>
@@ -346,6 +472,7 @@ function LibrarySettings({
 
 function UserSettings({
   admin,
+  busy,
   onAdminChange,
   onCreate,
   onPasswordChange,
@@ -354,6 +481,7 @@ function UserSettings({
   username,
 }: {
   admin: boolean;
+  busy: boolean;
   onAdminChange: (value: boolean) => void;
   onCreate: () => Promise<void>;
   onPasswordChange: (value: string) => void;
@@ -365,24 +493,31 @@ function UserSettings({
     <>
       <Text style={styles.heading}>Create user</Text>
       <TextInput
+        accessibilityLabel="Username"
         autoCapitalize="none"
         autoCorrect={false}
         placeholder="Username"
         placeholderTextColor={palette.muted}
         style={styles.input}
         value={username}
+        editable={!busy}
         onChangeText={onUsernameChange}
       />
       <TextInput
+        accessibilityLabel="Password"
         secureTextEntry
         placeholder="Password · 8 characters minimum"
         placeholderTextColor={palette.muted}
         style={styles.input}
         value={password}
+        editable={!busy}
         onChangeText={onPasswordChange}
       />
       <Pressable
-        style={styles.adminToggle}
+        accessibilityRole="checkbox"
+        accessibilityState={{ checked: admin }}
+        disabled={busy}
+        style={[styles.adminToggle, busy && styles.disabled]}
         onPress={() => onAdminChange(!admin)}
       >
         <View style={[styles.checkbox, admin && styles.checked]}>
@@ -390,7 +525,16 @@ function UserSettings({
         </View>
         <Text style={styles.actionText}>Administrator</Text>
       </Pressable>
-      <Pressable style={styles.primary} onPress={() => void onCreate()}>
+      <Pressable
+        accessibilityRole="button"
+        disabled={busy || username.trim().length < 2 || password.length < 8}
+        style={[
+          styles.primary,
+          (busy || username.trim().length < 2 || password.length < 8) &&
+            styles.disabled,
+        ]}
+        onPress={() => void onCreate()}
+      >
         <Text style={styles.primaryText}>Create user</Text>
       </Pressable>
     </>
@@ -409,6 +553,7 @@ const styles = StyleSheet.create({
   activeTabText: { color: "white" },
   panel: { padding: 20, gap: 12 },
   heading: { color: "white", fontSize: 19, fontWeight: "800", marginBottom: 5 },
+  offlineNote: { color: palette.secondary, lineHeight: 20 },
   input: {
     height: 50,
     borderRadius: 10,
@@ -426,6 +571,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   primaryText: { color: "black", fontWeight: "800" },
+  disabled: { opacity: 0.45 },
   divider: { height: 1, backgroundColor: palette.border, marginVertical: 12 },
   action: {
     minHeight: 54,

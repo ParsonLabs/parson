@@ -150,8 +150,11 @@ export async function getLibraryReadiness(): Promise<LibraryReadiness> {
   return response.data;
 }
 
-export async function getSetupStatus(): Promise<SetupStatus> {
-  const response = await api.get<SetupStatus>("/setup/status");
+export async function getSetupStatus(baseURL?: string): Promise<SetupStatus> {
+  const response = await api.get<SetupStatus>("/setup/status", {
+    baseURL,
+    skipAuth: Boolean(baseURL),
+  });
   return response.data;
 }
 

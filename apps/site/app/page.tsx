@@ -85,7 +85,6 @@ export default function Home() {
       <section className="landing-section landing-screenshots">
         <div className="landing-wide-container">
           <div className="landing-screenshot-copy">
-            <p>Made for your collection</p>
             <h2>Every album gets room to breathe.</h2>
             <span>
               Browse your library, settle into a release, or follow the lyrics

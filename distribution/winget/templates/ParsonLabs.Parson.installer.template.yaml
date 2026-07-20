@@ -1,0 +1,24 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.installer.1.12.0.schema.json
+PackageIdentifier: ParsonLabs.Parson
+PackageVersion: { { VERSION } }
+InstallerType: nullsoft
+Scope: user
+InstallModes:
+  - interactive
+  - silent
+  - silentWithProgress
+UpgradeBehavior: install
+ReleaseDate: { { RELEASE_DATE } }
+InstallerSwitches:
+  Silent: /S
+  SilentWithProgress: /S
+Installers:
+  - Architecture: x64
+    InstallerUrl: { { INSTALLER_URL } }
+    InstallerSha256: { { INSTALLER_SHA256 } }
+    AppsAndFeaturesEntries:
+      - DisplayName: Parson
+        Publisher: ParsonLabs
+        DisplayVersion: { { VERSION } }
+ManifestType: installer
+ManifestVersion: 1.12.0

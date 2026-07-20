@@ -1,4 +1,4 @@
-/* eslint-disable react-hooks/immutability, react-hooks/refs -- Reanimated SharedValues are mutated only inside UI-thread gesture worklets. */
+/* eslint-disable react-hooks/immutability -- Reanimated SharedValues are mutated only inside UI-thread gesture worklets. */
 import type { LucideIcon } from "lucide-react-native";
 import {
   createContext,
@@ -13,6 +13,8 @@ import {
 } from "react";
 import {
   BackHandler,
+  Modal,
+  Platform,
   Pressable,
   StyleSheet,
   Text,
@@ -33,36 +35,32 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { palette } from "@/constants/colors";
 
-type DrawerRequest = {
-  children: React.ReactNode;
-  id: symbol;
-  onClose: () => void;
-  title?: string;
-};
-
-type DrawerPortal = {
-  dismiss: (id: symbol) => void;
-  present: (request: DrawerRequest) => void;
-};
-
-const DrawerPortalContext = createContext<DrawerPortal | null>(null);
+const ActionDrawerContext = createContext<(id: symbol, open: boolean) => void>(
+  () => undefined,
+);
 
 export function ActionDrawerProvider({ children }: PropsWithChildren) {
-  const [request, setRequest] = useState<DrawerRequest | null>(null);
-  const present = useCallback((next: DrawerRequest) => setRequest(next), []);
-  const dismiss = useCallback(
-    (id: symbol) =>
-      setRequest((current) => (current?.id === id ? null : current)),
-    [],
-  );
-  const portal = useMemo(() => ({ dismiss, present }), [dismiss, present]);
+  const openDrawers = useRef(new Set<symbol>());
+  const [hasOpenDrawer, setHasOpenDrawer] = useState(false);
+  const registerDrawer = useCallback((id: symbol, open: boolean) => {
+    if (open) openDrawers.current.add(id);
+    else openDrawers.current.delete(id);
+    setHasOpenDrawer(openDrawers.current.size > 0);
+  }, []);
+
   return (
-    <DrawerPortalContext.Provider value={portal}>
-      <View style={styles.provider}>
+    <ActionDrawerContext.Provider value={registerDrawer}>
+      <View
+        aria-hidden={hasOpenDrawer}
+        accessibilityElementsHidden={hasOpenDrawer}
+        importantForAccessibility={
+          hasOpenDrawer ? "no-hide-descendants" : "auto"
+        }
+        style={styles.provider}
+      >
         {children}
-        <ActionDrawerHost request={request} />
       </View>
-    </DrawerPortalContext.Provider>
+    </ActionDrawerContext.Provider>
   );
 }
 
@@ -77,45 +75,29 @@ export function ActionDrawer({
   open: boolean;
   title?: string;
 }) {
-  const portal = useContext(DrawerPortalContext);
-  const id = useRef(Symbol("action-drawer"));
-  useLayoutEffect(() => {
-    if (!portal) return;
-    if (open) portal.present({ children, id: id.current, onClose, title });
-    else portal.dismiss(id.current);
-  }, [children, onClose, open, portal, title]);
-  useEffect(
-    () => () => {
-      portal?.dismiss(id.current);
-    },
-    [portal],
-  );
-  return null;
-}
-
-function ActionDrawerHost({ request }: { request: DrawerRequest | null }) {
   const insets = useSafeAreaInsets();
+  const registerDrawer = useContext(ActionDrawerContext);
+  const drawerId = useRef(Symbol("action-drawer"));
   const { height: screenHeight } = useWindowDimensions();
   const offscreenDistance = Math.max(900, screenHeight);
   const entranceDistance = 64;
   const translateY = useSharedValue(offscreenDistance);
-  const requestRef = useRef(request);
-  const requestId = request?.id;
-  const closeDrawer = useCallback(() => {
-    const active = requestRef.current;
-    if (active && active.id === requestId) active.onClose();
-  }, [requestId]);
+  const closeDrawer = useCallback(() => onClose(), [onClose]);
 
   useEffect(() => {
-    requestRef.current = request;
-  }, [request]);
+    const id = drawerId.current;
+    registerDrawer(id, open);
+    return () => registerDrawer(id, false);
+  }, [open, registerDrawer]);
 
   useLayoutEffect(() => {
-    if (requestId) {
+    if (open) {
       translateY.value = entranceDistance;
       translateY.value = withTiming(0, { duration: 120 });
+    } else {
+      translateY.value = offscreenDistance;
     }
-  }, [requestId, translateY]);
+  }, [entranceDistance, offscreenDistance, open, translateY]);
 
   const dismissDrawer = useCallback(() => {
     translateY.value = withTiming(offscreenDistance, { duration: 140 }, () => {
@@ -135,7 +117,7 @@ function ActionDrawerHost({ request }: { request: DrawerRequest | null }) {
     ),
   }));
   useEffect(() => {
-    if (!request) return;
+    if (!open || Platform.OS === "web") return;
     const subscription = BackHandler.addEventListener(
       "hardwareBackPress",
       () => {
@@ -144,7 +126,7 @@ function ActionDrawerHost({ request }: { request: DrawerRequest | null }) {
       },
     );
     return () => subscription.remove();
-  }, [dismissDrawer, request]);
+  }, [dismissDrawer, open]);
   const dragGesture = useMemo(
     () =>
       Gesture.Pan()
@@ -171,32 +153,45 @@ function ActionDrawerHost({ request }: { request: DrawerRequest | null }) {
         }),
     [closeDrawer, offscreenDistance, translateY],
   );
-  if (!request) return null;
   return (
-    <View style={styles.modal}>
-      <Animated.View
-        pointerEvents="none"
-        style={[styles.backdrop, backdropStyle]}
-      />
-      <Pressable style={StyleSheet.absoluteFill} onPress={dismissDrawer} />
-      <GestureDetector gesture={dragGesture}>
+    <Modal
+      animationType="none"
+      onRequestClose={dismissDrawer}
+      presentationStyle="overFullScreen"
+      statusBarTranslucent
+      transparent
+      visible={open}
+    >
+      <View accessibilityViewIsModal style={styles.modal}>
         <Animated.View
-          style={[
-            styles.drawer,
-            { paddingBottom: Math.max(16, insets.bottom) },
-            drawerStyle,
-          ]}
-        >
-          <View style={styles.handle} />
-          {request.title ? (
-            <Text numberOfLines={1} style={styles.title}>
-              {request.title}
-            </Text>
-          ) : null}
-          {request.children}
-        </Animated.View>
-      </GestureDetector>
-    </View>
+          pointerEvents="none"
+          style={[styles.backdrop, backdropStyle]}
+        />
+        <Pressable
+          accessibilityLabel="Close actions"
+          accessibilityRole="button"
+          style={StyleSheet.absoluteFill}
+          onPress={dismissDrawer}
+        />
+        <GestureDetector gesture={dragGesture}>
+          <Animated.View
+            style={[
+              styles.drawer,
+              { paddingBottom: Math.max(16, insets.bottom) },
+              drawerStyle,
+            ]}
+          >
+            <View style={styles.handle} />
+            {title ? (
+              <Text numberOfLines={1} style={styles.title}>
+                {title}
+              </Text>
+            ) : null}
+            {children}
+          </Animated.View>
+        </GestureDetector>
+      </View>
+    </Modal>
   );
 }
 
@@ -211,6 +206,7 @@ export function DrawerAction({
 }) {
   return (
     <Pressable
+      accessibilityRole="button"
       style={({ pressed }) => [styles.action, pressed && { opacity: 0.55 }]}
       onPress={onPress}
     >

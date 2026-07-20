@@ -1,0 +1,13 @@
+images:
+  image:
+    repository: ghcr.io/parsonlabs/parson-music
+    tag: 1.0.0
+  container_utils_image:
+    repository: ixsystems/container-utils
+    tag: 1.0.2
+
+consts:
+  parson_container_name: parson
+  perms_container_name: permissions
+  data_path: /Parson
+  music_path: /music

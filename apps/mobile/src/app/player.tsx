@@ -67,6 +67,7 @@ import {
 } from "@/lib/downloads";
 import { PlaylistPicker } from "@/components/playlist-picker";
 import { PauseGlyph } from "@/components/pause-glyph";
+import { useSession } from "@/providers/session-provider";
 
 type Panel = "player" | "queue" | "lyrics";
 const AnimatedLinearGradient = Animated.createAnimatedComponent(LinearGradient);
@@ -98,7 +99,14 @@ function PlayerHeader({
 }) {
   return (
     <View style={styles.header}>
-      <Pressable hitSlop={13} onPress={onBack}>
+      <Pressable
+        accessibilityLabel={
+          panel === "player" ? "Close player" : "Back to player"
+        }
+        accessibilityRole="button"
+        hitSlop={13}
+        onPress={onBack}
+      >
         {panel === "player" ? (
           <ChevronDown color="white" size={29} />
         ) : (
@@ -109,7 +117,12 @@ function PlayerHeader({
         {panel === "player" ? "" : panel === "lyrics" ? "Lyrics" : "Queue"}
       </Text>
       {panel === "player" ? (
-        <Pressable hitSlop={13} onPress={onActions}>
+        <Pressable
+          accessibilityLabel="More player actions"
+          accessibilityRole="button"
+          hitSlop={13}
+          onPress={onActions}
+        >
           <MoreHorizontal color="white" size={25} />
         </Pressable>
       ) : (
@@ -130,6 +143,8 @@ function NowPlayingPanel({
   onQueue,
   onLyrics,
   onSound,
+  notice,
+  online,
 }: {
   player: Player;
   song: PlayerSong;
@@ -141,6 +156,8 @@ function NowPlayingPanel({
   onQueue: () => void;
   onLyrics: () => void;
   onSound: () => void;
+  notice?: string | null;
+  online: boolean;
 }) {
   const [scrubPosition, setScrubPosition] = useState<number | null>(null);
   const settlingSeek = useRef<{ target: number; expiresAt: number } | null>(
@@ -181,6 +198,8 @@ function NowPlayingPanel({
       <View style={styles.songInfo}>
         <View style={{ flex: 1 }}>
           <Text
+            accessibilityLabel={`View album ${song.album_object?.name ?? song.name}`}
+            accessibilityRole={song.album_object?.id ? "button" : undefined}
             numberOfLines={1}
             style={styles.title}
             onPress={() =>
@@ -191,6 +210,8 @@ function NowPlayingPanel({
             {song.name}
           </Text>
           <Text
+            accessibilityLabel={`View artist ${song.artist}`}
+            accessibilityRole={song.artist_object?.id ? "button" : undefined}
             numberOfLines={1}
             style={styles.artist}
             onPress={() =>
@@ -201,7 +222,20 @@ function NowPlayingPanel({
             {song.artist}
           </Text>
         </View>
-        <Pressable hitSlop={12} onPress={onToggleFavorite}>
+        <Pressable
+          accessibilityLabel={
+            !online
+              ? "Liked songs unavailable offline"
+              : favorite
+                ? "Remove from liked songs"
+                : "Add to liked songs"
+          }
+          accessibilityRole="button"
+          disabled={!online}
+          hitSlop={12}
+          style={!online ? styles.disabledControl : undefined}
+          onPress={onToggleFavorite}
+        >
           <Heart
             color={favorite ? palette.danger : "white"}
             fill={favorite ? palette.danger : "transparent"}
@@ -211,6 +245,7 @@ function NowPlayingPanel({
       </View>
       <View style={styles.sliderHitbox}>
         <Slider
+          accessibilityLabel="Playback position"
           minimumValue={0}
           maximumValue={Math.max(1, duration)}
           value={shownTime}
@@ -236,8 +271,18 @@ function NowPlayingPanel({
           -{time(Math.max(0, duration - shownTime))}
         </Text>
       </View>
+      {notice ? (
+        <Text accessibilityRole="alert" style={styles.playbackError}>
+          {notice}
+        </Text>
+      ) : null}
       <View style={styles.controls}>
-        <Pressable hitSlop={12} onPress={player.cycleRepeat}>
+        <Pressable
+          accessibilityLabel={`Repeat ${player.repeat}`}
+          accessibilityRole="button"
+          hitSlop={12}
+          onPress={player.cycleRepeat}
+        >
           {player.repeat === "one" ? (
             <Repeat1 color="white" size={24} />
           ) : (
@@ -247,29 +292,58 @@ function NowPlayingPanel({
             />
           )}
         </Pressable>
-        <Pressable hitSlop={14} onPress={player.previous}>
+        <Pressable
+          accessibilityLabel="Previous song"
+          accessibilityRole="button"
+          hitSlop={14}
+          onPress={player.previous}
+        >
           <SkipBack color="white" fill="white" size={31} />
         </Pressable>
-        <Pressable style={styles.playButton} onPress={player.toggle}>
+        <Pressable
+          accessibilityLabel={player.isPlaying ? "Pause" : "Play"}
+          accessibilityRole="button"
+          style={styles.playButton}
+          onPress={player.toggle}
+        >
           {player.isPlaying ? (
             <PauseGlyph color="black" size={30} />
           ) : (
             <Play color="black" fill="black" size={34} />
           )}
         </Pressable>
-        <Pressable hitSlop={14} onPress={player.next}>
+        <Pressable
+          accessibilityLabel="Next song"
+          accessibilityRole="button"
+          hitSlop={14}
+          onPress={player.next}
+        >
           <SkipForward color="white" fill="white" size={31} />
         </Pressable>
-        <Pressable hitSlop={12} onPress={onQueue}>
+        <Pressable
+          accessibilityLabel="Open queue"
+          accessibilityRole="button"
+          hitSlop={12}
+          onPress={onQueue}
+        >
           <ListMusic color="white" size={24} />
         </Pressable>
       </View>
       <View style={styles.panelButtons}>
-        <Pressable style={styles.panelButton} onPress={onLyrics}>
+        <Pressable
+          accessibilityRole="button"
+          style={styles.panelButton}
+          onPress={onLyrics}
+        >
           <Text style={styles.panelText}>Lyrics</Text>
         </Pressable>
         {player.audioPresetsEnabled ? (
-          <Pressable style={styles.panelButton} onPress={onSound}>
+          <Pressable
+            accessibilityLabel="Sound settings"
+            accessibilityRole="button"
+            style={styles.panelButton}
+            onPress={onSound}
+          >
             <Text style={styles.panelText}>
               {player.audioPreset === "original" ? "Sound" : presetLabel}
             </Text>
@@ -304,6 +378,9 @@ function LyricsPanel({
   instrumental,
   currentTime,
   onSeek,
+  failed,
+  onRetry,
+  offline,
 }: {
   pending: boolean;
   synced: SyncedLine[];
@@ -311,6 +388,9 @@ function LyricsPanel({
   instrumental?: boolean;
   currentTime: number;
   onSeek: (seconds: number) => void;
+  failed: boolean;
+  onRetry: () => void;
+  offline: boolean;
 }) {
   const scrollRef = useRef<ScrollView>(null);
   const lineLayouts = useRef(new Map<number, { height: number; y: number }>());
@@ -353,8 +433,23 @@ function LyricsPanel({
         ]}
         showsVerticalScrollIndicator={false}
       >
-        {pending ? (
+        {offline ? (
+          <View style={styles.emptyLyrics}>
+            <Text style={styles.emptyTitle}>
+              Lyrics are unavailable offline
+            </Text>
+          </View>
+        ) : pending ? (
           <Text style={styles.loadingLyrics}>•••</Text>
+        ) : failed ? (
+          <Pressable
+            accessibilityRole="button"
+            style={styles.emptyLyrics}
+            onPress={onRetry}
+          >
+            <Text style={styles.emptyTitle}>Could not load lyrics</Text>
+            <Text style={styles.retryText}>Tap to try again</Text>
+          </Pressable>
         ) : synced.length ? (
           synced.map((line, index) => {
             const captureLayout = ({
@@ -410,6 +505,7 @@ function PlayerDrawers({
   onActionsClose,
   soundOpen,
   onSoundClose,
+  online,
 }: {
   player: Player;
   song: PlayerSong;
@@ -418,9 +514,11 @@ function PlayerDrawers({
   onActionsClose: () => void;
   soundOpen: boolean;
   onSoundClose: () => void;
+  online: boolean;
 }) {
   const [playlistPicker, setPlaylistPicker] = useState(false);
   const [downloading, setDownloading] = useState(false);
+  const [downloadError, setDownloadError] = useState(false);
   return (
     <>
       <ActionDrawer
@@ -444,7 +542,7 @@ function PlayerDrawers({
             onActionsClose();
           }}
         />
-        {song.album_object?.id ? (
+        {online && song.album_object?.id ? (
           <DrawerAction
             icon={Disc3}
             label="View album"
@@ -454,7 +552,7 @@ function PlayerDrawers({
             }}
           />
         ) : null}
-        {song.artist_object?.id ? (
+        {online && song.artist_object?.id ? (
           <DrawerAction
             icon={UserRound}
             label="View artist"
@@ -464,35 +562,50 @@ function PlayerDrawers({
             }}
           />
         ) : null}
-        <DrawerAction
-          icon={ListPlus}
-          label="Add to playlist"
-          onPress={() => {
-            onActionsClose();
-            setPlaylistPicker(true);
-          }}
-        />
-        <DrawerAction
-          icon={isSongDownloaded(song.id) ? X : Download}
-          label={
-            isSongDownloaded(song.id)
-              ? "Delete from device"
-              : downloading
-                ? "Downloading song…"
-                : "Download song"
-          }
-          onPress={() => {
-            if (downloading) return;
-            if (isSongDownloaded(song.id)) {
-              void removeDownload(song.id).then(onActionsClose);
-              return;
+        {online ? (
+          <DrawerAction
+            icon={ListPlus}
+            label="Add to playlist"
+            onPress={() => {
+              onActionsClose();
+              setPlaylistPicker(true);
+            }}
+          />
+        ) : null}
+        {online || isSongDownloaded(song.id) ? (
+          <DrawerAction
+            icon={isSongDownloaded(song.id) ? X : Download}
+            label={
+              isSongDownloaded(song.id)
+                ? "Delete from device"
+                : downloading
+                  ? "Downloading song…"
+                  : downloadError
+                    ? "Download failed · Try again"
+                    : "Download song"
             }
-            setDownloading(true);
-            void downloadSong(song)
-              .then(onActionsClose)
-              .finally(() => setDownloading(false));
-          }}
-        />
+            onPress={() => {
+              if (downloading) return;
+              if (isSongDownloaded(song.id)) {
+                void removeDownload(song.id)
+                  .then(onActionsClose)
+                  .catch(() => setDownloadError(true));
+                return;
+              }
+              setDownloadError(false);
+              setDownloading(true);
+              void downloadSong(song)
+                .then(onActionsClose)
+                .catch(() => setDownloadError(true))
+                .finally(() => setDownloading(false));
+            }}
+          />
+        ) : null}
+        {downloadError ? (
+          <Text accessibilityRole="alert" style={styles.drawerError}>
+            The download action failed. Please try again.
+          </Text>
+        ) : null}
       </ActionDrawer>
       {player.audioPresetsEnabled ? (
         <ActionDrawer open={soundOpen} onClose={onSoundClose} title="Sound">
@@ -510,7 +623,7 @@ function PlayerDrawers({
         </ActionDrawer>
       ) : null}
       <PlaylistPicker
-        open={playlistPicker}
+        open={online && playlistPicker}
         onClose={() => setPlaylistPicker(false)}
         songId={song.id}
       />
@@ -521,11 +634,15 @@ function PlayerDrawers({
 export default function PlayerScreen() {
   const router = useRouter();
   const client = useQueryClient();
+  const session = useSession();
   const player = usePlayer();
   const { currentTime, duration } = usePlayerPosition();
   const [panel, setPanel] = useState<Panel>("player");
   const [actions, setActions] = useState(false);
   const [soundOptions, setSoundOptions] = useState(false);
+  const [favoriteErrorSong, setFavoriteErrorSong] = useState<string | null>(
+    null,
+  );
   const { height: screenHeight } = useWindowDimensions();
   const translateY = useSharedValue(0);
   const dismissPlayer = useCallback(() => router.back(), [router]);
@@ -560,14 +677,15 @@ export default function PlayerScreen() {
   const lyrics = useQuery({
     queryKey: ["lyrics", player.current?.id],
     queryFn: () => findLyrics(player.current!.id),
-    enabled: panel === "lyrics" && !!player.current,
+    enabled:
+      panel === "lyrics" && !!player.current && session.phase === "ready",
     staleTime: 30 * 60_000,
     retry: false,
   });
   const favorite = useQuery({
     queryKey: ["favorite-membership", player.current?.id],
     queryFn: () => isFavoriteSong(player.current!.id),
-    enabled: !!player.current,
+    enabled: !!player.current && session.phase === "ready",
     staleTime: 30_000,
   });
   const synced = useMemo(() => {
@@ -589,7 +707,12 @@ export default function PlayerScreen() {
     return (
       <View style={styles.page}>
         <SafeAreaView>
-          <Pressable style={styles.down} onPress={router.back}>
+          <Pressable
+            accessibilityLabel="Close player"
+            accessibilityRole="button"
+            style={styles.down}
+            onPress={router.back}
+          >
             <ChevronDown color="white" />
           </Pressable>
         </SafeAreaView>
@@ -597,6 +720,8 @@ export default function PlayerScreen() {
     );
   const song = player.current;
   const toggleFavorite = async () => {
+    if (session.phase !== "ready") return;
+    setFavoriteErrorSong(null);
     const next = !favorite.data;
     client.setQueryData(["favorite-membership", song.id], next);
     try {
@@ -605,6 +730,7 @@ export default function PlayerScreen() {
       await client.invalidateQueries({ queryKey: ["favorite-song-details"] });
     } catch {
       client.setQueryData(["favorite-membership", song.id], !next);
+      setFavoriteErrorSong(song.id);
     }
   };
   return (
@@ -633,6 +759,13 @@ export default function PlayerScreen() {
               onQueue={() => setPanel("queue")}
               onLyrics={() => setPanel("lyrics")}
               onSound={() => setSoundOptions(true)}
+              notice={
+                player.error ??
+                (favoriteErrorSong === song.id
+                  ? "Could not update liked songs."
+                  : null)
+              }
+              online={session.phase === "ready"}
             />
           ) : panel === "queue" ? (
             <QueuePanel player={player} />
@@ -644,6 +777,9 @@ export default function PlayerScreen() {
               instrumental={lyrics.data?.instrumental}
               currentTime={currentTime}
               onSeek={player.seek}
+              failed={lyrics.isError}
+              onRetry={() => void lyrics.refetch()}
+              offline={session.phase === "offline"}
             />
           )}
           <PlayerDrawers
@@ -654,6 +790,7 @@ export default function PlayerScreen() {
             onActionsClose={() => setActions(false)}
             soundOpen={soundOptions}
             onSoundClose={() => setSoundOptions(false)}
+            online={session.phase === "ready"}
           />
         </SafeAreaView>
       </AnimatedLinearGradient>
@@ -672,6 +809,13 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
   },
   panelHeader: { color: "white", fontSize: 15, fontWeight: "800" },
+  playbackError: {
+    color: "#fb7185",
+    fontSize: 13,
+    textAlign: "center",
+  },
+  disabledControl: { opacity: 0.4 },
+  retryText: { color: palette.secondary, fontSize: 14, marginTop: 8 },
   player: { flex: 1, paddingHorizontal: 26, justifyContent: "space-evenly" },
   art: { alignSelf: "center", maxWidth: "100%", aspectRatio: 1 },
   songInfo: {
@@ -775,4 +919,5 @@ const styles = StyleSheet.create({
   },
   emptyTitle: { color: "white", fontWeight: "900", fontSize: 18 },
   emptyDetail: { color: palette.secondary, lineHeight: 20, marginTop: 8 },
+  drawerError: { color: "#ff9b9b", paddingHorizontal: 16, paddingVertical: 8 },
 });

@@ -1,9 +1,9 @@
-import { Redirect, Tabs } from "expo-router";
+import { Tabs } from "expo-router";
 import { Home, Library, Search, Settings } from "lucide-react-native";
 import { View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { palette } from "@/constants/colors";
+import { layout, palette } from "@/constants/colors";
 import { useSession } from "@/providers/session-provider";
 
 function icon(Icon: typeof Home) {
@@ -21,8 +21,7 @@ function icon(Icon: typeof Home) {
 export default function TabsLayout() {
   const session = useSession();
   const insets = useSafeAreaInsets();
-  if (session.phase !== "ready" && session.phase !== "offline")
-    return <Redirect href="/" />;
+  if (session.phase !== "ready" && session.phase !== "offline") return null;
   return (
     <View style={{ flex: 1, backgroundColor: palette.background }}>
       <Tabs
@@ -31,22 +30,30 @@ export default function TabsLayout() {
           tabBarActiveTintColor: palette.text,
           tabBarInactiveTintColor: palette.muted,
           tabBarStyle: {
-            height: 58 + insets.bottom,
+            height: layout.tabBar + insets.bottom,
             backgroundColor: "#000",
             borderTopColor: palette.border,
             paddingTop: 7,
-            paddingBottom: Math.max(5, insets.bottom),
+            paddingBottom: Math.max(8, insets.bottom),
           },
           tabBarLabelStyle: { fontSize: 11, fontWeight: "700" },
         }}
       >
         <Tabs.Screen
           name="index"
-          options={{ title: "Home", tabBarIcon: icon(Home) }}
+          options={{
+            title: "Home",
+            tabBarIcon: icon(Home),
+            href: session.phase === "offline" ? null : undefined,
+          }}
         />
         <Tabs.Screen
           name="search"
-          options={{ title: "Search", tabBarIcon: icon(Search) }}
+          options={{
+            title: "Search",
+            tabBarIcon: icon(Search),
+            href: session.phase === "offline" ? null : undefined,
+          }}
         />
         <Tabs.Screen
           name="library"

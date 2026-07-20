@@ -99,6 +99,7 @@ export function Timeline({
         {formatTime(currentTime / safePlaybackRate)}
       </span>
       <Slider
+        aria-label="Playback position"
         className="flex-1 [&_[data-slot=slider-range]]:bg-white [&_[data-slot=slider-thumb]]:h-2.5 [&_[data-slot=slider-thumb]]:w-2.5 [&_[data-slot=slider-thumb]]:border-0 [&_[data-slot=slider-thumb]]:bg-white [&_[data-slot=slider-thumb]]:opacity-0 [&_[data-slot=slider-track]]:h-1 [&_[data-slot=slider-track]]:bg-white/15 [&:hover_[data-slot=slider-thumb]]:opacity-100"
         max={duration || 100}
         min={0}
@@ -145,6 +146,7 @@ export function VolumeControl({
     >
       <div className="w-0 overflow-hidden opacity-0 transition-[width,opacity] duration-200 group-hover/volume:w-20 group-hover/volume:opacity-100 group-focus-within/volume:w-20 group-focus-within/volume:opacity-100">
         <Slider
+          aria-label="Volume"
           className="mr-1 h-10 w-[68px] [&_[data-slot=slider-range]]:bg-white [&_[data-slot=slider-thumb]]:h-3.5 [&_[data-slot=slider-thumb]]:w-3.5 [&_[data-slot=slider-thumb]]:border-0 [&_[data-slot=slider-thumb]]:bg-white [&_[data-slot=slider-thumb]]:opacity-0 [&_[data-slot=slider-track]]:h-1 [&_[data-slot=slider-track]]:bg-white/15 [&:hover_[data-slot=slider-thumb]]:opacity-100"
           max={100}
           min={0}

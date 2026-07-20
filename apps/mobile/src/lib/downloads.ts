@@ -3,13 +3,12 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Directory, File, Paths } from "expo-file-system";
 import { useSyncExternalStore } from "react";
 
-import { authorizationHeaders, streamUrl } from "@/lib/runtime";
-
-const safe = (value: string) =>
-  value
-    .replace(/[\\/:*?"<>|]/g, "_")
-    .trim()
-    .slice(0, 100) || "Music";
+import { freshAuthorizationHeaders, streamUrl } from "@/lib/runtime";
+import {
+  albumDirectoryName,
+  albumTrackFilename,
+  songFilename,
+} from "@/lib/download-paths";
 
 type DownloadRecord = {
   albumDownload?: { albumId: string; songIds: string[] };
@@ -23,6 +22,7 @@ const downloaded = new Map<string, DownloadRecord>();
 const listeners = new Set<() => void>();
 let hydrated = false;
 let hydrationPromise: Promise<void> | null = null;
+let persistenceQueue = Promise.resolve();
 let revision = 0;
 
 const snapshot = () => revision;
@@ -34,8 +34,13 @@ const changed = () => {
   revision += 1;
   listeners.forEach((listener) => listener());
 };
-const persist = () =>
-  AsyncStorage.setItem(DOWNLOADS_KEY, JSON.stringify([...downloaded.values()]));
+const persist = () => {
+  const snapshot = JSON.stringify([...downloaded.values()]);
+  persistenceQueue = persistenceQueue
+    .catch(() => {})
+    .then(() => AsyncStorage.setItem(DOWNLOADS_KEY, snapshot));
+  return persistenceQueue;
+};
 
 export function useDownloadsRevision() {
   return useSyncExternalStore(subscribe, snapshot, snapshot);
@@ -250,10 +255,16 @@ export async function downloadAlbum(
   songs: LibrarySong[],
   onProgress?: (done: number) => void,
 ) {
-  const directory = new Directory(Paths.document, "Parson", safe(name));
-  const albumDownload = songs[0]?.album_object?.id
+  const albumId = songs[0]?.album_object?.id;
+  const artist = songs[0]?.artist;
+  const directory = new Directory(
+    Paths.document,
+    "Parson",
+    albumDirectoryName(name, artist, albumId ?? name),
+  );
+  const albumDownload = albumId
     ? {
-        albumId: songs[0].album_object.id,
+        albumId,
         songIds: songs.map((song) => song.id),
       }
     : undefined;
@@ -262,20 +273,14 @@ export async function downloadAlbum(
     for (let index = 0; index < songs.length; index += 1) {
       const song = songs[index];
       if (!song) continue;
-      const extension =
-        song.path
-          .split(".")
-          .pop()
-          ?.toLowerCase()
-          .match(/^[a-z0-9]{2,5}$/)?.[0] ?? "mp3";
       const destination = new File(
         directory,
-        `${String(index + 1).padStart(2, "0")} ${safe(song.name)}.${extension}`,
+        albumTrackFilename(index, song.name, song.id, song.path),
       );
       const saved = await File.downloadFileAsync(
         streamUrl(song.id),
         destination,
-        { headers: authorizationHeaders(), idempotent: true },
+        { headers: await freshAuthorizationHeaders(), idempotent: true },
       );
       await rememberDownload(song, saved.uri, false, albumDownload);
       onProgress?.(index + 1);
@@ -290,18 +295,12 @@ export async function downloadAlbum(
 export async function downloadSong(song: LibrarySong) {
   const directory = new Directory(Paths.document, "Parson", "Songs");
   directory.create({ intermediates: true, idempotent: true });
-  const extension =
-    song.path
-      .split(".")
-      .pop()
-      ?.toLowerCase()
-      .match(/^[a-z0-9]{2,5}$/)?.[0] ?? "mp3";
   const destination = new File(
     directory,
-    `${safe(song.artist)} - ${safe(song.name)}.${extension}`,
+    songFilename(song.artist, song.name, song.id, song.path),
   );
   const saved = await File.downloadFileAsync(streamUrl(song.id), destination, {
-    headers: authorizationHeaders(),
+    headers: await freshAuthorizationHeaders(),
     idempotent: true,
   });
   await rememberDownload(song, saved.uri);

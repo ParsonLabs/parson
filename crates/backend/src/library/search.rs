@@ -971,6 +971,59 @@ mod tests {
     }
 
     #[test]
+    fn canonical_album_song_is_first_for_break_the_ice() {
+        let song = |id: &str, name: &str, duration: f64| Song {
+            id: id.into(),
+            name: name.into(),
+            artist: "Britney Spears".into(),
+            duration,
+            ..Default::default()
+        };
+        let index = SearchIndex::build(&[Artist {
+            id: "britney-spears".into(),
+            name: "Britney Spears".into(),
+            albums: vec![
+                Album {
+                    id: "dance-remixes".into(),
+                    name: "Break The Ice: Dance Remixes".into(),
+                    primary_type: "Remix".into(),
+                    songs: vec![
+                        song("remix-619", "Break The Ice", 379.0),
+                        song("remix-657", "Break The Ice", 417.0),
+                        song(
+                            "mike-rizzo",
+                            "Break The Ice (Mike Rizzo Funk Generation Club)",
+                            401.0,
+                        ),
+                        song("remix-715", "Break The Ice", 435.0),
+                        song("remix-850", "Break The Ice", 530.0),
+                        song("tracy-young", "Break The Ice (Tracy Young Dub)", 508.0),
+                    ],
+                    ..Default::default()
+                },
+                Album {
+                    id: "blackout".into(),
+                    name: "Blackout".into(),
+                    primary_type: "Album".into(),
+                    songs: vec![song("blackout-original", "Break the Ice", 196.0)],
+                    ..Default::default()
+                },
+            ],
+            ..Default::default()
+        }])
+        .unwrap();
+
+        let hits = index.search("Break the Ice", 20).unwrap();
+        assert_eq!(hits[0].entity_id, "blackout-original");
+        assert_eq!(hits[0].match_reason, "exact_title");
+        assert!(
+            hits.iter()
+                .position(|hit| hit.entity_id == "blackout-original")
+                < hits.iter().position(|hit| hit.entity_id == "dance-remixes")
+        );
+    }
+
+    #[test]
     fn plain_release_titles_beat_remixes_and_live_variants_when_artist_qualifies_query() {
         let song = |id: &str, name: &str| Song {
             id: id.into(),

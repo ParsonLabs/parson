@@ -25,6 +25,7 @@ import {
 } from "@/lib/downloads";
 import { AlbumActions } from "@/components/album-actions";
 import { PlaylistPicker } from "@/components/playlist-picker";
+import { useSession } from "@/providers/session-provider";
 
 export function Screen({ children }: { children?: React.ReactNode }) {
   return <View style={styles.screen}>{children}</View>;
@@ -39,14 +40,20 @@ export function PageTitle({
 }) {
   return (
     <View style={styles.titleBlock}>
-      <Text style={styles.pageTitle}>{children}</Text>
+      <Text accessibilityRole="header" style={styles.pageTitle}>
+        {children}
+      </Text>
       {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
     </View>
   );
 }
 
 export function SectionTitle({ children }: { children: React.ReactNode }) {
-  return <Text style={styles.sectionTitle}>{children}</Text>;
+  return (
+    <Text accessibilityRole="header" style={styles.sectionTitle}>
+      {children}
+    </Text>
+  );
 }
 
 export function SongRow({
@@ -63,45 +70,50 @@ export function SongRow({
   showAlbum?: boolean;
 }) {
   const player = usePlayer();
+  const session = useSession();
   const router = useRouter();
   const [menu, setMenu] = useState(false);
   const [playlistPicker, setPlaylistPicker] = useState(false);
   const [downloading, setDownloading] = useState(false);
+  const [downloadError, setDownloadError] = useState(false);
   useDownloadsRevision();
   const active = player.current?.id === song.id;
   return (
-    <Pressable
-      style={({ pressed }) => [styles.songRow, pressed && styles.pressed]}
-      onPress={() => {
-        if (menu) return;
-        if (active) player.toggle();
-        else player.playSong(song, queue);
-      }}
-      onLongPress={() => setMenu(true)}
-      delayLongPress={220}
-    >
-      {index !== undefined ? (
-        <Text style={styles.trackNumber}>{index + 1}</Text>
-      ) : (
-        <Artwork path={song.album_object?.cover_url} size={48} />
-      )}
-      <View style={styles.songLabels}>
-        <Text numberOfLines={1} style={styles.songTitle}>
-          {song.name}
-        </Text>
-        <Text numberOfLines={1} style={styles.songArtist}>
-          {song.artist}
-          {showAlbum && song.album_object?.name
-            ? ` • ${song.album_object.name}`
-            : ""}
-        </Text>
-      </View>
+    <View style={styles.songRow}>
       <Pressable
-        hitSlop={12}
-        onPress={(event) => {
-          event.stopPropagation();
-          setMenu(true);
+        accessibilityLabel={`${song.name} by ${song.artist}`}
+        accessibilityRole="button"
+        style={({ pressed }) => [styles.songMain, pressed && styles.pressed]}
+        onPress={() => {
+          if (menu) return;
+          if (active) player.toggle();
+          else player.playSong(song, queue);
         }}
+        onLongPress={() => setMenu(true)}
+        delayLongPress={220}
+      >
+        {index !== undefined ? (
+          <Text style={styles.trackNumber}>{index + 1}</Text>
+        ) : (
+          <Artwork path={song.album_object?.cover_url} size={48} />
+        )}
+        <View style={styles.songLabels}>
+          <Text numberOfLines={1} style={styles.songTitle}>
+            {song.name}
+          </Text>
+          <Text numberOfLines={1} style={styles.songArtist}>
+            {song.artist}
+            {showAlbum && song.album_object?.name
+              ? ` • ${song.album_object.name}`
+              : ""}
+          </Text>
+        </View>
+      </Pressable>
+      <Pressable
+        accessibilityLabel={`More actions for ${song.name}`}
+        accessibilityRole="button"
+        hitSlop={12}
+        onPress={() => setMenu(true)}
         style={styles.rowMenuButton}
       >
         <MoreHorizontal color={palette.secondary} size={20} />
@@ -135,7 +147,7 @@ export function SongRow({
             player.addToQueue([song]);
           }}
         />
-        {song.album_object?.id ? (
+        {session.phase !== "offline" && song.album_object?.id ? (
           <DrawerAction
             icon={Disc3}
             label="View album"
@@ -145,7 +157,7 @@ export function SongRow({
             }}
           />
         ) : null}
-        {song.artist_object?.id ? (
+        {session.phase !== "offline" && song.artist_object?.id ? (
           <DrawerAction
             icon={UserRound}
             label="View artist"
@@ -155,35 +167,50 @@ export function SongRow({
             }}
           />
         ) : null}
-        <DrawerAction
-          icon={ListPlus}
-          label="Add to playlist"
-          onPress={() => {
-            setMenu(false);
-            setPlaylistPicker(true);
-          }}
-        />
-        <DrawerAction
-          icon={isSongDownloaded(song.id) ? X : Download}
-          label={
-            isSongDownloaded(song.id)
-              ? "Delete from device"
-              : downloading
-                ? "Downloading song…"
-                : "Download song"
-          }
-          onPress={() => {
-            if (downloading) return;
-            if (isSongDownloaded(song.id)) {
-              void removeDownload(song.id).then(() => setMenu(false));
-              return;
+        {session.phase !== "offline" ? (
+          <DrawerAction
+            icon={ListPlus}
+            label="Add to playlist"
+            onPress={() => {
+              setMenu(false);
+              setPlaylistPicker(true);
+            }}
+          />
+        ) : null}
+        {session.phase !== "offline" || isSongDownloaded(song.id) ? (
+          <DrawerAction
+            icon={isSongDownloaded(song.id) ? X : Download}
+            label={
+              isSongDownloaded(song.id)
+                ? "Delete from device"
+                : downloading
+                  ? "Downloading song…"
+                  : downloadError
+                    ? "Download failed · Try again"
+                    : "Download song"
             }
-            setDownloading(true);
-            void downloadSong(song)
-              .then(() => setMenu(false))
-              .finally(() => setDownloading(false));
-          }}
-        />
+            onPress={() => {
+              if (downloading) return;
+              if (isSongDownloaded(song.id)) {
+                void removeDownload(song.id)
+                  .then(() => setMenu(false))
+                  .catch(() => setDownloadError(true));
+                return;
+              }
+              setDownloadError(false);
+              setDownloading(true);
+              void downloadSong(song)
+                .then(() => setMenu(false))
+                .catch(() => setDownloadError(true))
+                .finally(() => setDownloading(false));
+            }}
+          />
+        ) : null}
+        {downloadError ? (
+          <Text accessibilityRole="alert" style={styles.actionError}>
+            The download action failed. Please try again.
+          </Text>
+        ) : null}
         {onRemove ? (
           <DrawerAction
             icon={X}
@@ -196,11 +223,11 @@ export function SongRow({
         ) : null}
       </ActionDrawer>
       <PlaylistPicker
-        open={playlistPicker}
+        open={session.phase !== "offline" && playlistPicker}
         onClose={() => setPlaylistPicker(false)}
         songId={song.id}
       />
-    </Pressable>
+    </View>
   );
 }
 
@@ -216,6 +243,12 @@ export function AlbumRail({ albums }: { albums: ResponseAlbum[] }) {
       >
         {albums.map((album) => (
           <Pressable
+            accessibilityLabel={`${album.name} by ${
+              album.artist_object?.name ??
+              album.contributing_artists?.[0] ??
+              "Unknown artist"
+            }`}
+            accessibilityRole="button"
             key={album.id}
             style={styles.card}
             onPress={() => {
@@ -271,12 +304,20 @@ const styles = StyleSheet.create({
   },
   songRow: {
     minHeight: 64,
-    paddingHorizontal: 20,
+    flexDirection: "row",
+    alignItems: "center",
+    paddingLeft: 20,
+    paddingRight: 8,
+  },
+  songMain: {
+    minHeight: 64,
+    flex: 1,
     flexDirection: "row",
     alignItems: "center",
     gap: 12,
   },
   pressed: { opacity: 0.62 },
+  actionError: { color: "#ff9b9b", paddingHorizontal: 16, paddingVertical: 8 },
   trackNumber: {
     color: palette.secondary,
     width: 24,

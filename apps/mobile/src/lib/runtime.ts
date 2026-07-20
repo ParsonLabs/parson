@@ -1,7 +1,13 @@
-import { configureApiRuntime } from "@parson/music-sdk";
+import {
+  configureApiRuntime,
+  getFreshAuthorizationHeaders,
+  refreshToken as refreshTokenRequest,
+} from "@parson/music-sdk";
 
 type RuntimeSnapshot = {
   origin: string | null;
+  refreshToken: string | null;
+  refreshTokenChanged: ((token: string) => void) | null;
   token: string | null;
   unauthorized: (() => void) | null;
   tokenChanged: ((token: string) => void) | null;
@@ -9,14 +15,40 @@ type RuntimeSnapshot = {
 
 const runtime: RuntimeSnapshot = {
   origin: null,
+  refreshToken: null,
+  refreshTokenChanged: null,
   token: null,
   unauthorized: null,
   tokenChanged: null,
 };
+let sessionGeneration = 0;
 
 configureApiRuntime({
   getAccessToken: () => runtime.token,
   getServerUrl: () => runtime.origin,
+  refreshAccessToken: async () => {
+    if (!runtime.refreshToken) return null;
+    const expectedGeneration = sessionGeneration;
+    const expectedRefreshToken = runtime.refreshToken;
+    const response = await refreshTokenRequest({
+      native: true,
+      refreshToken: expectedRefreshToken,
+    });
+    if (
+      sessionGeneration !== expectedGeneration ||
+      runtime.refreshToken !== expectedRefreshToken
+    )
+      return null;
+    if (!response.status || !response.access_token) {
+      if (!response.transient) runtime.unauthorized?.();
+      return null;
+    }
+    if (response.refresh_token) {
+      runtime.refreshToken = response.refresh_token;
+      runtime.refreshTokenChanged?.(response.refresh_token);
+    }
+    return response.access_token;
+  },
   onAccessToken: (token) => {
     runtime.token = token;
     runtime.tokenChanged?.(token);
@@ -25,6 +57,12 @@ configureApiRuntime({
 });
 
 export function configureNativeRuntime(next: Partial<RuntimeSnapshot>) {
+  if (
+    ("origin" in next && next.origin !== runtime.origin) ||
+    ("refreshToken" in next && next.refreshToken !== runtime.refreshToken)
+  ) {
+    sessionGeneration += 1;
+  }
   Object.assign(runtime, next);
 }
 
@@ -69,6 +107,8 @@ export function streamUrl(songId: string, bitrate = 0) {
   return url.toString();
 }
 
-export function authorizationHeaders(): Record<string, string> {
-  return runtime.token ? { Authorization: `Bearer ${runtime.token}` } : {};
+export async function freshAuthorizationHeaders() {
+  const expectedGeneration = sessionGeneration;
+  const headers = await getFreshAuthorizationHeaders();
+  return sessionGeneration === expectedGeneration ? headers : {};
 }

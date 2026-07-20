@@ -53,13 +53,29 @@ export default function ArtistScreen() {
         <ActivityIndicator color="white" style={{ flex: 1 }} />
       </Screen>
     );
-  if (!artist.data) return <Screen />;
+  if (!artist.data)
+    return (
+      <Screen>
+        <Pressable
+          accessibilityRole="button"
+          style={styles.errorState}
+          onPress={() => void artist.refetch()}
+        >
+          <Text style={styles.error}>Could not load artist · Tap to retry</Text>
+        </Pressable>
+      </Screen>
+    );
   const data = artist.data;
   return (
     <Screen>
       <SafeAreaView edges={["top"]} style={{ flex: 1 }}>
         <View style={styles.nav}>
-          <Pressable onPress={router.back}>
+          <Pressable
+            accessibilityLabel="Back"
+            accessibilityRole="button"
+            hitSlop={12}
+            onPress={router.back}
+          >
             <ArrowLeft color="white" size={25} />
           </Pressable>
         </View>
@@ -78,6 +94,8 @@ export default function ArtistScreen() {
               <View style={styles.grid}>
                 {section.albums.map((album) => (
                   <Pressable
+                    accessibilityLabel={`${album.name}, ${album.primary_type || "Album"}`}
+                    accessibilityRole="button"
                     key={album.id}
                     style={styles.card}
                     onPress={() => {
@@ -143,4 +161,6 @@ const styles = StyleSheet.create({
     lineHeight: 18,
   },
   year: { color: palette.secondary, fontSize: 12, marginTop: 3 },
+  errorState: { flex: 1, alignItems: "center", justifyContent: "center" },
+  error: { color: palette.secondary },
 });

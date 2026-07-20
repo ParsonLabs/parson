@@ -1,10 +1,11 @@
 import { Image } from "expo-image";
 import { Music2 } from "lucide-react-native";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { StyleSheet, View, type ViewStyle } from "react-native";
 
 import { palette } from "@/constants/colors";
 import { imageUrl } from "@/lib/runtime";
+import { useSession } from "@/providers/session-provider";
 
 export function Artwork({
   path,
@@ -17,8 +18,24 @@ export function Artwork({
   rounded?: number;
   style?: ViewStyle;
 }) {
+  const session = useSession();
   const uri = imageUrl(path);
-  const [failedUri, setFailedUri] = useState<string | null>(null);
+  const sourceKey = uri ? `${session.phase}:${uri}` : null;
+  const [failedSource, setFailedSource] = useState<string | null>(null);
+  const failures = useRef(new Map<string, number>());
+  useEffect(() => {
+    if (!failedSource) return;
+    const attempts = failures.current.get(failedSource) ?? 0;
+    if (attempts >= 3) return;
+    const retry = setTimeout(
+      () =>
+        setFailedSource((current) =>
+          current === failedSource ? null : current,
+        ),
+      1200 * attempts,
+    );
+    return () => clearTimeout(retry);
+  }, [failedSource]);
   return (
     <View
       style={[
@@ -27,14 +44,21 @@ export function Artwork({
         style,
       ]}
     >
-      {uri && failedUri !== uri ? (
+      {uri && failedSource !== sourceKey ? (
         <Image
           source={{ uri }}
           style={StyleSheet.absoluteFill}
           contentFit="cover"
           cachePolicy="memory-disk"
           recyclingKey={uri}
-          onError={() => setFailedUri(uri)}
+          onError={() => {
+            if (!sourceKey) return;
+            failures.current.set(
+              sourceKey,
+              (failures.current.get(sourceKey) ?? 0) + 1,
+            );
+            setFailedSource(sourceKey);
+          }}
           transition={160}
         />
       ) : (

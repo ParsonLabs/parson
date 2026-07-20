@@ -76,6 +76,7 @@ async function startBackend() {
   const log = fs.openSync(logPath, "a");
   backend = spawn(executable, [], {
     cwd: path.dirname(executable),
+    windowsHide: true,
     env: {
       ...process.env,
       PARSON_BIND_ADDRESS: "0.0.0.0",

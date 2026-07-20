@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Container version="2">
+  <Name>Parson</Name>
+  <Repository>ghcr.io/parsonlabs/parson-music:latest</Repository>
+  <Registry>https://github.com/ParsonLabs/parson/pkgs/container/parson-music</Registry>
+  <Network>bridge</Network>
+  <MyIP/>
+  <Shell>bash</Shell>
+  <Privileged>false</Privileged>
+  <Support>https://github.com/ParsonLabs/parson/issues</Support>
+  <Project>https://github.com/ParsonLabs/parson</Project>
+  <Overview>Self-hosted, local-first music server and player for your own collection.</Overview>
+  <Category>MediaApp:Music</Category>
+  <WebUI>http://[IP]:[PORT:1993]/</WebUI>
+  <Icon>https://raw.githubusercontent.com/ParsonLabs/unraid-templates/main/icon.svg</Icon>
+  <TemplateURL>https://raw.githubusercontent.com/ParsonLabs/unraid-templates/main/templates/parson.xml</TemplateURL>
+  <Config Name="WebUI Port" Target="1993" Default="1993" Mode="tcp" Description="Parson web interface and API port." Type="Port" Display="always" Required="true" Mask="false">1993</Config>
+  <Config Name="Application Data" Target="/Parson" Default="/mnt/user/appdata/parson" Mode="rw" Description="Persistent database, configuration, logs, and recovery snapshots. Must be writable by UID/GID 10001:10001." Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/parson</Config>
+  <Config Name="Music Library" Target="/music" Default="/mnt/user/Music" Mode="ro" Description="Host music library. Read-only is recommended; select /music during Parson setup." Type="Path" Display="always" Required="true" Mask="false">/mnt/user/Music</Config>
+</Container>

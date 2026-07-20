@@ -40,7 +40,13 @@ export default function AlbumScreen() {
   if (!album.data)
     return (
       <Screen>
-        <Text style={styles.error}>Could not load album.</Text>
+        <Pressable
+          accessibilityRole="button"
+          style={styles.errorState}
+          onPress={() => void album.refetch()}
+        >
+          <Text style={styles.error}>Could not load album · Tap to retry</Text>
+        </Pressable>
       </Screen>
     );
   const data = album.data;
@@ -57,10 +63,20 @@ export default function AlbumScreen() {
     <Screen>
       <SafeAreaView edges={["top"]} style={{ flex: 1 }}>
         <View style={styles.nav}>
-          <Pressable hitSlop={12} onPress={router.back}>
+          <Pressable
+            accessibilityLabel="Back"
+            accessibilityRole="button"
+            hitSlop={12}
+            onPress={router.back}
+          >
             <ArrowLeft color="white" size={25} />
           </Pressable>
-          <Pressable hitSlop={12} onPress={() => setActionsOpen(true)}>
+          <Pressable
+            accessibilityLabel="More album actions"
+            accessibilityRole="button"
+            hitSlop={12}
+            onPress={() => setActionsOpen(true)}
+          >
             <MoreHorizontal color="white" size={25} />
           </Pressable>
         </View>
@@ -74,6 +90,9 @@ export default function AlbumScreen() {
             />
             <Text style={styles.title}>{data.name}</Text>
             <Pressable
+              accessibilityLabel={`View ${artist}`}
+              accessibilityRole="button"
+              disabled={!data.artist_object?.id}
               style={styles.artistRow}
               onPress={() =>
                 data.artist_object?.id &&
@@ -87,6 +106,9 @@ export default function AlbumScreen() {
             </Text>
             <View style={styles.actions}>
               <Pressable
+                accessibilityLabel={albumPlaying ? "Pause album" : "Play album"}
+                accessibilityRole="button"
+                disabled={!data.songs.length}
                 style={styles.circle}
                 onPress={() =>
                   albumPlaying
@@ -185,4 +207,5 @@ const styles = StyleSheet.create({
     margin: 20,
   },
   error: { color: palette.secondary, margin: 30 },
+  errorState: { flex: 1, alignItems: "center", justifyContent: "center" },
 });

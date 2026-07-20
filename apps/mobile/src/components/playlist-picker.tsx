@@ -35,6 +35,7 @@ export function PlaylistPicker({
   const [addingTo, setAddingTo] = useState<number | null>(null);
   const [creatingPlaylist, setCreatingPlaylist] = useState(false);
   const [name, setName] = useState("");
+  const [error, setError] = useState("");
   const playlists = useQuery({
     queryKey: ["playlists"],
     queryFn: getPlaylists,
@@ -42,18 +43,22 @@ export function PlaylistPicker({
   });
   const add = async (id: number) => {
     if (addingTo !== null) return;
+    setError("");
     setAddingTo(id);
     try {
       if (songId) await addSongToPlaylist(id, songId);
       else if (albumId) await addAlbumToPlaylist(id, albumId);
       onClose();
       void client.invalidateQueries({ queryKey: ["playlists"] });
+    } catch {
+      setError("Could not add this music to the playlist.");
     } finally {
       setAddingTo(null);
     }
   };
   const create = async () => {
     if (!name.trim() || creatingPlaylist) return;
+    setError("");
     setCreatingPlaylist(true);
     try {
       await createPlaylist(
@@ -65,6 +70,8 @@ export function PlaylistPicker({
       setCreating(false);
       onClose();
       void client.invalidateQueries({ queryKey: ["playlists"] });
+    } catch {
+      setError("Could not create the playlist.");
     } finally {
       setCreatingPlaylist(false);
     }
@@ -84,6 +91,11 @@ export function PlaylistPicker({
           onPress={() => void playlists.refetch()}
         />
       ) : null}
+      {error ? (
+        <Text accessibilityRole="alert" style={styles.error}>
+          {error}
+        </Text>
+      ) : null}
       {playlists.data?.map((playlist) => (
         <DrawerAction
           key={playlist.id}
@@ -95,6 +107,7 @@ export function PlaylistPicker({
       {creating ? (
         <View style={styles.create}>
           <TextInput
+            accessibilityLabel="Playlist name"
             autoFocus
             placeholder="Playlist name"
             placeholderTextColor={palette.muted}
@@ -104,8 +117,12 @@ export function PlaylistPicker({
             onSubmitEditing={() => void create()}
           />
           <Pressable
-            disabled={creatingPlaylist}
-            style={styles.button}
+            accessibilityRole="button"
+            disabled={creatingPlaylist || !name.trim()}
+            style={[
+              styles.button,
+              (creatingPlaylist || !name.trim()) && styles.disabled,
+            ]}
             onPress={() => void create()}
           >
             <Text style={styles.buttonText}>
@@ -150,4 +167,6 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   buttonText: { color: "black", fontWeight: "800" },
+  disabled: { opacity: 0.45 },
+  error: { color: "#ff9b9b", paddingHorizontal: 16, paddingVertical: 8 },
 });

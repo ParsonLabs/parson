@@ -40,11 +40,11 @@ if (process.platform === "linux") {
   run("bash", [path.join(__dirname, "build-linux.sh")]);
 } else if (process.platform === "win32") {
   cleanOutput((name) => name === "win-unpacked" || name.endsWith("-setup.exe"));
-  run(process.execPath, [
-    require.resolve("electron-builder/cli.js"),
-    "--win",
-    "nsis",
-  ]);
+  const args = [require.resolve("electron-builder/cli.js"), "--win", "nsis"];
+  if (process.env.PARSON_REQUIRE_CODE_SIGNING === "true") {
+    args.push("--config.forceCodeSigning=true");
+  }
+  run(process.execPath, args);
 } else {
   throw new Error(
     `Desktop packaging is not configured for ${process.platform}.`,

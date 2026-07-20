@@ -6,9 +6,15 @@ ENV NEXT_TELEMETRY_DISABLED=1
 COPY --from=bun-runtime /usr/local/bin/bun /usr/local/bin/bun
 
 COPY package.json bun.lock turbo.json ./
-COPY apps/web ./apps/web
+COPY apps/desktop/package.json ./apps/desktop/package.json
+COPY apps/mobile/package.json ./apps/mobile/package.json
+COPY apps/mobile/patches ./apps/mobile/patches
+COPY apps/site/package.json ./apps/site/package.json
+COPY apps/web/package.json ./apps/web/package.json
 COPY packages ./packages
-RUN bun install --frozen-lockfile
+RUN bun install --frozen-lockfile --ignore-scripts
+
+COPY apps/web ./apps/web
 
 FROM web-deps AS web-builder
 RUN bun --filter parson-music-web build

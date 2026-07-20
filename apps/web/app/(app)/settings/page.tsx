@@ -8,7 +8,7 @@ import { useSession } from "@/features/account/session-provider";
 import { getSetupStatus } from "@parson/music-sdk";
 import { useQuery } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
-import { useState } from "react";
+import { useState, type KeyboardEvent } from "react";
 import ServerConnectionPanel from "@/features/server/server-connection-panel";
 
 const settingsTabs = [
@@ -35,9 +35,32 @@ export default function SettingsPage() {
   const availableTabs = isAdmin ? settingsTabs : settingsTabs.slice(0, 3);
   const setup = useQuery({
     queryKey: ["setup-status", "settings-library"],
-    queryFn: getSetupStatus,
+    queryFn: () => getSetupStatus(),
     enabled: Boolean(isAdmin && activeTab === "library"),
   });
+  const handleTabKeyDown = (
+    event: KeyboardEvent<HTMLButtonElement>,
+    tab: SettingsTab,
+  ) => {
+    const currentIndex = availableTabs.indexOf(tab);
+    let nextIndex: number | undefined;
+    if (event.key === "ArrowRight") {
+      nextIndex = (currentIndex + 1) % availableTabs.length;
+    } else if (event.key === "ArrowLeft") {
+      nextIndex =
+        (currentIndex - 1 + availableTabs.length) % availableTabs.length;
+    } else if (event.key === "Home") {
+      nextIndex = 0;
+    } else if (event.key === "End") {
+      nextIndex = availableTabs.length - 1;
+    }
+    if (nextIndex === undefined) return;
+    event.preventDefault();
+    const nextTab = availableTabs[nextIndex];
+    if (!nextTab) return;
+    setActiveTab(nextTab);
+    document.getElementById(`settings-tab-${nextTab}`)?.focus();
+  };
 
   return (
     <div className="mx-auto w-full max-w-[1000px] px-5 py-9 pb-36 sm:px-7">
@@ -60,7 +83,9 @@ export default function SettingsPage() {
               id={`settings-tab-${tab}`}
               key={tab}
               onClick={() => setActiveTab(tab)}
+              onKeyDown={(event) => handleTabKeyDown(event, tab)}
               role="tab"
+              tabIndex={activeTab === tab ? 0 : -1}
               type="button"
             >
               {labels[tab]}

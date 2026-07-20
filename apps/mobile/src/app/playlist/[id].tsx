@@ -43,6 +43,7 @@ export default function PlaylistScreen() {
   const [savingEdit, setSavingEdit] = useState(false);
   const [editName, setEditName] = useState("");
   const [editDescription, setEditDescription] = useState("");
+  const [editError, setEditError] = useState("");
   const query = useQuery({
     queryKey: ["playlist", id],
     queryFn: () => getPlaylist(Number(id)),
@@ -54,7 +55,20 @@ export default function PlaylistScreen() {
         <ActivityIndicator color="white" style={{ flex: 1 }} />
       </Screen>
     );
-  if (!query.data) return <Screen />;
+  if (!query.data)
+    return (
+      <Screen>
+        <Pressable
+          accessibilityRole="button"
+          style={styles.errorState}
+          onPress={() => void query.refetch()}
+        >
+          <Text style={styles.error}>
+            Could not load playlist · Tap to retry
+          </Text>
+        </Pressable>
+      </Screen>
+    );
   const data = query.data;
   const removeSong = async (songId: string) => {
     const previous = data;
@@ -78,6 +92,7 @@ export default function PlaylistScreen() {
   };
   const saveEdit = async () => {
     if (!editName.trim() || savingEdit) return;
+    setEditError("");
     setSavingEdit(true);
     try {
       await updatePlaylist(data.id, {
@@ -92,6 +107,8 @@ export default function PlaylistScreen() {
       setEditing(false);
       void client.invalidateQueries({ queryKey: ["playlist", id] });
       void client.invalidateQueries({ queryKey: ["playlists"] });
+    } catch {
+      setEditError("Could not save the playlist changes.");
     } finally {
       setSavingEdit(false);
     }
@@ -101,10 +118,20 @@ export default function PlaylistScreen() {
     <Screen>
       <SafeAreaView edges={["top"]} style={{ flex: 1 }}>
         <View style={styles.nav}>
-          <Pressable onPress={router.back}>
+          <Pressable
+            accessibilityLabel="Back"
+            accessibilityRole="button"
+            hitSlop={12}
+            onPress={router.back}
+          >
             <ArrowLeft color="white" />
           </Pressable>
-          <Pressable onPress={() => setMenu(true)}>
+          <Pressable
+            accessibilityLabel="More playlist actions"
+            accessibilityRole="button"
+            hitSlop={12}
+            onPress={() => setMenu(true)}
+          >
             <MoreHorizontal color="white" />
           </Pressable>
         </View>
@@ -126,6 +153,9 @@ export default function PlaylistScreen() {
               {data.song_count} songs, {duration}
             </Text>
             <Pressable
+              accessibilityLabel="Play playlist"
+              accessibilityRole="button"
+              disabled={!data.songs.length}
               style={styles.play}
               onPress={() =>
                 data.songs[0] && player.playSong(data.songs[0], data.songs)
@@ -172,6 +202,7 @@ export default function PlaylistScreen() {
               setMenu(false);
               setEditName(data.name);
               setEditDescription(data.description ?? "");
+              setEditError("");
               setEditing(true);
             }}
           />
@@ -185,8 +216,16 @@ export default function PlaylistScreen() {
                 {
                   text: "Delete",
                   style: "destructive",
-                  onPress: () =>
-                    void deletePlaylist(data.id).then(() => router.back()),
+                  onPress: () => {
+                    void deletePlaylist(data.id)
+                      .then(() => router.back())
+                      .catch(() =>
+                        Alert.alert(
+                          "Could not delete playlist",
+                          "Please try again.",
+                        ),
+                      );
+                  },
                 },
               ]);
             }}
@@ -199,6 +238,7 @@ export default function PlaylistScreen() {
         >
           <View style={styles.editForm}>
             <TextInput
+              accessibilityLabel="Playlist name"
               placeholder="Name"
               placeholderTextColor={palette.muted}
               style={styles.input}
@@ -206,6 +246,7 @@ export default function PlaylistScreen() {
               onChangeText={setEditName}
             />
             <TextInput
+              accessibilityLabel="Playlist description"
               multiline
               placeholder="Description (optional)"
               placeholderTextColor={palette.muted}
@@ -214,14 +255,23 @@ export default function PlaylistScreen() {
               onChangeText={setEditDescription}
             />
             <Pressable
-              disabled={savingEdit}
-              style={styles.save}
+              accessibilityRole="button"
+              disabled={savingEdit || !editName.trim()}
+              style={[
+                styles.save,
+                (savingEdit || !editName.trim()) && styles.disabled,
+              ]}
               onPress={() => void saveEdit()}
             >
               <Text style={styles.saveText}>
                 {savingEdit ? "Saving changes…" : "Save changes"}
               </Text>
             </Pressable>
+            {editError ? (
+              <Text accessibilityRole="alert" style={styles.editError}>
+                {editError}
+              </Text>
+            ) : null}
           </View>
         </ActionDrawer>
       </SafeAreaView>
@@ -275,6 +325,8 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   saveText: { color: "black", fontWeight: "800" },
+  disabled: { opacity: 0.45 },
+  editError: { color: "#ff9b9b", textAlign: "center" },
   empty: {
     margin: 20,
     padding: 28,
@@ -290,4 +342,6 @@ const styles = StyleSheet.create({
     lineHeight: 20,
     marginTop: 7,
   },
+  errorState: { flex: 1, alignItems: "center", justifyContent: "center" },
+  error: { color: palette.secondary },
 });

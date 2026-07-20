@@ -144,6 +144,25 @@ export default function LibraryScreen() {
     (section === "liked" && liked.isPending) ||
     (section === "downloads" && downloads.isPending) ||
     (section === "playlists" && playlists.isPending);
+  const failed =
+    ((section === "albums" || section === "songs") && catalog.isError) ||
+    (section === "artists" && artists.isError) ||
+    (section === "liked" && liked.isError) ||
+    (section === "downloads" && downloads.isError) ||
+    (section === "playlists" && playlists.isError);
+  const empty =
+    (section === "albums" && albumItems.length === 0) ||
+    (section === "songs" && songItems.length === 0) ||
+    (section === "artists" && artistItems.length === 0) ||
+    (section === "liked" && likedSongs.length === 0) ||
+    (section === "playlists" && (playlists.data?.length ?? 0) === 0);
+  const retry = () => {
+    if (section === "albums" || section === "songs") void catalog.refetch();
+    else if (section === "artists") void artists.refetch();
+    else if (section === "liked") void liked.refetch();
+    else if (section === "downloads") void downloads.refetch();
+    else void playlists.refetch();
+  };
   return (
     <Screen>
       <SafeAreaView edges={["top"]} style={{ flex: 1 }}>
@@ -175,6 +194,8 @@ export default function LibraryScreen() {
                 ]) as readonly Section[]
           ).map((value) => (
             <Pressable
+              accessibilityRole="tab"
+              accessibilityState={{ selected: section === value }}
               key={value}
               onPress={() => setSection(value)}
               style={[styles.pill, section === value && styles.activePill]}
@@ -193,6 +214,8 @@ export default function LibraryScreen() {
           ))}
           {section === "playlists" ? (
             <Pressable
+              accessibilityLabel="Create playlist"
+              accessibilityRole="button"
               style={styles.newPlaylist}
               onPress={() => setCreatingPlaylist(true)}
             >
@@ -202,6 +225,15 @@ export default function LibraryScreen() {
         </ScrollView>
         {loading ? (
           <ActivityIndicator color="white" style={{ marginTop: 60 }} />
+        ) : failed ? (
+          <Pressable
+            accessibilityRole="button"
+            style={styles.errorState}
+            onPress={retry}
+          >
+            <Text style={styles.errorTitle}>Could not load this section</Text>
+            <Text style={styles.errorText}>Tap to try again</Text>
+          </Pressable>
         ) : (
           <ScrollView
             style={styles.results}
@@ -210,9 +242,29 @@ export default function LibraryScreen() {
               paddingBottom: layout.tabBar + layout.miniPlayer + 28,
             }}
           >
+            {empty ? (
+              <View style={styles.emptyDownloads}>
+                <Text style={styles.emptyDownloadsTitle}>
+                  {section === "liked"
+                    ? "No liked songs yet"
+                    : section === "playlists"
+                      ? "No playlists yet"
+                      : `No ${section} found`}
+                </Text>
+                <Text style={styles.emptyDownloadsText}>
+                  {section === "liked"
+                    ? "Songs you like will appear here."
+                    : section === "playlists"
+                      ? "Create a playlist to organize your music."
+                      : "Refresh or index your library from Settings."}
+                </Text>
+              </View>
+            ) : null}
             {section === "albums" &&
               albumItems.map((album) => (
                 <Pressable
+                  accessibilityLabel={`${album.name} by ${album.artistName}`}
+                  accessibilityRole="button"
                   key={album.id}
                   style={styles.row}
                   onPress={() => {
@@ -239,6 +291,12 @@ export default function LibraryScreen() {
               downloadedItems.map((item) =>
                 item.kind === "album" ? (
                   <Pressable
+                    accessibilityLabel={`${item.album.name} by ${
+                      item.album.artist_object?.name ??
+                      item.album.contributing_artists?.[0] ??
+                      "Unknown artist"
+                    }`}
+                    accessibilityRole="button"
                     key={`album-${item.album.id}`}
                     style={styles.row}
                     onPress={() => {
@@ -279,6 +337,8 @@ export default function LibraryScreen() {
             {section === "artists" &&
               artistItems.map((artist) => (
                 <Pressable
+                  accessibilityLabel={artist.name}
+                  accessibilityRole="button"
                   key={artist.id}
                   style={styles.row}
                   onPress={() => {
@@ -324,6 +384,8 @@ export default function LibraryScreen() {
             {section === "playlists" &&
               playlists.data?.map((playlist) => (
                 <Pressable
+                  accessibilityLabel={`${playlist.name}, ${playlist.song_count} songs`}
+                  accessibilityRole="button"
                   key={playlist.id}
                   style={styles.row}
                   onPress={() => {
@@ -403,7 +465,12 @@ function LoadMore({
   onPress: () => void;
 }) {
   return (
-    <Pressable disabled={loading} style={styles.loadMore} onPress={onPress}>
+    <Pressable
+      accessibilityRole="button"
+      disabled={loading}
+      style={styles.loadMore}
+      onPress={onPress}
+    >
       {loading ? (
         <ActivityIndicator color="white" />
       ) : (
@@ -472,4 +539,7 @@ const styles = StyleSheet.create({
   offlineTitle: { color: "white", fontWeight: "800", fontSize: 14 },
   offlineText: { color: palette.secondary, fontSize: 13, marginTop: 4 },
   loadMoreText: { color: "white", fontWeight: "700" },
+  errorState: { alignItems: "center", padding: 36, marginTop: 28 },
+  errorTitle: { color: "white", fontSize: 16, fontWeight: "800" },
+  errorText: { color: palette.secondary, marginTop: 6 },
 });

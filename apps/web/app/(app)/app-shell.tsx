@@ -17,6 +17,7 @@ import { DesktopWindowControls } from "@/components/layout/desktop-window-contro
 import { getLibraryReadiness } from "@parson/music-sdk";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  invalidateCatalogRevisionQueries,
   libraryReadinessPollInterval,
   libraryReadinessShouldRefetch,
 } from "@/features/library/library-readiness-state";
@@ -39,13 +40,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!readiness.data) return;
-    void queryClient.invalidateQueries({
-      predicate: (query) =>
-        query.queryKey[0] === "library" && query.queryKey[1] !== "readiness",
-    });
-    void queryClient.invalidateQueries({ queryKey: ["search"] });
-    void queryClient.invalidateQueries({ queryKey: ["albums"] });
-    void queryClient.invalidateQueries({ queryKey: ["artists"] });
+    void invalidateCatalogRevisionQueries(queryClient);
   }, [queryClient, readiness.data?.catalog_revision]);
 
   useEffect(() => {

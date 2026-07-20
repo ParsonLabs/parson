@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import {
   ActivityIndicator,
   RefreshControl,
+  Pressable,
   ScrollView,
   StyleSheet,
   Text,
@@ -23,6 +24,11 @@ export default function HomeScreen() {
     queryKey: ["home"],
     queryFn: getHomeEssentials,
   });
+  const recommendedSongs = home.data
+    ? home.data.recommended.length
+      ? home.data.recommended
+      : home.data.shuffle
+    : [];
   return (
     <Screen>
       <SafeAreaView edges={["top"]} style={{ flex: 1 }}>
@@ -42,7 +48,14 @@ export default function HomeScreen() {
           {home.isPending ? (
             <ActivityIndicator color="white" style={{ marginTop: 70 }} />
           ) : home.error ? (
-            <Text style={styles.error}>Could not load your music.</Text>
+            <Pressable
+              accessibilityRole="button"
+              style={styles.errorState}
+              onPress={() => void home.refetch()}
+            >
+              <Text style={styles.error}>Could not load your music.</Text>
+              <Text style={styles.retry}>Tap to try again</Text>
+            </Pressable>
           ) : home.data ? (
             <>
               <SectionTitle>Recently played</SectionTitle>
@@ -55,18 +68,9 @@ export default function HomeScreen() {
                 />
               ))}
               <SectionTitle>Recommended songs</SectionTitle>
-              {(home.data.recommended.length
-                ? home.data.recommended
-                : home.data.shuffle
-              )
-                .slice(0, 10)
-                .map((song) => (
-                  <SongRow
-                    key={song.id}
-                    song={song}
-                    queue={home.data.recommended}
-                  />
-                ))}
+              {recommendedSongs.slice(0, 10).map((song) => (
+                <SongRow key={song.id} song={song} queue={recommendedSongs} />
+              ))}
               <SectionTitle>Albums you might like</SectionTitle>
               <AlbumRail albums={home.data.albums.slice(0, 6)} />
             </>
@@ -79,4 +83,6 @@ export default function HomeScreen() {
 
 const styles = StyleSheet.create({
   error: { color: palette.secondary, textAlign: "center", marginTop: 80 },
+  errorState: { alignItems: "center" },
+  retry: { color: "white", fontWeight: "700", marginTop: 10 },
 });

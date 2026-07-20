@@ -17,7 +17,7 @@ bun --filter parson-music-desktop desktop:build
 Linux package check:
 
 ```bash
-./apps/desktop/scripts/verify-linux-package.sh
+bash ./apps/desktop/scripts/verify-linux-package.sh
 ```
 
 Windows release:

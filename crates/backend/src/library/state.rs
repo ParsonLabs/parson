@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::collections::HashSet;
+use std::io::Read;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -17,6 +18,7 @@ use tokio::sync::{Mutex, OwnedMutexGuard, RwLock};
 #[cfg(feature = "server")]
 use crate::api::error::service_unavailable;
 use crate::domain::{Album, Artist, Song};
+use crate::library::indexer::ScanCancellation;
 use crate::library::search::{SearchIndex, normalize, release_context_boost};
 use crate::persistence::connection::connect;
 
@@ -88,7 +90,24 @@ pub struct LibraryLifecycle {
     readiness: RwLock<LibraryReadiness>,
     cache: RwLock<Option<Arc<LibraryCache>>>,
     scan: Arc<Mutex<()>>,
+    active_scan: StdMutex<Option<ScanCancellation>>,
     catalog_revision: AtomicU64,
+}
+
+/// Owns the serialized scan slot and the cancellation signal for that scan.
+pub struct LibraryScanLease {
+    _guard: OwnedMutexGuard<()>,
+    cancellation: ScanCancellation,
+}
+
+impl LibraryScanLease {
+    pub fn cancellation(&self) -> ScanCancellation {
+        self.cancellation.clone()
+    }
+
+    pub fn is_cancelled(&self) -> bool {
+        self.cancellation.is_cancelled()
+    }
 }
 
 #[derive(Serialize, Deserialize)]
@@ -116,6 +135,7 @@ pub struct LibraryCache {
 
 // Version 4 stores JSON in the existing zstd envelope.
 const CATALOG_CACHE_SCHEMA_VERSION: u32 = 4;
+const MAX_DECOMPRESSED_CATALOG_CACHE_BYTES: u64 = 512 * 1024 * 1024;
 static CACHE_PERSIST_REQUEST: AtomicU64 = AtomicU64::new(0);
 static CACHE_PERSIST_LOCK: OnceLock<StdMutex<()>> = OnceLock::new();
 
@@ -158,8 +178,23 @@ fn load_persisted_cache_from(
     for path in catalog_cache_candidates(directory) {
         let result = (|| {
             let file = std::fs::File::open(&path)?;
-            let mut decoder = zstd::stream::read::Decoder::new(std::io::BufReader::new(file))?;
-            let persisted: PersistedLibraryCache = serde_json::from_reader(&mut decoder)?;
+            let decoder = zstd::stream::read::Decoder::new(std::io::BufReader::new(file))?;
+            // `serde_json::from_reader` feeds the parser one byte at a time and
+            // is materially slower for large catalogs. A bounded contiguous
+            // payload also prevents a corrupt zstd cache from expanding until
+            // the process exhausts memory.
+            let mut payload = Vec::new();
+            decoder
+                .take(MAX_DECOMPRESSED_CATALOG_CACHE_BYTES.saturating_add(1))
+                .read_to_end(&mut payload)?;
+            if payload.len() as u64 > MAX_DECOMPRESSED_CATALOG_CACHE_BYTES {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::FileTooLarge,
+                    "decompressed catalog cache exceeds the safety limit",
+                )
+                .into());
+            }
+            let persisted: PersistedLibraryCache = serde_json::from_slice(&payload)?;
             if persisted.schema_version != CATALOG_CACHE_SCHEMA_VERSION {
                 return Err(std::io::Error::other("catalog cache schema changed").into());
             }
@@ -453,13 +488,45 @@ impl LibraryLifecycle {
             )),
             cache: RwLock::new(None),
             scan: Arc::new(Mutex::new(())),
+            active_scan: StdMutex::new(None),
             catalog_revision: AtomicU64::new(0),
         }
     }
 
     /// Acquires the single-flight library scan lease without waiting.
-    pub fn try_begin_scan(&self) -> Option<OwnedMutexGuard<()>> {
-        self.scan.clone().try_lock_owned().ok()
+    pub fn try_begin_scan(&self) -> Option<LibraryScanLease> {
+        let guard = self.scan.clone().try_lock_owned().ok()?;
+        let cancellation = ScanCancellation::default();
+        *self
+            .active_scan
+            .lock()
+            .unwrap_or_else(|error| error.into_inner()) = Some(cancellation.clone());
+        Some(LibraryScanLease {
+            _guard: guard,
+            cancellation,
+        })
+    }
+
+    /// Cancels obsolete work, then waits for its transaction to roll back before replacing it.
+    pub async fn begin_replacing_scan(&self) -> Option<LibraryScanLease> {
+        let cancellation = ScanCancellation::default();
+        {
+            let mut active = self
+                .active_scan
+                .lock()
+                .unwrap_or_else(|error| error.into_inner());
+            if let Some(previous) = active.replace(cancellation.clone()) {
+                previous.cancel();
+            }
+        }
+        let guard = self.scan.clone().lock_owned().await;
+        if cancellation.is_cancelled() {
+            return None;
+        }
+        Some(LibraryScanLease {
+            _guard: guard,
+            cancellation,
+        })
     }
 
     pub async fn set_indexing(&self, message: impl Into<String>) {
@@ -630,6 +697,52 @@ mod tests {
         assert!(lifecycle.try_begin_scan().is_none());
         drop(first);
         assert!(lifecycle.try_begin_scan().is_some());
+    }
+
+    #[test]
+    fn replacing_a_scan_cancels_then_waits_for_the_previous_owner() {
+        actix_web::rt::System::new().block_on(async {
+            let lifecycle = Arc::new(LibraryLifecycle::new());
+            let first = lifecycle.try_begin_scan().expect("first scan lease");
+            let first_cancellation = first.cancellation();
+            let replacement_lifecycle = lifecycle.clone();
+            let replacement =
+                tokio::spawn(async move { replacement_lifecycle.begin_replacing_scan().await });
+
+            tokio::task::yield_now().await;
+            assert!(first_cancellation.is_cancelled());
+            assert!(!replacement.is_finished());
+
+            drop(first);
+            let second = replacement
+                .await
+                .expect("replacement task")
+                .expect("replacement scan lease");
+            assert!(!second.is_cancelled());
+        });
+    }
+
+    #[test]
+    fn only_the_latest_waiting_replacement_is_allowed_to_run() {
+        actix_web::rt::System::new().block_on(async {
+            let lifecycle = Arc::new(LibraryLifecycle::new());
+            let first = lifecycle.try_begin_scan().expect("first scan lease");
+
+            let second_lifecycle = lifecycle.clone();
+            let second = tokio::spawn(async move { second_lifecycle.begin_replacing_scan().await });
+            tokio::task::yield_now().await;
+            let third_lifecycle = lifecycle.clone();
+            let third = tokio::spawn(async move { third_lifecycle.begin_replacing_scan().await });
+            tokio::task::yield_now().await;
+
+            drop(first);
+            assert!(second.await.expect("second task").is_none());
+            let latest = third
+                .await
+                .expect("third task")
+                .expect("latest replacement lease");
+            assert!(!latest.is_cancelled());
+        });
     }
 
     fn empty_cache() -> LibraryCache {

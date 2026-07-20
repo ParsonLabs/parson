@@ -1,0 +1,150 @@
+name: Verify
+
+on:
+  pull_request:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: verify-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+      - uses: dtolnay/rust-toolchain@1.97.0
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: Install native build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y nasm
+      - name: Install JavaScript dependencies
+        run: bun install --frozen-lockfile
+      - name: Check repository formatting
+        run: bun run format:check
+      - name: Check web types
+        run: bun --filter parson-music-web type-check
+      - name: Check site and mobile types
+        run: bun --filter parson-site type-check && bun --filter parson-mobile type-check
+      - name: Lint mobile client
+        run: bun --filter parson-mobile lint
+      - name: Test client and SDK
+        run: bun test packages/parson-music-sdk/src apps/web/features
+      - name: Audit production JavaScript dependencies
+        run: bun audit --production
+      - name: Build web export
+        run: bun --filter parson-music-web build
+      - name: Build website and documentation
+        run: bun --filter parson-site build
+      - name: Check Rust formatting
+        run: cargo fmt --check
+      - name: Lint backend
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+      - name: Test backend
+        run: cargo test --workspace
+      - name: Audit Rust dependencies
+        run: cargo install cargo-audit --locked --version 0.22.2 && cargo audit
+      - name: Build optimized backend and native bridge
+        run: cargo build --release --workspace
+
+  linux:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+      - uses: dtolnay/rust-toolchain@1.97.0
+      - uses: Swatinem/rust-cache@v2
+      - name: Install Linux packaging dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libssl-dev nasm patchelf dpkg-dev
+      - name: Install JavaScript dependencies
+        run: bun install --frozen-lockfile
+      - name: Build Linux packages from a clean checkout
+        run: bun --filter parson-music-desktop desktop:build
+      - name: Verify Linux package contents
+        run: bash ./apps/desktop/scripts/verify-linux-package.sh
+      - name: Upload Linux packages
+        uses: actions/upload-artifact@v6
+        with:
+          name: parson-linux
+          path: |
+            target/release/bundle/electron/*.deb
+            target/release/bundle/electron/*.AppImage
+          if-no-files-found: error
+
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@1.97.0
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+      - uses: Swatinem/rust-cache@v2
+      - name: Build embedded web UI
+        run: bun install --frozen-lockfile && bun --filter parson-music-web build
+      - name: Build and verify Windows server update assets
+        shell: pwsh
+        run: |
+          $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          .\crates\windows-server\package.ps1 -Version $version -SkipWebBuild
+          .\crates\windows-server\verify-update-assets.ps1 -Version $version
+          .\crates\windows-server\test-updater.ps1
+      - name: Build native Windows release
+        run: bun --filter parson-music-desktop desktop:build
+      - name: Upload Windows installer
+        uses: actions/upload-artifact@v6
+        with:
+          name: parson-windows
+          path: target/release/bundle/electron/Parson_*-setup.exe
+          if-no-files-found: error
+
+  container:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+      - uses: docker/setup-buildx-action@v4
+      - name: Build release container
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          push: false
+          load: true
+          tags: parson-music:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Smoke-test startup, HTTP surface, and restart
+        run: |
+          docker run -d --name parson-ci -p 1993:1993 -v parson-ci-data:/Parson parson-music:ci
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:1993/health >/dev/null && curl --fail --silent http://127.0.0.1:1993/ >/dev/null; then break; fi
+            sleep 2
+          done
+          curl --fail --silent http://127.0.0.1:1993/health
+          curl --fail --silent http://127.0.0.1:1993/ >/dev/null
+          docker restart parson-ci
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:1993/health >/dev/null; then break; fi
+            sleep 2
+          done
+          curl --fail --silent http://127.0.0.1:1993/health
+      - name: Print container logs after failure
+        if: failure()
+        run: docker logs parson-ci

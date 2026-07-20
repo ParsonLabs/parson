@@ -65,11 +65,16 @@ export function AlbumActions({
   const [editorLoading, setEditorLoading] = useState(false);
   const [editorSaving, setEditorSaving] = useState(false);
   const [downloading, setDownloading] = useState(false);
+  const [downloadProgress, setDownloadProgress] = useState({
+    done: 0,
+    total: 0,
+  });
   const [editName, setEditName] = useState("");
   const [editArtist, setEditArtist] = useState("");
   const [editDate, setEditDate] = useState("");
   const [editType, setEditType] = useState("");
   const [editDescription, setEditDescription] = useState("");
+  const [operationError, setOperationError] = useState("");
   const [resolvedAlbum, setResolvedAlbum] = useState<LibraryAlbum | null>(null);
   useDownloadsRevision();
   useEffect(() => {
@@ -93,11 +98,8 @@ export function AlbumActions({
               return album;
             },
           );
-  const closeThen = (run: () => void | Promise<void>) => {
-    onClose();
-    void run();
-  };
   const openEditor = async () => {
+    setOperationError("");
     setEditing(true);
     setEditorLoading(true);
     try {
@@ -107,12 +109,16 @@ export function AlbumActions({
       setEditDate(album.first_release_date ?? "");
       setEditType(album.primary_type ?? "");
       setEditDescription(album.description ?? "");
+    } catch {
+      setEditing(false);
+      setOperationError("Could not load the album editor.");
     } finally {
       setEditorLoading(false);
     }
   };
   const saveEditor = async () => {
     if (!editName.trim() || !editArtist.trim() || editorSaving) return;
+    setOperationError("");
     setEditorSaving(true);
     try {
       await editAlbumMetadata(albumId, {
@@ -131,6 +137,8 @@ export function AlbumActions({
         client.invalidateQueries({ queryKey: ["home"] }),
         client.invalidateQueries({ queryKey: ["library"] }),
       ]);
+    } catch {
+      setOperationError("Could not save the album metadata.");
     } finally {
       setEditorSaving(false);
     }
@@ -145,68 +153,102 @@ export function AlbumActions({
         <DrawerAction
           icon={Play}
           label="Play"
-          onPress={() =>
-            closeThen(async () => {
-              const album = await load();
-              if (album.songs[0]) player.playSong(album.songs[0], album.songs);
-            })
-          }
+          onPress={() => {
+            setOperationError("");
+            void load()
+              .then((album) => {
+                if (album.songs[0])
+                  player.playSong(album.songs[0], album.songs);
+                onClose();
+              })
+              .catch(() => setOperationError("Could not load this album."));
+          }}
         />
         <DrawerAction
           icon={ListEnd}
           label="Add to queue"
-          onPress={() =>
-            closeThen(async () => {
-              const album = await load();
-              player.addToQueue(album.songs);
-            })
-          }
+          onPress={() => {
+            setOperationError("");
+            void load()
+              .then((album) => {
+                player.addToQueue(album.songs);
+                onClose();
+              })
+              .catch(() => setOperationError("Could not load this album."));
+          }}
         />
-        {showAlbum ? (
+        {session.phase !== "offline" && showAlbum ? (
           <DrawerAction
             icon={Disc3}
             label="View album"
-            onPress={() => closeThen(() => router.push(`/album/${albumId}`))}
+            onPress={() => {
+              onClose();
+              router.push(`/album/${albumId}`);
+            }}
           />
         ) : null}
-        <DrawerAction
-          icon={albumDownloaded ? X : Download}
-          label={
-            albumDownloaded
-              ? "Delete album from device"
-              : downloading
-                ? "Downloading album…"
-                : "Download album"
-          }
-          onPress={() => {
-            if (downloading) return;
-            if (albumDownloaded && album) {
-              onClose();
-              void removeDownloads(album.songs.map((song) => song.id));
-              return;
+        {session.phase !== "offline" || albumDownloaded ? (
+          <DrawerAction
+            icon={albumDownloaded ? X : Download}
+            label={
+              albumDownloaded
+                ? "Delete album from device"
+                : downloading
+                  ? `Downloading album${downloadProgress.total ? ` · ${downloadProgress.done}/${downloadProgress.total}` : "…"}`
+                  : "Download album"
             }
-            setDownloading(true);
-            void (async () => {
-              const album = await load();
-              await downloadAlbum(album.name, album.songs);
-              setDownloading(false);
-              onClose();
-            })().catch(() => setDownloading(false));
-          }}
-        />
-        <DrawerAction
-          icon={ListPlus}
-          label="Add to playlist"
-          onPress={() => setPickingPlaylist(true)}
-        />
-        {artistId && showArtist ? (
+            onPress={() => {
+              if (downloading) return;
+              if (albumDownloaded && album) {
+                setOperationError("");
+                void removeDownloads(album.songs.map((song) => song.id))
+                  .then(onClose)
+                  .catch(() =>
+                    setOperationError("Could not delete the album download."),
+                  );
+                return;
+              }
+              setOperationError("");
+              setDownloading(true);
+              setDownloadProgress({ done: 0, total: 0 });
+              void (async () => {
+                const album = await load();
+                setDownloadProgress({ done: 0, total: album.songs.length });
+                await downloadAlbum(album.name, album.songs, (done) =>
+                  setDownloadProgress({ done, total: album.songs.length }),
+                );
+                setDownloading(false);
+                onClose();
+              })().catch(() => {
+                setDownloading(false);
+                setOperationError("Could not download this album.");
+              });
+            }}
+          />
+        ) : null}
+        {session.phase !== "offline" ? (
+          <DrawerAction
+            icon={ListPlus}
+            label="Add to playlist"
+            onPress={() => setPickingPlaylist(true)}
+          />
+        ) : null}
+        {session.phase !== "offline" && artistId && showArtist ? (
           <DrawerAction
             icon={UserRound}
             label="View artist"
-            onPress={() => closeThen(() => router.push(`/artist/${artistId}`))}
+            onPress={() => {
+              onClose();
+              router.push(`/artist/${artistId}`);
+            }}
           />
         ) : null}
-        {session.claims?.role === "admin" ? (
+        {operationError ? (
+          <Text accessibilityRole="alert" style={styles.error}>
+            {operationError}
+          </Text>
+        ) : null}
+        {session.phase !== "offline" && session.claims?.role === "admin" ? (
           <DrawerAction
             icon={Pencil}
             label="Edit album metadata"
@@ -215,7 +257,7 @@ export function AlbumActions({
         ) : null}
       </ActionDrawer>
       <PlaylistPicker
-        open={open && pickingPlaylist}
+        open={session.phase !== "offline" && open && pickingPlaylist}
         albumId={albumId}
         onClose={() => {
           setPickingPlaylist(false);
@@ -238,6 +280,7 @@ export function AlbumActions({
         ) : (
           <View style={styles.form}>
             <TextInput
+              accessibilityLabel="Album name"
               placeholder="Album name"
               placeholderTextColor={palette.muted}
               style={styles.input}
@@ -245,6 +288,7 @@ export function AlbumActions({
               onChangeText={setEditName}
             />
             <TextInput
+              accessibilityLabel="Artist name"
               placeholder="Artist name"
               placeholderTextColor={palette.muted}
               style={styles.input}
@@ -253,6 +297,7 @@ export function AlbumActions({
             />
             <View style={styles.row}>
               <TextInput
+                accessibilityLabel="Release date"
                 placeholder="Release date"
                 placeholderTextColor={palette.muted}
                 style={[styles.input, styles.flex]}
@@ -260,6 +305,7 @@ export function AlbumActions({
                 onChangeText={setEditDate}
               />
               <TextInput
+                accessibilityLabel="Release type"
                 placeholder="Type"
                 placeholderTextColor={palette.muted}
                 style={[styles.input, styles.flex]}
@@ -268,6 +314,7 @@ export function AlbumActions({
               />
             </View>
             <TextInput
+              accessibilityLabel="Description"
               multiline
               placeholder="Description"
               placeholderTextColor={palette.muted}
@@ -276,14 +323,24 @@ export function AlbumActions({
               onChangeText={setEditDescription}
             />
             <Pressable
-              disabled={editorSaving}
-              style={styles.save}
+              accessibilityRole="button"
+              disabled={editorSaving || !editName.trim() || !editArtist.trim()}
+              style={[
+                styles.save,
+                (editorSaving || !editName.trim() || !editArtist.trim()) &&
+                  styles.disabled,
+              ]}
               onPress={() => void saveEditor()}
             >
               <Text style={styles.saveText}>
                 {editorSaving ? "Saving changes…" : "Save changes"}
               </Text>
             </Pressable>
+            {operationError ? (
+              <Text accessibilityRole="alert" style={styles.error}>
+                {operationError}
+              </Text>
+            ) : null}
           </View>
         )}
       </ActionDrawer>
@@ -319,4 +376,6 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   saveText: { color: "black", fontWeight: "800" },
+  disabled: { opacity: 0.45 },
+  error: { color: "#ff9b9b", paddingHorizontal: 16, paddingVertical: 8 },
 });

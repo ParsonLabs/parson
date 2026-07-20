@@ -38,6 +38,12 @@ fn valid_request_id(value: &str) -> bool {
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.'))
 }
 
+fn is_api_path(path: &str) -> bool {
+    path.starts_with("/api/v1/")
+        || path.starts_with("/api/music/v1/")
+        || path.starts_with("/api/core/v1/")
+}
+
 pub async fn request_context<B: MessageBody>(
     req: ServiceRequest,
     next: Next<B>,
@@ -80,7 +86,7 @@ pub async fn request_context<B: MessageBody>(
         header::HeaderName::from_static("permissions-policy"),
         HeaderValue::from_static("camera=(), microphone=(), geolocation=()"),
     );
-    if path.starts_with("/api/v1/") {
+    if is_api_path(&path) {
         response.headers_mut().insert(
             header::CACHE_CONTROL,
             HeaderValue::from_static("no-store, private"),
@@ -238,37 +244,42 @@ mod tests {
     async fn api_responses_cannot_be_cached() {
         let app =
             actix_test::init_service(App::new().wrap(middleware::from_fn(request_context)).route(
-                "/api/v1/auth/session",
+                "/{path:.*}",
                 web::get().to(|| async { HttpResponse::Ok().finish() }),
             ))
             .await;
-        let response = actix_test::call_service(
-            &app,
-            actix_test::TestRequest::get()
-                .uri("/api/v1/auth/session")
-                .to_request(),
-        )
-        .await;
-        assert_eq!(
-            response.headers().get(header::CACHE_CONTROL).unwrap(),
-            "no-store, private"
-        );
-        assert_eq!(response.headers().get(header::PRAGMA).unwrap(), "no-cache");
-        assert_eq!(
-            response
-                .headers()
-                .get(header::X_CONTENT_TYPE_OPTIONS)
-                .unwrap(),
-            "nosniff"
-        );
-        assert_eq!(
-            response.headers().get(header::X_FRAME_OPTIONS).unwrap(),
-            "DENY"
-        );
-        assert!(
-            response
-                .headers()
-                .contains_key(header::CONTENT_SECURITY_POLICY)
-        );
+        for path in [
+            "/api/v1/auth/session",
+            "/api/music/v1/library/catalog",
+            "/api/core/v1/accounts/session",
+        ] {
+            let response = actix_test::call_service(
+                &app,
+                actix_test::TestRequest::get().uri(path).to_request(),
+            )
+            .await;
+            assert_eq!(
+                response.headers().get(header::CACHE_CONTROL).unwrap(),
+                "no-store, private",
+                "{path}"
+            );
+            assert_eq!(response.headers().get(header::PRAGMA).unwrap(), "no-cache");
+            assert_eq!(
+                response
+                    .headers()
+                    .get(header::X_CONTENT_TYPE_OPTIONS)
+                    .unwrap(),
+                "nosniff"
+            );
+            assert_eq!(
+                response.headers().get(header::X_FRAME_OPTIONS).unwrap(),
+                "DENY"
+            );
+            assert!(
+                response
+                    .headers()
+                    .contains_key(header::CONTENT_SECURITY_POLICY)
+            );
+        }
     }
 }

@@ -1,4 +1,3 @@
-import { Redirect } from "expo-router";
 import { Image } from "expo-image";
 import {
   ActivityIndicator,
@@ -26,13 +25,20 @@ export default function EntryScreen() {
   const [setupCode, setSetupCode] = useState("");
   const [libraryPath, setLibraryPath] = useState("");
   const serverValue = serverEdited ? server : (session.origin ?? server);
-  if (session.phase === "ready") return <Redirect href="/(tabs)" />;
-  if (session.phase === "offline") return <Redirect href="/(tabs)/library" />;
+  if (session.phase === "ready" || session.phase === "offline") return null;
 
   const busy =
     session.phase === "loading" ||
     session.phase === "connecting" ||
     session.phase === "indexing";
+  const invalidAccount =
+    !username.trim() ||
+    password.length < 8 ||
+    Boolean(session.setupStatus?.setup_code_required && !setupCode.trim());
+  const libraryTarget =
+    libraryPath.trim() ||
+    session.setupStatus?.suggested_library_path?.trim() ||
+    "";
   const heading =
     session.phase === "login"
       ? "Welcome back"
@@ -77,6 +83,7 @@ export default function EntryScreen() {
             {session.setupStatus?.account_setup_required ? (
               <>
                 <TextInput
+                  accessibilityLabel="Admin username"
                   autoCapitalize="none"
                   autoCorrect={false}
                   placeholder="Admin username"
@@ -86,6 +93,7 @@ export default function EntryScreen() {
                   onChangeText={setUsername}
                 />
                 <TextInput
+                  accessibilityLabel="Password"
                   placeholder="Password"
                   placeholderTextColor={palette.muted}
                   secureTextEntry
@@ -95,6 +103,7 @@ export default function EntryScreen() {
                 />
                 {session.setupStatus.setup_code_required ? (
                   <TextInput
+                    accessibilityLabel="Setup code"
                     autoCapitalize="characters"
                     placeholder="Setup code"
                     placeholderTextColor={palette.muted}
@@ -104,7 +113,12 @@ export default function EntryScreen() {
                   />
                 ) : null}
                 <Pressable
-                  style={styles.primary}
+                  accessibilityRole="button"
+                  disabled={busy || invalidAccount}
+                  style={[
+                    styles.primary,
+                    (busy || invalidAccount) && styles.disabledPrimary,
+                  ]}
                   onPress={() =>
                     void session.setupAccount(username, password, setupCode)
                   }
@@ -115,6 +129,7 @@ export default function EntryScreen() {
             ) : (
               <>
                 <TextInput
+                  accessibilityLabel="Music folder path"
                   autoCapitalize="none"
                   autoCorrect={false}
                   placeholder={
@@ -124,17 +139,17 @@ export default function EntryScreen() {
                   placeholderTextColor={palette.muted}
                   style={styles.input}
                   value={libraryPath}
+                  editable={!busy}
                   onChangeText={setLibraryPath}
                 />
                 <Pressable
-                  style={styles.primary}
-                  onPress={() =>
-                    void session.setupLibrary(
-                      libraryPath ||
-                        session.setupStatus?.suggested_library_path ||
-                        "",
-                    )
-                  }
+                  accessibilityRole="button"
+                  disabled={busy || !libraryTarget}
+                  style={[
+                    styles.primary,
+                    (busy || !libraryTarget) && styles.disabledPrimary,
+                  ]}
+                  onPress={() => void session.setupLibrary(libraryTarget)}
                 >
                   <Text style={styles.primaryText}>Index library</Text>
                 </Pressable>
@@ -144,6 +159,7 @@ export default function EntryScreen() {
         ) : session.phase === "login" ? (
           <View style={styles.form}>
             <TextInput
+              accessibilityLabel="Username"
               autoCapitalize="none"
               autoCorrect={false}
               placeholder="Username"
@@ -153,6 +169,7 @@ export default function EntryScreen() {
               onChangeText={setUsername}
             />
             <TextInput
+              accessibilityLabel="Password"
               placeholder="Password"
               placeholderTextColor={palette.muted}
               secureTextEntry
@@ -162,12 +179,21 @@ export default function EntryScreen() {
               onSubmitEditing={() => void session.login(username, password)}
             />
             <Pressable
-              style={styles.primary}
+              accessibilityRole="button"
+              disabled={busy || !username.trim() || !password}
+              style={[
+                styles.primary,
+                (busy || !username.trim() || !password) &&
+                  styles.disabledPrimary,
+              ]}
               onPress={() => void session.login(username, password)}
             >
               <Text style={styles.primaryText}>Sign in</Text>
             </Pressable>
-            <Pressable onPress={() => void session.changeServer()}>
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => void session.changeServer()}
+            >
               <Text style={styles.link}>Choose another library</Text>
             </Pressable>
           </View>
@@ -176,6 +202,7 @@ export default function EntryScreen() {
           session.phase === "loading" ? (
           <View style={styles.form}>
             <TextInput
+              accessibilityLabel="Server address"
               autoCapitalize="none"
               autoCorrect={false}
               keyboardType="url"
@@ -190,6 +217,7 @@ export default function EntryScreen() {
               onSubmitEditing={() => void session.connect(serverValue)}
             />
             <Pressable
+              accessibilityRole="button"
               disabled={busy || !serverValue.trim()}
               style={[styles.primary, busy && styles.disabledPrimary]}
               onPress={() => void session.connect(serverValue)}
@@ -204,8 +232,8 @@ export default function EntryScreen() {
         (session.phase === "login" ||
           session.phase === "setup" ||
           session.phase === "discovering") ? (
-          <Text style={styles.error}>
-            Something went wrong. Please try again.
+          <Text accessibilityRole="alert" style={styles.error}>
+            {session.error}
           </Text>
         ) : null}
       </View>

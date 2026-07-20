@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<CommunityApplications>
+  <Profile>ParsonLabs maintains Parson, a self-hosted, local-first music server and player. Use the upstream GitHub issue tracker for support.</Profile>
+  <Icon>https://raw.githubusercontent.com/ParsonLabs/unraid-templates/main/icon.svg</Icon>
+  <WebPage>https://github.com/ParsonLabs/unraid-templates</WebPage>
+  <Forum>https://github.com/ParsonLabs/parson/issues</Forum>
+</CommunityApplications>

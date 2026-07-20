@@ -38,7 +38,7 @@
       ]
     },
     "web": {
-      "output": "static",
+      "output": "single",
       "favicon": "./assets/images/parson-icon.png"
     },
     "plugins": [

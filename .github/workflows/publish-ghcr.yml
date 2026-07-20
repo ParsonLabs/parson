@@ -1,0 +1,133 @@
+name: Publish Nightly Container to GHCR
+
+on:
+  push:
+    branches:
+      - nightly
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+concurrency:
+  group: publish-ghcr
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    uses: ./.github/workflows/test.yml
+
+  build_and_publish:
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Generate image metadata
+        id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ghcr.io/parsonlabs/parson
+          tags: |
+            type=raw,value=nightly,enable=${{ github.ref == 'refs/heads/nightly' }}
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          platforms: linux/amd64
+
+  publish_windows:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: verify
+    runs-on: windows-latest
+    timeout-minutes: 45
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+      - uses: dtolnay/rust-toolchain@1.97.0
+      - uses: Swatinem/rust-cache@v2
+      - name: Build embedded web UI
+        run: bun install --frozen-lockfile && bun --filter parson-music-web build
+      - name: Build Windows desktop and server packages
+        shell: pwsh
+        env:
+          PARSON_REQUIRE_CODE_SIGNING: "true"
+          WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+          WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+        run: |
+          $version = "${{ github.ref_name }}".TrimStart("v")
+          .\apps\desktop\scripts\package-windows.ps1 -Version $version
+          .\crates\windows-server\package.ps1 -Version $version -SkipWebBuild
+          .\crates\windows-server\verify-update-assets.ps1 -Version $version
+      - name: Publish Windows release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            artifacts/windows/Parson_*-setup.exe
+            artifacts/windows-server/ParsonMusicServer-*-win-x64.zip
+            artifacts/windows-server/ParsonMusicServer.exe
+            artifacts/windows-server/ParsonMusicServer.exe.sha256
+            artifacts/windows-server/windows-server-update.json
+
+  publish_linux:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+      - uses: dtolnay/rust-toolchain@1.97.0
+      - uses: Swatinem/rust-cache@v2
+      - name: Install Linux packaging dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libssl-dev patchelf dpkg-dev
+      - name: Build and verify Linux packages
+        run: |
+          bun install --frozen-lockfile
+          bun --filter parson-music-desktop desktop:build
+          bash ./apps/desktop/scripts/verify-linux-package.sh
+          mkdir -p artifacts/linux
+          cp target/release/bundle/electron/*.deb target/release/bundle/electron/*.AppImage artifacts/linux/
+          (cd artifacts/linux && sha256sum * > SHA256SUMS)
+      - name: Publish Linux release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            artifacts/linux/*.deb
+            artifacts/linux/*.AppImage
+            artifacts/linux/SHA256SUMS

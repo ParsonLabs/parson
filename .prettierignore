@@ -3,6 +3,7 @@ node_modules/
 
 .next/
 **/.next/
+**/.open-next/
 out/
 dist/
 .turbo/
@@ -20,3 +21,6 @@ apps/mobile/ios/
 Cargo.lock
 bun.lock
 LICENSE
+
+# TrueNAS app templates contain Jinja directives and are not plain YAML.
+distribution/truenas/ix-dev/community/parson/templates/docker-compose.yaml

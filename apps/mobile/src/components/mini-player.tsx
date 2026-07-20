@@ -67,7 +67,12 @@ export function MiniPlayer({ bottom }: { bottom: number }) {
   return (
     <GestureDetector gesture={dragUpGesture}>
       <Animated.View style={[styles.shell, { bottom }, dragStyle]}>
-        <Pressable style={styles.info} onPress={openPlayerFromTap}>
+        <Pressable
+          accessibilityLabel={`Open player for ${current.name}`}
+          accessibilityRole="button"
+          style={styles.info}
+          onPress={openPlayerFromTap}
+        >
           <Artwork
             path={current.album_object?.cover_url}
             size={48}
@@ -82,14 +87,26 @@ export function MiniPlayer({ bottom }: { bottom: number }) {
             </Text>
           </View>
         </Pressable>
-        <Pressable hitSlop={10} style={styles.control} onPress={toggle}>
+        <Pressable
+          accessibilityLabel={isPlaying ? "Pause" : "Play"}
+          accessibilityRole="button"
+          hitSlop={10}
+          style={styles.control}
+          onPress={toggle}
+        >
           {isPlaying ? (
             <PauseGlyph size={22} />
           ) : (
             <Play color="white" fill="white" size={23} />
           )}
         </Pressable>
-        <Pressable hitSlop={10} style={styles.control} onPress={next}>
+        <Pressable
+          accessibilityLabel="Next song"
+          accessibilityRole="button"
+          hitSlop={10}
+          style={styles.control}
+          onPress={next}
+        >
           <SkipForward color="white" fill="white" size={21} />
         </Pressable>
         <View style={[styles.progress, { width: `${progress * 100}%` }]} />

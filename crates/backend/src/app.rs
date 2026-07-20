@@ -7,10 +7,13 @@ use diesel::prelude::*;
 use diesel::sql_types::{BigInt, Integer, Nullable, Text};
 use serde::Serialize;
 
-use crate::library::indexer::{enrich_library_to_database, index_available_library_to_database};
+use crate::library::indexer::{
+    enrich_library_to_database_with_cancellation,
+    index_available_library_to_database_with_cancellation,
+};
 use crate::library::normalize::{LibraryIndexReport, normalize_library_data};
 use crate::library::state::LibraryCache;
-use crate::library::state::LibraryLifecycle;
+use crate::library::state::{LibraryLifecycle, LibraryScanLease};
 use crate::library::storage::store_library;
 use crate::persistence::connection::{DbPool, connect};
 use crate::playlist_rules::{
@@ -123,6 +126,60 @@ pub struct LocalArtistDetail {
     pub songs: Vec<LocalCatalogSong>,
 }
 
+fn catalog_album_page(
+    artists: &[crate::domain::Artist],
+    offset: usize,
+    limit: usize,
+) -> Vec<LocalCatalogAlbum> {
+    let mut albums = Vec::with_capacity(limit);
+    let mut position = 0usize;
+    let has_artwork = artists.iter().any(|artist| {
+        artist
+            .albums
+            .iter()
+            .any(|album| !album.cover_url.trim().is_empty())
+    });
+
+    for artist in artists {
+        for album in &artist.albums {
+            if has_artwork && album.cover_url.trim().is_empty() {
+                continue;
+            }
+            if position >= offset && albums.len() < limit {
+                albums.push(LocalCatalogAlbum {
+                    id: album.id.clone(),
+                    name: album.name.clone(),
+                    artist_id: artist.id.clone(),
+                    artist_name: artist.name.clone(),
+                    cover_path: album.cover_url.clone(),
+                    release_year: album.first_release_date.chars().take(4).collect(),
+                    song_count: album.songs.len(),
+                    first_song_id: album.songs.first().map(|song| song.id.clone()),
+                });
+            }
+            position += 1;
+            if albums.len() >= limit {
+                return albums;
+            }
+        }
+    }
+
+    albums
+}
+
+fn catalog_visible_album_count(artists: &[crate::domain::Artist]) -> usize {
+    let covered = artists
+        .iter()
+        .flat_map(|artist| &artist.albums)
+        .filter(|album| !album.cover_url.trim().is_empty())
+        .count();
+    if covered > 0 {
+        covered
+    } else {
+        artists.iter().map(|artist| artist.albums.len()).sum()
+    }
+}
+
 #[derive(QueryableByName)]
 struct LocalPlaylistRow {
     #[diesel(sql_type = Integer)]
@@ -162,14 +219,16 @@ async fn await_index_worker<T>(
 async fn perform_local_index(
     lifecycle: Arc<LibraryLifecycle>,
     path: String,
-    scan_lease: tokio::sync::OwnedMutexGuard<()>,
+    scan_lease: LibraryScanLease,
 ) -> Result<LocalIndexResult, AppError> {
+    let cancellation = scan_lease.cancellation();
     lifecycle
         .set_indexing("Discovering playable music on this PC.")
         .await;
     let index_path = path.clone();
     let worker = tokio::task::spawn_blocking(move || {
-        let (mut library, report) = index_available_library_to_database(&index_path)?;
+        let (mut library, report) =
+            index_available_library_to_database_with_cancellation(&index_path, &cancellation)?;
         normalize_library_data(&mut library);
         Ok::<_, AppError>((library, report))
     });
@@ -191,10 +250,14 @@ async fn perform_local_index(
 
     let enrichment_lifecycle = lifecycle.clone();
     let enrichment_path = path.clone();
+    let enrichment_cancellation = scan_lease.cancellation();
     tokio::spawn(async move {
         let _scan_lease = scan_lease;
         let worker = tokio::task::spawn_blocking(move || {
-            let (mut library, _) = enrich_library_to_database(&enrichment_path)?;
+            let (mut library, _) = enrich_library_to_database_with_cancellation(
+                &enrichment_path,
+                &enrichment_cancellation,
+            )?;
             normalize_library_data(&mut library);
             Ok::<_, AppError>(library)
         });
@@ -248,8 +311,8 @@ impl LocalApp {
             return Err("The selected library path is not a directory.".into());
         }
         let path = path.to_string_lossy().into_owned();
-        let Some(scan_lease) = self.library.try_begin_scan() else {
-            return Err("A local library scan is already running.".into());
+        let Some(scan_lease) = self.library.begin_replacing_scan().await else {
+            return Err("This library selection was replaced by a newer request.".into());
         };
         let lifecycle = self.library.clone();
         let scan = tokio::spawn(perform_local_index(lifecycle.clone(), path, scan_lease));
@@ -297,26 +360,16 @@ impl LocalApp {
                 .unwrap_or_else(|| "The local library is not ready.".into())
         })?;
         let limit = limit.clamp(1, 200);
-        let mut albums = Vec::with_capacity(limit);
+        let albums = if include_albums {
+            catalog_album_page(&cache.artists, offset, limit)
+        } else {
+            Vec::new()
+        };
         let mut songs = Vec::with_capacity(limit);
-        let mut album_position = 0usize;
         let mut song_position = 0usize;
 
         for artist in cache.artists.iter() {
             for album in &artist.albums {
-                if include_albums && album_position >= offset && albums.len() < limit {
-                    albums.push(LocalCatalogAlbum {
-                        id: album.id.clone(),
-                        name: album.name.clone(),
-                        artist_id: artist.id.clone(),
-                        artist_name: artist.name.clone(),
-                        cover_path: album.cover_url.clone(),
-                        release_year: album.first_release_date.chars().take(4).collect(),
-                        song_count: album.songs.len(),
-                        first_song_id: album.songs.first().map(|song| song.id.clone()),
-                    });
-                }
-                album_position += 1;
                 for song in &album.songs {
                     if include_songs && song_position >= offset && songs.len() < limit {
                         songs.push(LocalCatalogSong {
@@ -349,7 +402,7 @@ impl LocalApp {
         Ok(LocalCatalogPage {
             albums,
             songs,
-            total_albums: cache.album_count(),
+            total_albums: catalog_visible_album_count(&cache.artists),
             total_songs: cache.songs_flat.len(),
         })
     }
@@ -788,8 +841,57 @@ impl From<LocalPlaylistRow> for LocalPlaylist {
 mod tests {
     use std::sync::Arc;
 
-    use super::{AppError, await_index_worker};
+    use super::{AppError, await_index_worker, catalog_album_page, catalog_visible_album_count};
+    use crate::domain::{Album, Artist};
     use crate::library::state::{LibraryLifecycle, LibraryReadinessState};
+
+    fn catalog_artist(name: &str, albums: &[(&str, &str)]) -> Artist {
+        Artist {
+            id: format!("artist-{name}"),
+            name: name.into(),
+            albums: albums
+                .iter()
+                .map(|(name, cover_url)| Album {
+                    id: format!("album-{name}"),
+                    name: (*name).into(),
+                    cover_url: (*cover_url).into(),
+                    ..Album::default()
+                })
+                .collect(),
+            ..Artist::default()
+        }
+    }
+
+    #[test]
+    fn album_pages_hide_uncovered_albums_when_artwork_is_available() {
+        let artists = vec![
+            catalog_artist("A", &[("No cover A", ""), ("Covered A", "a.jpg")]),
+            catalog_artist("B", &[("No cover B", "   "), ("Covered B", "b.jpg")]),
+        ];
+
+        let first_page = catalog_album_page(&artists, 0, 3);
+        assert_eq!(
+            first_page
+                .iter()
+                .map(|album| album.name.as_str())
+                .collect::<Vec<_>>(),
+            vec!["Covered A", "Covered B"]
+        );
+        assert!(catalog_album_page(&artists, 2, 3).is_empty());
+        assert_eq!(catalog_visible_album_count(&artists), 2);
+    }
+
+    #[test]
+    fn album_pages_fall_back_to_uncovered_albums_when_none_have_artwork() {
+        let artists = vec![catalog_artist(
+            "A",
+            &[("No cover A", ""), ("No cover B", "   ")],
+        )];
+
+        let page = catalog_album_page(&artists, 0, 10);
+        assert_eq!(page.len(), 2);
+        assert_eq!(catalog_visible_album_count(&artists), 2);
+    }
 
     #[actix_web::test]
     async fn panicked_index_workers_leave_a_retryable_failure_state() {

@@ -1,6 +1,7 @@
 import { getPlaylist } from "@parson/music-sdk";
 import { ListMusic, Play } from "lucide-react-native";
 import { useRouter } from "expo-router";
+import { useState } from "react";
 
 import { ActionDrawer, DrawerAction } from "@/components/action-drawer";
 import { usePlayer } from "@/providers/player-provider";
@@ -18,17 +19,27 @@ export function PlaylistActions({
 }) {
   const router = useRouter();
   const player = usePlayer();
+  const [loading, setLoading] = useState(false);
+  const [failed, setFailed] = useState(false);
   return (
     <ActionDrawer open={open} onClose={onClose} title={name}>
       <DrawerAction
         icon={Play}
-        label="Play"
+        label={
+          loading ? "Loading playlist…" : failed ? "Try playing again" : "Play"
+        }
         onPress={() => {
-          onClose();
-          void getPlaylist(playlistId).then((playlist) => {
-            if (playlist.songs[0])
-              player.playSong(playlist.songs[0], playlist.songs);
-          });
+          if (loading) return;
+          setFailed(false);
+          setLoading(true);
+          void getPlaylist(playlistId)
+            .then((playlist) => {
+              if (playlist.songs[0])
+                player.playSong(playlist.songs[0], playlist.songs);
+              onClose();
+            })
+            .catch(() => setFailed(true))
+            .finally(() => setLoading(false));
         }}
       />
       <DrawerAction

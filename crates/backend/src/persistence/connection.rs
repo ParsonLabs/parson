@@ -8,7 +8,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use diesel::connection::SimpleConnection;
 use diesel::deserialize::QueryableByName;
 use diesel::r2d2::{self, ConnectionManager};
-use diesel::sql_types::Text;
+use diesel::sql_types::{BigInt, Text};
 use diesel::sqlite::SqliteConnection;
 use diesel::{Connection, RunQueryDsl};
 use diesel_migrations::{EmbeddedMigrations, MigrationHarness, embed_migrations};
@@ -19,6 +19,8 @@ type BoxError = Box<dyn Error + Send + Sync + 'static>;
 
 // Embed crates/backend/migrations.
 const MIGRATIONS: EmbeddedMigrations = embed_migrations!("./migrations");
+const V1_BASELINE_MIGRATION: &str = "20260719000000";
+const LAST_PRE_BASELINE_MIGRATION: &str = "20260717030000";
 const DEFAULT_SNAPSHOT_GENERATIONS: usize = 3;
 const DEFAULT_INTEGRITY_INTERVAL: Duration = Duration::from_secs(7 * 24 * 60 * 60);
 static DATABASE_POOL: OnceLock<Result<DbPool, String>> = OnceLock::new();
@@ -35,6 +37,12 @@ struct IntegrityRow {
 struct CatalogFingerprintRow {
     #[diesel(sql_type = Text)]
     signature: String,
+}
+
+#[derive(QueryableByName)]
+struct CountQueryRow {
+    #[diesel(sql_type = BigInt)]
+    count: i64,
 }
 
 pub fn check_integrity(connection: &mut SqliteConnection) -> Result<(), BoxError> {
@@ -347,6 +355,7 @@ fn open_pool() -> Result<DbPool, BoxError> {
         "PRAGMA journal_mode = WAL;
          PRAGMA busy_timeout = 30000;",
     )?;
+    adopt_pre_baseline_migration_history(&mut connection)?;
     connection.run_pending_migrations(MIGRATIONS)?;
     let marker = startup_marker(&path);
     let abnormal_shutdown = marker.exists();
@@ -368,6 +377,45 @@ fn open_pool() -> Result<DbPool, BoxError> {
             .build(manager)?,
     );
     Ok(pool)
+}
+
+/// Recognizes databases created by the final pre-1.0 migration set after that
+/// set was squashed into the 1.0 baseline. Without this bridge, Diesel attempts
+/// to apply the baseline to an already-populated database and fails at the first
+/// `CREATE TABLE` statement.
+fn adopt_pre_baseline_migration_history(
+    connection: &mut SqliteConnection,
+) -> Result<bool, BoxError> {
+    let migration_tables = diesel::sql_query(
+        "SELECT CAST(COUNT(*) AS BIGINT) AS count FROM sqlite_schema
+         WHERE type = 'table' AND name = '__diesel_schema_migrations'",
+    )
+    .get_result::<CountQueryRow>(connection)?
+    .count;
+    if migration_tables == 0 {
+        return Ok(false);
+    }
+    let changed = diesel::sql_query(format!(
+        "INSERT INTO __diesel_schema_migrations (version, run_on)
+         SELECT '{V1_BASELINE_MIGRATION}', CURRENT_TIMESTAMP
+         WHERE EXISTS (
+             SELECT 1 FROM __diesel_schema_migrations
+             WHERE version = '{LAST_PRE_BASELINE_MIGRATION}'
+         )
+         AND NOT EXISTS (
+             SELECT 1 FROM __diesel_schema_migrations
+             WHERE version = '{V1_BASELINE_MIGRATION}'
+         )"
+    ))
+    .execute(connection)?;
+    if changed > 0 {
+        tracing::info!(
+            legacy_version = LAST_PRE_BASELINE_MIGRATION,
+            baseline_version = V1_BASELINE_MIGRATION,
+            "adopted pre-1.0 database migration history"
+        );
+    }
+    Ok(changed > 0)
 }
 
 fn migrate_legacy_database(legacy: &Path, product: &Path) -> Result<bool, std::io::Error> {
@@ -435,8 +483,9 @@ mod tests {
     }
 
     use super::{
-        MIGRATIONS, catalog_fingerprint, check_integrity, create_verified_snapshot,
-        recover_interrupted_scan_jobs, snapshot_files,
+        LAST_PRE_BASELINE_MIGRATION, MIGRATIONS, V1_BASELINE_MIGRATION,
+        adopt_pre_baseline_migration_history, catalog_fingerprint, check_integrity,
+        create_verified_snapshot, recover_interrupted_scan_jobs, snapshot_files,
     };
     use diesel_migrations::MigrationHarness;
 
@@ -445,6 +494,37 @@ mod tests {
         let mut connection = diesel::sqlite::SqliteConnection::establish(":memory:")
             .expect("in-memory sqlite connection");
         check_integrity(&mut connection).expect("healthy database");
+    }
+
+    #[test]
+    fn final_pre_baseline_databases_adopt_the_squashed_migration() {
+        let mut connection = SqliteConnection::establish(":memory:").expect("migration database");
+        connection
+            .batch_execute(&format!(
+                "CREATE TABLE __diesel_schema_migrations (
+                    version VARCHAR(50) PRIMARY KEY NOT NULL,
+                    run_on TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+                 );
+                 INSERT INTO __diesel_schema_migrations (version)
+                 VALUES ('{LAST_PRE_BASELINE_MIGRATION}');"
+            ))
+            .expect("legacy migration history");
+
+        assert!(
+            adopt_pre_baseline_migration_history(&mut connection).expect("adopt migration history")
+        );
+        assert!(
+            !adopt_pre_baseline_migration_history(&mut connection)
+                .expect("migration adoption is idempotent")
+        );
+        let adopted = diesel::sql_query(format!(
+            "SELECT COUNT(*) AS count FROM __diesel_schema_migrations
+             WHERE version = '{V1_BASELINE_MIGRATION}'"
+        ))
+        .get_result::<CountRow>(&mut connection)
+        .expect("adopted migration count")
+        .count;
+        assert_eq!(adopted, 1);
     }
 
     #[test]

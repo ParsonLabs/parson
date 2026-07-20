@@ -1,6 +1,6 @@
 {
   "name": "parson-music-desktop",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "private": true,
   "license": "GPL-3.0-only",
   "description": "Parson desktop client for Linux and Windows",
@@ -64,7 +64,11 @@
       ],
       "icon": "../../crates/windows-server/parson.ico",
       "executableName": "Parson",
-      "artifactName": "Parson_${version}_${arch}-setup.${ext}"
+      "artifactName": "Parson_${version}_${arch}-setup.${ext}",
+      "signExts": [
+        ".dll",
+        ".node"
+      ]
     },
     "nsis": {
       "oneClick": false,

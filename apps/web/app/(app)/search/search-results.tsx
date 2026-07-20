@@ -60,7 +60,9 @@ function SearchArtwork({ item }: { item: CombinedItem }) {
   }`;
 
   if (isPlayable(item)) {
-    return <div className={className}>{artworkContent}</div>;
+    return (
+      <div className={`${className} pointer-events-none`}>{artworkContent}</div>
+    );
   }
 
   return (
@@ -232,33 +234,24 @@ export default function SearchResults() {
           return (
             <SearchResultMenu item={item} key={key}>
               <article
-                aria-label={
-                  playsOnRowClick
-                    ? `Play ${item.name}`
-                    : opensOnRowClick
-                      ? `View ${item.name}`
-                      : undefined
-                }
-                className={`group flex items-center gap-4 border-b border-white/[0.07] px-2 py-3 transition-colors hover:bg-white/[0.025] ${playsOnRowClick || opensOnRowClick ? "cursor-pointer focus-visible:bg-white/[0.04] focus-visible:outline-none" : ""}`}
-                onClick={
-                  playsOnRowClick || opensOnRowClick ? activateRow : undefined
-                }
-                onKeyDown={
-                  playsOnRowClick || opensOnRowClick
-                    ? (event) => {
-                        if (event.target !== event.currentTarget) return;
-                        if (event.key === "Enter" || event.key === " ") {
-                          event.preventDefault();
-                          activateRow();
-                        }
-                      }
-                    : undefined
-                }
-                role={playsOnRowClick || opensOnRowClick ? "button" : undefined}
-                tabIndex={playsOnRowClick || opensOnRowClick ? 0 : undefined}
+                className={`group relative flex items-center gap-4 border-b border-white/[0.07] px-2 py-3 transition-colors hover:bg-white/[0.025]`}
               >
+                {(playsOnRowClick || opensOnRowClick) && (
+                  <button
+                    aria-label={
+                      playsOnRowClick
+                        ? `Play ${item.name}`
+                        : `View ${item.name}`
+                    }
+                    className="absolute inset-0 z-0 cursor-pointer rounded-sm focus-visible:bg-white/[0.04] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/20"
+                    onClick={activateRow}
+                    type="button"
+                  />
+                )}
                 <SearchArtwork item={item} />
-                <div className="min-w-0 flex-1">
+                <div
+                  className={`relative z-[1] min-w-0 flex-1 ${playable ? "pointer-events-none" : ""}`}
+                >
                   {playable ? (
                     <span className="block truncate text-[15px] font-medium text-zinc-100">
                       {item.name}
@@ -295,7 +288,7 @@ export default function SearchResults() {
                 {playable && (
                   <button
                     aria-label={`Play ${item.name}`}
-                    className="flex h-9 w-9 items-center justify-center rounded-full text-zinc-400 transition-colors group-hover:bg-white/10 group-hover:text-white"
+                    className="relative z-10 flex h-9 w-9 items-center justify-center rounded-full text-zinc-400 transition-colors hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30"
                     onClick={(event) => {
                       event.stopPropagation();
                       void play(item);

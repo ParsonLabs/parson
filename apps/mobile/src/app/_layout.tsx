@@ -1,12 +1,23 @@
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { DarkTheme, Stack, ThemeProvider, useSegments } from "expo-router";
+import {
+  focusManager,
+  QueryClient,
+  QueryClientProvider,
+} from "@tanstack/react-query";
+import {
+  DarkTheme,
+  Stack,
+  ThemeProvider,
+  useRouter,
+  useSegments,
+} from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
 import { useEffect, useState } from "react";
+import { AppState, Platform } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { palette } from "@/constants/colors";
+import { layout, palette } from "@/constants/colors";
 import { MiniPlayer } from "@/components/mini-player";
 import { ActionDrawerProvider } from "@/components/action-drawer";
 import { PlayerProvider } from "@/providers/player-provider";
@@ -38,9 +49,55 @@ function PersistentMiniPlayer() {
   const inTabs = String(segments[0]) === "(tabs)";
   return (
     <MiniPlayer
-      bottom={inTabs ? 60 + insets.bottom : Math.max(8, insets.bottom)}
+      bottom={
+        inTabs ? layout.tabBar + insets.bottom : Math.max(8, insets.bottom)
+      }
     />
   );
+}
+
+function SessionNavigationGuard() {
+  const router = useRouter();
+  const segments = useSegments();
+  const session = useSession();
+  const topLevelRoute = String(segments[0] ?? "");
+  const tabRoute = String((segments as readonly string[])[1] ?? "");
+  const authenticated =
+    session.phase === "ready" || session.phase === "offline";
+
+  useEffect(() => {
+    if (!authenticated && topLevelRoute) {
+      router.replace("/");
+    } else if (
+      session.phase === "offline" &&
+      topLevelRoute === "(tabs)" &&
+      (tabRoute === "index" || tabRoute === "search" || !tabRoute)
+    ) {
+      router.replace("/(tabs)/library");
+    } else if (authenticated && !topLevelRoute) {
+      router.replace(
+        session.phase === "offline" ? "/(tabs)/library" : "/(tabs)",
+      );
+    }
+  }, [authenticated, router, session.phase, tabRoute, topLevelRoute]);
+
+  return null;
+}
+
+function NativeQueryLifecycle() {
+  useEffect(() => {
+    if (Platform.OS === "web") return;
+    focusManager.setFocused(AppState.currentState === "active");
+    const subscription = AppState.addEventListener("change", (state) => {
+      focusManager.setFocused(state === "active");
+    });
+    return () => {
+      subscription.remove();
+      focusManager.setFocused(undefined);
+    };
+  }, []);
+
+  return null;
 }
 
 export default function RootLayout() {
@@ -58,6 +115,7 @@ export default function RootLayout() {
       style={{ flex: 1, backgroundColor: palette.background }}
     >
       <QueryClientProvider client={queryClient}>
+        <NativeQueryLifecycle />
         <SessionProvider>
           <PlayerProvider>
             <ActionDrawerProvider>
@@ -82,6 +140,7 @@ export default function RootLayout() {
                     }}
                   />
                 </Stack>
+                <SessionNavigationGuard />
                 <PersistentMiniPlayer />
               </ThemeProvider>
             </ActionDrawerProvider>

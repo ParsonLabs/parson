@@ -1,10 +1,10 @@
-import * as SecureStore from "expo-secure-store";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   getSetupStatus,
   indexSetupLibrary,
   isValid,
   login as loginRequest,
+  logout as logoutRequest,
   register,
   type SetupStatus,
 } from "@parson/music-sdk";
@@ -18,12 +18,26 @@ import {
   useState,
   type PropsWithChildren,
 } from "react";
+import { Platform } from "react-native";
 
 import { configureNativeRuntime, normalizeOrigin } from "@/lib/runtime";
 import { downloadedRecords, hydrateDownloads } from "@/lib/downloads";
+import {
+  parseDiscoveryManifest,
+  parseDiscoveryManifestResponse,
+  serverIdentityChanged,
+  type DiscoveryManifest,
+  type ServerIdentity,
+} from "@/lib/discovery-manifest";
+import {
+  deleteSecureItem,
+  getSecureItem,
+  setSecureItem,
+} from "@/lib/secure-storage";
 
 const SERVER_KEY = "parson.server-origin";
 const TOKEN_KEY = "parson.access-token";
+const REFRESH_TOKEN_KEY = "parson.refresh-token";
 const INSTANCE_KEY = "parson.instance-id";
 const LIBRARY_KEY = "parson.library-name";
 
@@ -61,33 +75,24 @@ type SessionContextValue = {
   setupLibrary: (path: string) => Promise<boolean>;
 };
 
-export type DiscoveryManifest = {
-  protocol: string;
-  protocolVersion: number;
-  instanceId: string;
-  name: string;
-  product: string;
-  serverVersion: string;
-};
-
 const SessionContext = createContext<SessionContextValue | null>(null);
 
 async function readManifest(origin: string): Promise<DiscoveryManifest> {
-  const response = await fetch(`${origin}/.well-known/parson`, {
-    headers: { Accept: "application/json" },
-  });
-  if (!response.ok)
-    throw new Error(`Library returned HTTP ${response.status}.`);
-  const manifest = (await response.json()) as DiscoveryManifest;
-  if (
-    manifest.protocol !== "parson" ||
-    manifest.protocolVersion !== 1 ||
-    manifest.product !== "parson-music" ||
-    !manifest.instanceId
-  ) {
-    throw new Error("This is not a compatible Parson library.");
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 8_000);
+  try {
+    const response = await fetch(`${origin}/.well-known/parson`, {
+      headers: { Accept: "application/json" },
+      signal: controller.signal,
+    });
+    return await parseDiscoveryManifestResponse(response);
+  } catch (cause) {
+    if (controller.signal.aborted)
+      throw new Error("The library did not respond in time.");
+    throw cause;
+  } finally {
+    clearTimeout(timeout);
   }
-  return manifest;
 }
 
 export function SessionProvider({ children }: PropsWithChildren) {
@@ -100,11 +105,19 @@ export function SessionProvider({ children }: PropsWithChildren) {
   const [error, setError] = useState<string | null>(null);
   const [setupStatus, setSetupStatus] = useState<SetupStatus | null>(null);
   const generation = useRef(0);
+  const userOperationInFlight = useRef(false);
+  const serverIdentity = useRef<ServerIdentity>({
+    instanceId: null,
+    origin: null,
+  });
 
   const clearAuthentication = useCallback(async () => {
-    configureNativeRuntime({ token: null });
+    configureNativeRuntime({ refreshToken: null, token: null });
     setClaims(null);
-    await SecureStore.deleteItemAsync(TOKEN_KEY);
+    await Promise.all([
+      deleteSecureItem(TOKEN_KEY),
+      deleteSecureItem(REFRESH_TOKEN_KEY),
+    ]);
   }, []);
 
   useEffect(() => {
@@ -114,7 +127,10 @@ export function SessionProvider({ children }: PropsWithChildren) {
         setPhase("login");
       },
       tokenChanged: (next) => {
-        void SecureStore.setItemAsync(TOKEN_KEY, next);
+        void setSecureItem(TOKEN_KEY, next).catch(() => {});
+      },
+      refreshTokenChanged: (next) => {
+        void setSecureItem(REFRESH_TOKEN_KEY, next).catch(() => {});
       },
     });
   }, [clearAuthentication]);
@@ -156,17 +172,33 @@ export function SessionProvider({ children }: PropsWithChildren) {
       setPhase("connecting");
       try {
         const nextOrigin = normalizeOrigin(value);
-        const manifest = suppliedManifest ?? (await readManifest(nextOrigin));
-        configureNativeRuntime({ origin: nextOrigin });
-        const setup = await getSetupStatus();
+        const manifest = suppliedManifest
+          ? parseDiscoveryManifest(suppliedManifest)
+          : await readManifest(nextOrigin);
+        const setup = await getSetupStatus(`${nextOrigin}/api/v1`);
         if (currentGeneration !== generation.current) return false;
+        const previousServer = serverIdentity.current;
+        if (
+          serverIdentityChanged(previousServer, {
+            instanceId: manifest.instanceId,
+            origin: nextOrigin,
+          })
+        ) {
+          await clearAuthentication();
+          if (currentGeneration !== generation.current) return false;
+        }
+        configureNativeRuntime({ origin: nextOrigin });
+        serverIdentity.current = {
+          instanceId: manifest.instanceId,
+          origin: nextOrigin,
+        };
         setOrigin(nextOrigin);
         setInstanceId(manifest.instanceId);
         setLibraryName(manifest.name);
         await Promise.all([
-          SecureStore.setItemAsync(SERVER_KEY, nextOrigin),
-          SecureStore.setItemAsync(INSTANCE_KEY, manifest.instanceId),
-          SecureStore.setItemAsync(LIBRARY_KEY, manifest.name),
+          setSecureItem(SERVER_KEY, nextOrigin),
+          setSecureItem(INSTANCE_KEY, manifest.instanceId),
+          setSecureItem(LIBRARY_KEY, manifest.name),
         ]);
         await resolveSetup(setup, currentGeneration);
         return true;
@@ -182,7 +214,7 @@ export function SessionProvider({ children }: PropsWithChildren) {
         return false;
       }
     },
-    [resolveSetup],
+    [clearAuthentication, resolveSetup],
   );
 
   const retry = useCallback(async () => {
@@ -193,18 +225,32 @@ export function SessionProvider({ children }: PropsWithChildren) {
   useEffect(() => {
     let cancelled = false;
     void (async () => {
-      const [savedOrigin, savedToken, savedInstance, savedLibrary] =
-        await Promise.all([
-          SecureStore.getItemAsync(SERVER_KEY),
-          SecureStore.getItemAsync(TOKEN_KEY),
-          SecureStore.getItemAsync(INSTANCE_KEY),
-          SecureStore.getItemAsync(LIBRARY_KEY),
-        ]);
+      const [
+        savedOrigin,
+        savedToken,
+        savedRefreshToken,
+        savedInstance,
+        savedLibrary,
+      ] = await Promise.all([
+        getSecureItem(SERVER_KEY),
+        getSecureItem(TOKEN_KEY),
+        getSecureItem(REFRESH_TOKEN_KEY),
+        getSecureItem(INSTANCE_KEY),
+        getSecureItem(LIBRARY_KEY),
+      ]);
       if (cancelled) return;
       setOrigin(savedOrigin);
       setInstanceId(savedInstance);
       setLibraryName(savedLibrary);
-      configureNativeRuntime({ origin: savedOrigin, token: savedToken });
+      serverIdentity.current = {
+        instanceId: savedInstance,
+        origin: savedOrigin,
+      };
+      configureNativeRuntime({
+        origin: savedOrigin,
+        refreshToken: savedRefreshToken,
+        token: savedToken,
+      });
       if (!savedOrigin) {
         setPhase("discovering");
         return;
@@ -227,21 +273,38 @@ export function SessionProvider({ children }: PropsWithChildren) {
   }, [connect]);
 
   const login = useCallback(async (username: string, password: string) => {
+    if (userOperationInFlight.current) return false;
+    userOperationInFlight.current = true;
+    const expectedGeneration = generation.current;
     setError(null);
     setPhase("connecting");
     try {
-      const response = await loginRequest({
-        username: username.trim(),
-        password,
-      });
+      const response = await loginRequest(
+        {
+          username: username.trim(),
+          password,
+        },
+        { native: Platform.OS !== "web" },
+      );
+      if (expectedGeneration !== generation.current) return false;
       if (!response.status || !response.access_token) {
         setError(response.message || "Sign in failed.");
         setPhase("login");
         return false;
       }
-      configureNativeRuntime({ token: response.access_token });
-      await SecureStore.setItemAsync(TOKEN_KEY, response.access_token);
+      configureNativeRuntime({
+        refreshToken: response.refresh_token ?? null,
+        token: response.access_token,
+      });
+      await Promise.all([
+        setSecureItem(TOKEN_KEY, response.access_token),
+        response.refresh_token
+          ? setSecureItem(REFRESH_TOKEN_KEY, response.refresh_token)
+          : deleteSecureItem(REFRESH_TOKEN_KEY),
+      ]);
+      if (expectedGeneration !== generation.current) return false;
       const session = await isValid();
+      if (expectedGeneration !== generation.current) return false;
       if (!session.status || !session.claims) {
         setError(session.message || "The session could not be verified.");
         setPhase("login");
@@ -251,47 +314,94 @@ export function SessionProvider({ children }: PropsWithChildren) {
       setPhase("ready");
       return true;
     } catch (cause) {
+      if (expectedGeneration !== generation.current) return false;
       setError(cause instanceof Error ? cause.message : "Could not sign in.");
       setPhase("login");
       return false;
+    } finally {
+      userOperationInFlight.current = false;
     }
   }, []);
 
   const setupAccount = useCallback(
     async (username: string, password: string, setupCode?: string) => {
+      if (userOperationInFlight.current) return false;
+      userOperationInFlight.current = true;
+      const expectedGeneration = generation.current;
       setError(null);
       setPhase("connecting");
-      const response = await register({
-        username: username.trim(),
-        password,
-        setup_code: setupCode?.trim() || undefined,
-      });
-      if (!response.status || !response.access_token) {
+      try {
+        const credentials = {
+          username: username.trim(),
+          password,
+          role: "admin",
+          setup_code: setupCode?.trim() || undefined,
+        };
+        const response = await register(credentials);
+        if (expectedGeneration !== generation.current) return false;
+        if (!response.status) {
+          setError(
+            response.message || "Could not create the administrator account.",
+          );
+          setPhase("setup");
+          return false;
+        }
+        const signedIn = await loginRequest(credentials, {
+          native: Platform.OS !== "web",
+        });
+        if (expectedGeneration !== generation.current) return false;
+        if (!signedIn.status || !signedIn.access_token) {
+          setError(signedIn.message || "Account created. Sign in to continue.");
+          setPhase("login");
+          return false;
+        }
+        configureNativeRuntime({
+          refreshToken: signedIn.refresh_token ?? null,
+          token: signedIn.access_token,
+        });
+        await Promise.all([
+          setSecureItem(TOKEN_KEY, signedIn.access_token),
+          signedIn.refresh_token
+            ? setSecureItem(REFRESH_TOKEN_KEY, signedIn.refresh_token)
+            : deleteSecureItem(REFRESH_TOKEN_KEY),
+        ]);
+        if (expectedGeneration !== generation.current) return false;
+        const next = await getSetupStatus();
+        if (expectedGeneration !== generation.current) return false;
+        await resolveSetup(next, expectedGeneration);
+        return expectedGeneration === generation.current;
+      } catch (cause) {
+        if (expectedGeneration !== generation.current) return false;
         setError(
-          response.message || "Could not create the administrator account.",
+          cause instanceof Error
+            ? cause.message
+            : "Could not create the administrator account.",
         );
         setPhase("setup");
         return false;
+      } finally {
+        userOperationInFlight.current = false;
       }
-      configureNativeRuntime({ token: response.access_token });
-      await SecureStore.setItemAsync(TOKEN_KEY, response.access_token);
-      const next = await getSetupStatus();
-      await resolveSetup(next, generation.current);
-      return true;
     },
     [resolveSetup],
   );
 
   const setupLibrary = useCallback(
     async (path: string) => {
+      if (userOperationInFlight.current) return false;
+      userOperationInFlight.current = true;
+      const expectedGeneration = generation.current;
       setError(null);
       setPhase("indexing");
       try {
         await indexSetupLibrary(path.trim());
+        if (expectedGeneration !== generation.current) return false;
         const next = await getSetupStatus();
-        await resolveSetup(next, generation.current);
-        return true;
+        if (expectedGeneration !== generation.current) return false;
+        await resolveSetup(next, expectedGeneration);
+        return expectedGeneration === generation.current;
       } catch (cause) {
+        if (expectedGeneration !== generation.current) return false;
         setError(
           cause instanceof Error
             ? cause.message
@@ -299,6 +409,8 @@ export function SessionProvider({ children }: PropsWithChildren) {
         );
         setPhase("setup");
         return false;
+      } finally {
+        userOperationInFlight.current = false;
       }
     },
     [resolveSetup],
@@ -306,9 +418,17 @@ export function SessionProvider({ children }: PropsWithChildren) {
 
   const logout = useCallback(async () => {
     generation.current += 1;
-    queryClient.clear();
+    try {
+      await logoutRequest();
+    } catch {
+      // Local logout must still succeed while the server is unavailable.
+    }
     await clearAuthentication();
     setPhase("login");
+    // Let the authenticated route tree unmount before notifying every query
+    // observer. Clearing synchronously while Expo Router is redirecting can
+    // cause nested observer updates on web.
+    setTimeout(() => queryClient.clear(), 0);
   }, [clearAuthentication, queryClient]);
 
   const updateBitrate = useCallback((bitrate: number) => {
@@ -317,19 +437,25 @@ export function SessionProvider({ children }: PropsWithChildren) {
 
   const changeServer = useCallback(async () => {
     generation.current += 1;
-    queryClient.clear();
+    try {
+      await logoutRequest();
+    } catch {
+      // Changing servers must remain available offline.
+    }
     await clearAuthentication();
     await Promise.all([
-      SecureStore.deleteItemAsync(SERVER_KEY),
-      SecureStore.deleteItemAsync(INSTANCE_KEY),
-      SecureStore.deleteItemAsync(LIBRARY_KEY),
+      deleteSecureItem(SERVER_KEY),
+      deleteSecureItem(INSTANCE_KEY),
+      deleteSecureItem(LIBRARY_KEY),
     ]);
     configureNativeRuntime({ origin: null });
+    serverIdentity.current = { instanceId: null, origin: null };
     setOrigin(null);
     setInstanceId(null);
     setLibraryName(null);
     setError(null);
     setPhase("discovering");
+    setTimeout(() => queryClient.clear(), 0);
   }, [clearAuthentication, queryClient]);
 
   const value = useMemo<SessionContextValue>(

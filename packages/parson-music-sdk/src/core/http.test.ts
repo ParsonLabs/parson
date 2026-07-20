@@ -2,6 +2,8 @@ import { afterEach, describe, expect, mock, test } from "bun:test";
 import {
   ApiError,
   composeAbortSignals,
+  configureApiRuntime,
+  getFreshAuthorizationHeaders,
   isAuthLifecycleURL,
   normalizeApiBaseURL,
   normalizeTimeout,
@@ -14,6 +16,7 @@ import api from "./http";
 const originalFetch = globalThis.fetch;
 afterEach(() => {
   globalThis.fetch = originalFetch;
+  configureApiRuntime(null);
 });
 
 describe("parseResponse", () => {
@@ -76,6 +79,87 @@ test("auth routing uses the URL path rather than query-string contents", () => {
   expect(
     isAuthLifecycleURL("https://music.test/api/v1/search?q=%2Fauth%2Fsession"),
   ).toBeFalse();
+});
+
+test("session validation sends the native runtime bearer token", async () => {
+  const payload = btoa(
+    JSON.stringify({ exp: Math.floor(Date.now() / 1000) + 300 }),
+  );
+  configureApiRuntime({
+    getAccessToken: () => `header.${payload}.signature`,
+  });
+  globalThis.fetch = mock(async (_input, init) => {
+    expect(new Headers(init?.headers).get("authorization")).toBe(
+      `Bearer header.${payload}.signature`,
+    );
+    return Response.json({ status: true });
+  }) as typeof fetch;
+
+  await api.get("/auth/session", { baseURL: "https://music.test/api/v1" });
+});
+
+test("near-expiry native sessions rotate before the protected request", async () => {
+  const payload = btoa(
+    JSON.stringify({ exp: Math.floor(Date.now() / 1000) + 5 }),
+  );
+  let persisted = "";
+  configureApiRuntime({
+    getAccessToken: () => `header.${payload}.signature`,
+    refreshAccessToken: async () => "rotated-access-token",
+    onAccessToken: (token) => {
+      persisted = token;
+    },
+  });
+  globalThis.fetch = mock(async (_input, init) => {
+    expect(new Headers(init?.headers).get("authorization")).toBe(
+      "Bearer rotated-access-token",
+    );
+    return Response.json({ status: true });
+  }) as typeof fetch;
+
+  await api.get("/library", { baseURL: "https://music.test/api/v1" });
+  expect(persisted).toBe("rotated-access-token");
+});
+
+test("direct native media requests share the access-token freshness gate", async () => {
+  const payload = btoa(
+    JSON.stringify({ exp: Math.floor(Date.now() / 1000) + 5 }),
+  );
+  let refreshes = 0;
+  configureApiRuntime({
+    getAccessToken: () => `header.${payload}.signature`,
+    refreshAccessToken: async () => {
+      refreshes += 1;
+      return "fresh-media-token";
+    },
+  });
+
+  const [first, second] = await Promise.all([
+    getFreshAuthorizationHeaders(),
+    getFreshAuthorizationHeaders(),
+  ]);
+  expect(first).toEqual({ Authorization: "Bearer fresh-media-token" });
+  expect(second).toEqual({ Authorization: "Bearer fresh-media-token" });
+  expect(refreshes).toBe(1);
+});
+
+test("direct native media requests remain anonymous without a session", async () => {
+  configureApiRuntime({ getAccessToken: () => null });
+  expect(await getFreshAuthorizationHeaders()).toEqual({});
+});
+
+test("anonymous server preflights never leak the current bearer token", async () => {
+  configureApiRuntime({ getAccessToken: () => "current-server-token" });
+  globalThis.fetch = mock(async (_input, init) => {
+    expect(new Headers(init?.headers).has("authorization")).toBeFalse();
+    expect("skipAuth" in (init ?? {})).toBeFalse();
+    return Response.json({ status: true });
+  }) as typeof fetch;
+
+  await api.get("/setup/status", {
+    baseURL: "https://different-server.test/api/v1",
+    skipAuth: true,
+  });
 });
 
 test("invalid stored server URLs fall back to the current origin", () => {

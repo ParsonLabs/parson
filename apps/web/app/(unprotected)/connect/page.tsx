@@ -1,4 +1,10 @@
 import ServerConnectionPanel from "@/features/server/server-connection-panel";
+import type { Metadata } from "next";
+
+export const metadata: Metadata = {
+  title: "Connect",
+  description: "Choose which Parson music library to use.",
+};
 
 export default function ConnectPage() {
   return (

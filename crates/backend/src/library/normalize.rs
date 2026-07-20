@@ -5,7 +5,7 @@ use regex::Regex;
 
 use crate::domain::{Album, Artist};
 
-const RELEASE_TYPES: [&str; 12] = [
+const RELEASE_TYPES: [&str; 13] = [
     "Album",
     "Edition",
     "EP",
@@ -16,6 +16,7 @@ const RELEASE_TYPES: [&str; 12] = [
     "Demos & Rarities",
     "Bootleg",
     "Soundtrack",
+    "Promotional",
     "Acapella",
     "Bonus Audio",
 ];
@@ -328,6 +329,8 @@ pub struct ReleaseEvidence<'a> {
     pub album_artist: &'a str,
     pub paths: &'a [String],
     pub track_titles: &'a [String],
+    pub track_durations: &'a [f64],
+    pub genres: &'a [String],
 }
 
 #[derive(Clone, Debug, Default, Serialize)]
@@ -461,6 +464,12 @@ pub fn classify_release_type(album: &Album) -> String {
         album_artist: "",
         paths: &paths,
         track_titles: &track_titles,
+        track_durations: &album
+            .songs
+            .iter()
+            .map(|song| song.duration)
+            .collect::<Vec<_>>(),
+        genres: &[],
     })
 }
 
@@ -471,7 +480,9 @@ pub fn classify_release(evidence: &ReleaseEvidence<'_>) -> String {
 pub fn classify_release_details(evidence: &ReleaseEvidence<'_>) -> ReleaseClassification {
     let mut scores = [0_i32; RELEASE_TYPES.len()];
     let mut reasons = Vec::new();
-    let album = searchable(evidence.album_name);
+    // Packaging-only disc suffixes are not semantic release evidence. Classify the
+    // user-facing title that remains after those suffixes are removed.
+    let album = searchable(&analyze_release_title(evidence.album_name).display_title);
     let artist = searchable(evidence.album_artist);
     let path = evidence
         .paths
@@ -480,9 +491,35 @@ pub fn classify_release_details(evidence: &ReleaseEvidence<'_>) -> ReleaseClassi
         .collect::<Vec<_>>()
         .join(" ");
     let track_count = evidence.track_titles.len();
+    let total_duration = evidence
+        .track_durations
+        .iter()
+        .copied()
+        .filter(|duration| duration.is_finite() && *duration > 0.0)
+        .sum::<f64>();
+    let has_complete_duration = track_count > 0
+        && evidence
+            .track_durations
+            .iter()
+            .filter(|duration| duration.is_finite() && **duration > 0.0)
+            .count()
+            == track_count;
+    let genres = evidence
+        .genres
+        .iter()
+        .map(|value| searchable(value))
+        .collect::<Vec<_>>()
+        .join(" ");
 
     score_path_categories(&path, &mut scores);
     score_album_name(&album, &mut scores);
+
+    if matches_phrase(&genres, &["soundtrack", "film score", "original score"]) {
+        add(&mut scores, "Soundtrack", 220);
+        reasons.push("embedded genre tags identify a soundtrack".to_string());
+    }
+
+    score_release_folder_markers(evidence.paths, &mut scores, &mut reasons);
 
     for (release_type, phrases) in [
         ("Soundtrack", &["soundtrack albums", "soundtracks"][..]),
@@ -502,7 +539,7 @@ pub fn classify_release_details(evidence: &ReleaseEvidence<'_>) -> ReleaseClassi
     }
 
     if matches_phrase(&artist, &["various artists", "various", "va"]) {
-        add(&mut scores, "Compilation", 35);
+        add(&mut scores, "Compilation", 70);
         reasons.push("album artist indicates a multi-artist release".to_string());
     }
 
@@ -511,7 +548,7 @@ pub fn classify_release_details(evidence: &ReleaseEvidence<'_>) -> ReleaseClassi
     let rarity_tracks = matching_tracks(evidence.track_titles, RARITY_TERMS);
     let acapella_tracks = matching_tracks(evidence.track_titles, ACAPELLA_TERMS);
     let bonus_tracks = matching_tracks(evidence.track_titles, BONUS_TERMS);
-    score_track_share(&mut scores, "Remix", remix_tracks, track_count, 70);
+    score_track_share(&mut scores, "Remix", remix_tracks, track_count, 150);
     score_track_share(&mut scores, "Live", live_tracks, track_count, 55);
     score_track_share(
         &mut scores,
@@ -521,7 +558,7 @@ pub fn classify_release_details(evidence: &ReleaseEvidence<'_>) -> ReleaseClassi
         60,
     );
     score_track_share(&mut scores, "Acapella", acapella_tracks, track_count, 60);
-    score_track_share(&mut scores, "Bonus Audio", bonus_tracks, track_count, 60);
+    score_track_share(&mut scores, "Bonus Audio", bonus_tracks, track_count, 300);
     for (release_type, count) in [
         ("remix", remix_tracks),
         ("live", live_tracks),
@@ -537,9 +574,48 @@ pub fn classify_release_details(evidence: &ReleaseEvidence<'_>) -> ReleaseClassi
     }
 
     if track_count > 0 && track_count <= 3 {
-        add(&mut scores, "Single", 30);
+        let has_non_single_evidence = title_implies_non_single(&album)
+            || score_for(&scores, "Soundtrack") >= 200
+            || score_for(&scores, "Promotional") >= 150
+            || score_for(&scores, "Bootleg") >= 150;
+        if has_complete_duration && total_duration >= 1_800.0 {
+            add(&mut scores, "Album", 180);
+            reasons.push("runtime exceeds thirty minutes despite a short track list".to_string());
+        } else {
+            add(
+                &mut scores,
+                "Single",
+                if has_non_single_evidence { 30 } else { 280 },
+            );
+        }
     } else if track_count > 0 && track_count <= 7 {
-        add(&mut scores, "EP", 12);
+        if has_complete_duration {
+            if total_duration >= 1_800.0 {
+                add(&mut scores, "Album", 180);
+                reasons.push("runtime exceeds thirty minutes".to_string());
+            } else {
+                add(&mut scores, "EP", 90);
+                reasons.push("four-to-seven tracks run for less than thirty minutes".to_string());
+            }
+        } else {
+            add(&mut scores, "EP", 12);
+        }
+        let sole_base_title = sole_base_track_title(evidence.track_titles);
+        if sole_base_title.as_deref() == Some(album.as_str()) && remix_tracks * 2 <= track_count {
+            add(&mut scores, "Single", 300);
+            reasons.push("all tracks are versions of the title recording".to_string());
+        } else if remix_tracks * 2 >= track_count && sole_base_title.is_some() {
+            // Several mixes of one lead recording are still a single release.
+            add(&mut scores, "Single", 120);
+            reasons.push("all short-release variants share one lead recording".to_string());
+        } else if evidence
+            .track_titles
+            .iter()
+            .any(|title| base_track_title(title) == album)
+        {
+            add(&mut scores, "Single", 120);
+            reasons.push("a compact release is named for its lead recording".to_string());
+        }
     } else {
         add(&mut scores, "Album", 40);
     }
@@ -574,6 +650,7 @@ pub fn classify_release_details(evidence: &ReleaseEvidence<'_>) -> ReleaseClassi
 
 const REMIX_TERMS: &[&str] = &[
     "remix",
+    "remixed",
     "remixes",
     "mix",
     "club mix",
@@ -582,12 +659,26 @@ const REMIX_TERMS: &[&str] = &[
     "rework",
     "mashup",
 ];
+const REMIX_TITLE_TERMS: &[&str] = &[
+    "remix",
+    "remixed",
+    "remixes",
+    "mix",
+    "mixed masters",
+    "mixed by",
+    "megamix",
+    "mashup",
+    "rework",
+];
 const LIVE_TERMS: &[&str] = &["live", "concert", "unplugged", "live at", "live in"];
 const RARITY_TERMS: &[&str] = &[
     "demo",
     "demos",
     "rarity",
     "rarities",
+    "rarites",
+    "raritaten",
+    "raritäten",
     "unreleased",
     "alternate",
     "outtake",
@@ -611,7 +702,11 @@ fn score_path_categories(path: &str, scores: &mut [i32; RELEASE_TYPES.len()]) {
     ];
     for (release_type, phrases) in categories {
         if matches_phrase(path, phrases) {
-            add(scores, release_type, 120);
+            add(
+                scores,
+                release_type,
+                if release_type == "Bootleg" { 180 } else { 120 },
+            );
         }
     }
     if matches_phrase(
@@ -627,12 +722,85 @@ fn score_path_categories(path: &str, scores: &mut [i32; RELEASE_TYPES.len()]) {
     }
 }
 
+fn score_release_folder_markers(
+    paths: &[String],
+    scores: &mut [i32; RELEASE_TYPES.len()],
+    reasons: &mut Vec<String>,
+) {
+    let release_folders = paths
+        .iter()
+        .filter_map(|path| {
+            let path = std::path::Path::new(path);
+            let is_audio_file = path
+                .extension()
+                .and_then(|extension| extension.to_str())
+                .is_some_and(|extension| {
+                    ["mp3", "flac", "ogg", "m4a", "opus", "wav", "aac", "aiff"]
+                        .contains(&extension.to_ascii_lowercase().as_str())
+                });
+            let directory = if is_audio_file {
+                path.parent().unwrap_or(path)
+            } else {
+                path
+            };
+            directory.file_name()
+        })
+        .filter_map(|name| name.to_str())
+        .map(searchable)
+        .collect::<Vec<_>>()
+        .join(" ");
+    if matches_phrase(
+        &release_folders,
+        &["bootleg", "mixtape", "unofficial release"],
+    ) {
+        add(scores, "Bootleg", 190);
+        reasons.push("the release folder explicitly identifies unofficial media".to_string());
+    }
+    if looks_like_presentation_disc(&release_folders)
+        || matches_phrase(&release_folders, &["promotional sampler", "promo sampler"])
+    {
+        add(scores, "Promotional", 190);
+        reasons.push("the release folder identifies promotional media".to_string());
+    }
+    if matches_phrase(&release_folders, &["ep", "extended play"]) {
+        add(scores, "EP", 180);
+        reasons.push("the release folder explicitly identifies an EP".to_string());
+    }
+    for (release_type, markers) in [
+        ("Live", &["live", "concert"] as &[_]),
+        ("Remix", &["remix", "remixes"] as &[_]),
+        (
+            "Soundtrack",
+            &["soundtrack", "ost", "original score"] as &[_],
+        ),
+        (
+            "Demos & Rarities",
+            &["demo", "demos", "rarities", "outtakes"] as &[_],
+        ),
+        ("Single", &["single", "cd single", "maxi single"] as &[_]),
+        ("Compilation", &["compilation", "anthology"] as &[_]),
+    ] {
+        if matches_phrase(&release_folders, markers) {
+            add(scores, release_type, 180);
+            reasons.push(format!(
+                "the release folder explicitly identifies {release_type}"
+            ));
+        }
+    }
+}
+
 fn score_album_name(album: &str, scores: &mut [i32; RELEASE_TYPES.len()]) {
     let rules = [
         (
             "Soundtrack",
-            &["soundtrack", "motion picture", "original score"][..],
-            90,
+            &[
+                "soundtrack",
+                "motion picture",
+                "original score",
+                "music from and inspired by",
+                "ost",
+            ][..],
+            220,
         ),
         (
             "Compilation",
@@ -643,12 +811,33 @@ fn score_album_name(album: &str, scores: &mut [i32; RELEASE_TYPES.len()]) {
                 "singles collection",
                 "collection",
                 "essential",
+                "tribute",
+                "retrospective",
             ][..],
             160,
         ),
-        ("Live", LIVE_TERMS, 75),
-        ("Remix", REMIX_TERMS, 90),
-        ("Demos & Rarities", RARITY_TERMS, 80),
+        (
+            "Compilation",
+            &[
+                "promo only",
+                "various artists compilation",
+                "dj compilation",
+            ][..],
+            500,
+        ),
+        (
+            "Promotional",
+            &["presentation disc", "promotional sampler", "promo sampler"][..],
+            190,
+        ),
+        (
+            "EP",
+            &["dvd bonus audio", "dvd companion", "companion ep"][..],
+            300,
+        ),
+        ("Live", LIVE_TERMS, 230),
+        ("Remix", REMIX_TITLE_TERMS, 220),
+        ("Demos & Rarities", RARITY_TERMS, 220),
         ("Acapella", ACAPELLA_TERMS, 75),
         (
             "Bootleg",
@@ -656,7 +845,7 @@ fn score_album_name(album: &str, scores: &mut [i32; RELEASE_TYPES.len()]) {
             80,
         ),
         ("Bonus Audio", BONUS_TERMS, 75),
-        ("Single", &["single", "maxi single", "cd single"][..], 65),
+        ("Single", &["single", "maxi single", "cd single"][..], 180),
         ("EP", &["ep", "extended play"][..], 65),
     ];
     for (release_type, terms, score) in rules {
@@ -664,6 +853,93 @@ fn score_album_name(album: &str, scores: &mut [i32; RELEASE_TYPES.len()]) {
             add(scores, release_type, score);
         }
     }
+    if looks_like_presentation_disc(album) {
+        add(scores, "Promotional", 190);
+    }
+}
+
+fn looks_like_presentation_disc(value: &str) -> bool {
+    matches_phrase(value, &["presentation disc"])
+        || (matches_phrase(value, &["disc"])
+            && value
+                .split_whitespace()
+                .any(|word| one_edit_apart(word, "presentation")))
+}
+
+fn one_edit_apart(left: &str, right: &str) -> bool {
+    let left = left.chars().collect::<Vec<_>>();
+    let right = right.chars().collect::<Vec<_>>();
+    if left.len().abs_diff(right.len()) > 1 {
+        return false;
+    }
+    let (shorter, longer) = if left.len() <= right.len() {
+        (&left, &right)
+    } else {
+        (&right, &left)
+    };
+    let mut short_index = 0;
+    let mut long_index = 0;
+    let mut edits = 0;
+    while short_index < shorter.len() && long_index < longer.len() {
+        if shorter[short_index] == longer[long_index] {
+            short_index += 1;
+            long_index += 1;
+        } else {
+            edits += 1;
+            if edits > 1 {
+                return false;
+            }
+            if shorter.len() == longer.len() {
+                short_index += 1;
+            }
+            long_index += 1;
+        }
+    }
+    edits + usize::from(long_index < longer.len()) <= 1
+}
+
+fn title_implies_non_single(album: &str) -> bool {
+    matches_phrase(album, REMIX_TITLE_TERMS)
+        || matches_phrase(album, LIVE_TERMS)
+        || matches_phrase(album, RARITY_TERMS)
+        || matches_phrase(album, ACAPELLA_TERMS)
+        || matches_phrase(
+            album,
+            &[
+                "soundtrack",
+                "motion picture",
+                "original score",
+                "music from and inspired by",
+                "ost",
+            ],
+        )
+        || matches_phrase(
+            album,
+            &[
+                "greatest hits",
+                "best of",
+                "anthology",
+                "singles collection",
+                "collection",
+                "essential",
+                "tribute",
+                "retrospective",
+                "promo only",
+                "various artists compilation",
+                "dj compilation",
+            ],
+        )
+        || matches_phrase(
+            album,
+            &[
+                "bootleg",
+                "mixtape",
+                "unofficial release",
+                "presentation disc",
+                "promotional sampler",
+                "promo sampler",
+            ],
+        )
 }
 
 fn matching_tracks(titles: &[String], terms: &[&str]) -> usize {
@@ -671,6 +947,19 @@ fn matching_tracks(titles: &[String], terms: &[&str]) -> usize {
         .iter()
         .filter(|title| matches_phrase(&searchable(title), terms))
         .count()
+}
+
+fn sole_base_track_title(titles: &[String]) -> Option<String> {
+    let titles = titles
+        .iter()
+        .map(|title| base_track_title(title))
+        .collect::<std::collections::HashSet<_>>();
+    (titles.len() == 1).then(|| titles.into_iter().next().unwrap_or_default())
+}
+
+fn base_track_title(title: &str) -> String {
+    let before_qualifier = title.split(['(', '[']).next().unwrap_or(title).trim();
+    searchable(before_qualifier)
 }
 
 fn score_track_share(
@@ -997,17 +1286,63 @@ mod tests {
     }
 
     fn classify(album: &str, artist: &str, path: &str, tracks: &[&str]) -> String {
+        classify_with_genres(album, artist, path, tracks, &[])
+    }
+
+    fn classify_with_genres(
+        album: &str,
+        artist: &str,
+        path: &str,
+        tracks: &[&str],
+        genres: &[&str],
+    ) -> String {
         let paths = tracks.iter().map(|_| path.to_string()).collect::<Vec<_>>();
         let titles = tracks
             .iter()
             .map(|title| (*title).to_string())
+            .collect::<Vec<_>>();
+        let genres = genres
+            .iter()
+            .map(|genre| (*genre).to_string())
             .collect::<Vec<_>>();
         classify_release(&ReleaseEvidence {
             album_name: album,
             album_artist: artist,
             paths: &paths,
             track_titles: &titles,
+            track_durations: &[],
+            genres: &genres,
         })
+    }
+
+    fn classify_with_durations(album: &str, durations: &[f64]) -> String {
+        let titles = (1..=durations.len())
+            .map(|index| format!("Track {index}"))
+            .collect::<Vec<_>>();
+        classify_release(&ReleaseEvidence {
+            album_name: album,
+            album_artist: "Example Artist",
+            paths: &[],
+            track_titles: &titles,
+            track_durations: durations,
+            genres: &[],
+        })
+    }
+
+    #[test]
+    fn runtime_disambiguates_short_track_lists_without_catalog_exceptions() {
+        assert_eq!(
+            classify_with_durations("Long Form Work", &[620.0, 590.0, 610.0, 605.0]),
+            "Album"
+        );
+        assert_eq!(
+            classify_with_durations("Compact Release", &[210.0, 205.0, 220.0, 215.0]),
+            "EP"
+        );
+        assert_eq!(
+            classify_with_durations("Two Part Suite", &[920.0, 910.0]),
+            "Album"
+        );
     }
 
     #[test]
@@ -1062,6 +1397,196 @@ mod tests {
                 ],
             ),
             "Remix"
+        );
+    }
+
+    #[test]
+    fn explicit_demo_title_beats_a_misleading_compilation_folder() {
+        assert_eq!(
+            classify(
+                "Archive Sessions (Demo Version)",
+                "Example Artist",
+                "C:/Music/Example Artist/2 Compilation albums/Archive Sessions Demo/01.mp3",
+                &[
+                    "Prototype One",
+                    "Prototype Two",
+                    "Prototype Three (Alternate Version)",
+                    "Prototype Four",
+                    "Prototype Five",
+                    "Prototype Six",
+                    "Prototype Seven",
+                    "Prototype Eight",
+                ],
+            ),
+            "Demos & Rarities"
+        );
+    }
+
+    #[test]
+    fn explicit_remix_content_beats_a_bootleg_storage_folder() {
+        assert_eq!(
+            classify(
+                "Synthetic Remix Collection",
+                "Example Artist",
+                "C:/Music/Example Artist/6 Bootleg albums/Synthetic Remix Collection/01.mp3",
+                &[
+                    "Example One (Extended Remix)",
+                    "Example Two (Remix)",
+                    "Example Three (Extended Dance Remix)",
+                    "Example Four (Club Remix)",
+                    "Example Five (House Mix)",
+                    "Example Six (Radio Remix)",
+                    "Example Seven (Late Mix)",
+                    "Example Eight (Club Mix)",
+                ],
+            ),
+            "Remix"
+        );
+    }
+
+    #[test]
+    fn release_specific_evidence_beats_a_broad_parent_folder() {
+        assert_eq!(
+            classify(
+                "Unauthorized Club Session",
+                "Artist",
+                "C:/Music/Artist/3 Remix/Unauthorized Club Session (Bootleg)/01.mp3",
+                &["First Hit", "Second Hit", "Third Hit", "Fourth Hit"],
+            ),
+            "Bootleg"
+        );
+        assert_eq!(
+            classify(
+                "Archive (Special pesentation disc)",
+                "Artist",
+                "C:/Music/Artist/3 Remix/Archive (Promo. Special pesentation disc)/01.mp3",
+                &["Album Track", "Radio Edit", "Video Version"],
+            ),
+            "Promotional"
+        );
+    }
+
+    #[test]
+    fn embedded_soundtrack_genre_beats_a_compilation_storage_folder() {
+        assert_eq!(
+            classify_with_genres(
+                "Imaginary Planet Story",
+                "Narrator",
+                "C:/Music/Narrator/2 Compilation albums/Story Record/01.mp3",
+                &["Opening Theme", "Landing and Discovery", "Closing Theme"],
+                &["Soundtrack"],
+            ),
+            "Soundtrack"
+        );
+    }
+
+    #[test]
+    fn explicit_release_semantics_override_misfiled_parent_categories() {
+        assert_eq!(
+            classify(
+                "The Artist MixDisc 2",
+                "Artist",
+                "C:/Music/Artist/5 Single albums/The Artist Mix/01.mp3",
+                &["Dance Mix 1", "Dance Mix 2"],
+            ),
+            "Remix"
+        );
+        assert_eq!(
+            classify(
+                "Artist Mixed Masters",
+                "Artist",
+                "C:/Music/Artist/5 Single albums/Artist Mixed Masters/01.mp3",
+                &["Song (Long Version)", "Another Song (Part 1)"],
+            ),
+            "Remix"
+        );
+        assert_eq!(
+            classify(
+                "Promo Only Club Beats - November 07",
+                "Artist",
+                "C:/Music/Artist/3 Remix/Unofficial Remix/01.mp3",
+                &["Hit Song (Club Remix)"],
+            ),
+            "Compilation"
+        );
+        assert_eq!(
+            classify(
+                "Tour Souvenir CD Single",
+                "Artist",
+                "C:/Music/Artist/2 Compilation albums/Tour Souvenir Pack/01.mp3",
+                &["Track"; 17],
+            ),
+            "Single"
+        );
+    }
+
+    #[test]
+    fn short_plain_releases_remain_singles_but_mix_bundles_use_track_makeup() {
+        assert_eq!(
+            classify(
+                "Lead Song",
+                "Artist",
+                "C:/Music/Artist/3 Remix/Lead Song Remix/01.mp3",
+                &["Lead Song (Club Remix)"],
+            ),
+            "Remix"
+        );
+        assert_eq!(
+            classify(
+                "Downtown Sessions",
+                "Artist",
+                "C:/Music/Artist/5 Single albums/Downtown Sessions/01.mp3",
+                &[
+                    "Lead Song (Radio Edit)",
+                    "Lead Song (Jazzy Mix)",
+                    "Lead Song (Video Mix)",
+                    "Second Song (Sub Mix)",
+                ],
+            ),
+            "Remix"
+        );
+        assert_eq!(
+            classify(
+                "Lead Song",
+                "Artist",
+                "C:/Music/Artist/5 Single albums/Lead Song/01.mp3",
+                &[
+                    "Lead Song (Album Version)",
+                    "Lead Song (Club Mix)",
+                    "Lead Song (Radio Remix)",
+                    "Lead Song (Dub Mix)",
+                    "Lead Song (Extended Mix)",
+                ],
+            ),
+            "Single"
+        );
+    }
+
+    #[test]
+    fn title_version_packages_are_singles_and_dvd_companions_are_eps() {
+        assert_eq!(
+            classify(
+                "Lead Song",
+                "Artist",
+                "C:/Music/Artist/Lead Song/01.flac",
+                &[
+                    "Lead Song",
+                    "Lead Song",
+                    "Lead Song (Guest Remix Radio Edit)",
+                    "Lead Song (Club Radio Edit)",
+                    "Lead Song (Extended Version)",
+                ],
+            ),
+            "Single"
+        );
+        assert_eq!(
+            classify(
+                "Tour Film DVD Bonus Audio",
+                "Artist",
+                "C:/Music/Artist/Tour Film DVD Bonus Audio/01.flac",
+                &["New Song", "Second Song", "Live Extra"],
+            ),
+            "EP"
         );
     }
 

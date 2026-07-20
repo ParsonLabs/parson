@@ -207,6 +207,9 @@ pub async fn build_server_with_shutdown_timeout(
         LocalApp::open_uninitialized().map_err(|error| std::io::Error::other(error.to_string()))?;
     let startup_library = local_app.library.clone();
     startup_library.set_indexing("Loading library.").await;
+    let startup_scan = startup_library
+        .try_begin_scan()
+        .expect("new library lifecycle has no active scan");
     let database = web::Data::new(local_app.database);
     let library = web::Data::from(local_app.library);
     let lyrics_service = web::Data::new(
@@ -217,6 +220,7 @@ pub async fn build_server_with_shutdown_timeout(
         let service = lyrics_service.clone();
         tokio::spawn(async move {
             crate::startup::initialize_library(&startup_library).await;
+            drop(startup_scan);
             crate::api::library::start_automatic_library_refresh(startup_library.clone());
             let Ok(cache) = startup_library.cache().await else {
                 return;

@@ -32,6 +32,7 @@ const REFRESH_TOKEN_COOKIE: &str = "plm_refreshToken";
 const ACCESS_TOKEN_DAYS: i64 = 7;
 const REFRESH_TOKEN_DAYS: i64 = 30;
 const MEDIA_TOKEN_HOURS: i64 = 6;
+const NATIVE_CLIENT_HEADER: &str = "x-parson-client";
 const LOGIN_ATTEMPTS_PER_MINUTE: usize = 10;
 const REGISTRATION_ATTEMPTS_PER_MINUTE: usize = 5;
 static AUTH_ATTEMPTS: OnceLock<Mutex<HashMap<String, VecDeque<Instant>>>> = OnceLock::new();
@@ -213,8 +214,31 @@ fn token_from_request(req: &HttpRequest, cookie_name: &str) -> Option<String> {
     })
 }
 
+fn bearer_token_from_request(req: &HttpRequest) -> Option<String> {
+    let value = req.headers().get(header::AUTHORIZATION)?.to_str().ok()?;
+    let (scheme, token) = value.split_once(' ')?;
+    (scheme.eq_ignore_ascii_case("bearer") && !token.trim().is_empty())
+        .then(|| token.trim().to_string())
+}
+
+fn access_token_from_request(req: &HttpRequest) -> Option<String> {
+    bearer_token_from_request(req).or_else(|| token_from_request(req, ACCESS_TOKEN_COOKIE))
+}
+
+fn native_token_response_requested(req: &HttpRequest) -> bool {
+    // Browsers always attach Origin to credentialed POSTs and cannot suppress
+    // it. Requiring its absence keeps refresh credentials out of browser JS
+    // while allowing native fetch clients to rotate a SecureStore token.
+    !req.headers().contains_key(header::ORIGIN)
+        && req
+            .headers()
+            .get(NATIVE_CLIENT_HEADER)
+            .and_then(|value| value.to_str().ok())
+            .is_some_and(|value| value.eq_ignore_ascii_case("native"))
+}
+
 pub async fn request_has_current_admin(req: &HttpRequest, pool: DbPool) -> Result<bool, String> {
-    let Some(token) = token_from_request(req, ACCESS_TOKEN_COOKIE) else {
+    let Some(token) = access_token_from_request(req) else {
         return Ok(false);
     };
     let mut validation = Validation::new(Algorithm::HS256);
@@ -379,7 +403,7 @@ fn generate_refresh_token(
 
 #[get("/session")]
 pub async fn is_valid(req: HttpRequest, pool: Option<web::Data<DbPool>>) -> impl Responder {
-    let token = match token_from_request(&req, ACCESS_TOKEN_COOKIE) {
+    let token = match access_token_from_request(&req) {
         Some(t) => t,
         None => {
             return HttpResponse::Unauthorized().json(json!({
@@ -511,6 +535,11 @@ pub async fn login(
                         return HttpResponse::InternalServerError().json(auth_error(message));
                     }
                 };
+            let response_refresh_token = if native_token_response_requested(&request) {
+                generated_refresh_token.clone()
+            } else {
+                String::new()
+            };
 
             let access_cookie = build_token_cookie(
                 ACCESS_TOKEN_COOKIE,
@@ -533,7 +562,7 @@ pub async fn login(
                     status: true,
                     claims: access_token_claims(&generated_access_token),
                     access_token: generated_access_token,
-                    refresh_token: String::new(),
+                    refresh_token: response_refresh_token,
                     message: None,
                 })
         }
@@ -674,8 +703,11 @@ pub async fn register(
 pub async fn refresh(req: HttpRequest, pool: Option<web::Data<DbPool>>) -> impl Responder {
     let secret = session_secret();
 
-    let refresh_token = match req.cookie(REFRESH_TOKEN_COOKIE) {
-        Some(cookie) => cookie.value().to_string(),
+    let refresh_token = match bearer_token_from_request(&req).or_else(|| {
+        req.cookie(REFRESH_TOKEN_COOKIE)
+            .map(|cookie| cookie.value().to_string())
+    }) {
+        Some(token) => token,
         None => {
             return HttpResponse::Unauthorized().json(auth_error("Refresh token not found"));
         }
@@ -777,6 +809,11 @@ pub async fn refresh(req: HttpRequest, pool: Option<web::Data<DbPool>>) -> impl 
                         return HttpResponse::InternalServerError().json(auth_error(message));
                     }
                 };
+                let response_refresh_token = if native_token_response_requested(&req) {
+                    new_refresh_token.clone()
+                } else {
+                    String::new()
+                };
                 let refresh_cookie = build_token_cookie(
                     REFRESH_TOKEN_COOKIE,
                     new_refresh_token,
@@ -791,7 +828,7 @@ pub async fn refresh(req: HttpRequest, pool: Option<web::Data<DbPool>>) -> impl 
                         status: true,
                         claims: access_token_claims(&new_access_token),
                         access_token: new_access_token,
-                        refresh_token: String::new(),
+                        refresh_token: response_refresh_token,
                         message: None,
                     })
             } else {
@@ -810,8 +847,8 @@ pub async fn refresh(req: HttpRequest, pool: Option<web::Data<DbPool>>) -> impl 
 
 #[post("/logout")]
 pub async fn logout(req: HttpRequest, pool: Option<web::Data<DbPool>>) -> impl Responder {
-    let token = token_from_request(&req, ACCESS_TOKEN_COOKIE)
-        .or_else(|| token_from_request(&req, REFRESH_TOKEN_COOKIE));
+    let token =
+        access_token_from_request(&req).or_else(|| token_from_request(&req, REFRESH_TOKEN_COOKIE));
     if let Some(token) = token {
         let secret = session_secret();
         if let Ok(data) = decode::<Claims>(
@@ -901,7 +938,7 @@ pub(crate) async fn current_session_claims(
     request: &HttpRequest,
     pool: DbPool,
 ) -> Result<Option<Claims>, String> {
-    let Some(token) = token_from_request(request, ACCESS_TOKEN_COOKIE) else {
+    let Some(token) = access_token_from_request(request) else {
         return Ok(None);
     };
     let mut validation = Validation::new(Algorithm::HS256);
@@ -1058,13 +1095,19 @@ pub fn verify_password(password: &str, password_hash: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{
-        ACCESS_TOKEN_COOKIE, Claims, REFRESH_TOKEN_COOKIE, claims_are_current, clear_auth_attempts,
-        client_attempt_key, generate_access_token, generate_media_token, hash_password, is_valid,
+        ACCESS_TOKEN_COOKIE, Claims, NATIVE_CLIENT_HEADER, REFRESH_TOKEN_COOKIE,
+        claims_are_current, clear_auth_attempts, client_attempt_key, generate_access_token,
+        generate_media_token, generate_refresh_token, hash_password, is_valid,
         media_token_from_service_request, record_auth_attempt, refresh, request_has_current_admin,
         setup_code_matches, token_from_service_request, valid_password, valid_username,
         verify_password,
     };
-    use actix_web::{App, HttpResponse, cookie::Cookie, http::StatusCode, test as actix_test, web};
+    use actix_web::{
+        App, HttpResponse,
+        cookie::Cookie,
+        http::{StatusCode, header},
+        test as actix_test, web,
+    };
     use actix_web_httpauth::middleware::HttpAuthentication;
     use diesel::connection::SimpleConnection;
     use diesel::r2d2::{ConnectionManager, Pool};
@@ -1083,8 +1126,14 @@ mod tests {
         pool.get()
             .expect("test connection")
             .batch_execute(&format!(
-                "CREATE TABLE user (id INTEGER PRIMARY KEY, token_version INTEGER NOT NULL);\
-                 INSERT INTO user VALUES ({user_id}, {token_version});"
+                "CREATE TABLE user (\
+                    id INTEGER PRIMARY KEY,\
+                    username TEXT NOT NULL,\
+                    bitrate INTEGER NOT NULL,\
+                    role TEXT NOT NULL,\
+                    token_version INTEGER NOT NULL\
+                 );\
+                 INSERT INTO user VALUES ({user_id}, 'alice', 320, 'admin', {token_version});"
             ))
             .expect("session fixture");
         web::Data::new(std::sync::Arc::new(pool))
@@ -1139,6 +1188,27 @@ mod tests {
     }
 
     #[actix_web::test]
+    async fn is_valid_accepts_access_token_bearer_header() {
+        let role = "admin".to_string();
+        let token = match generate_access_token(42, "alice", 320, &role, 0) {
+            Ok(token) => token,
+            Err(e) => panic!("test setup failed to generate access token: {}", e),
+        };
+        let app = actix_test::init_service(App::new().service(is_valid)).await;
+        let req = actix_test::TestRequest::get()
+            .uri("/session")
+            .insert_header((header::AUTHORIZATION, format!("Bearer {token}")))
+            .to_request();
+
+        let response = actix_test::call_service(&app, req).await;
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body: Value = actix_test::read_body_json(response).await;
+        assert_eq!(body["status"], true);
+        assert_eq!(body["claims"]["username"], "alice");
+    }
+
+    #[actix_web::test]
     async fn refresh_rejects_requests_without_refresh_token_cookie() {
         let app = actix_test::init_service(App::new().service(refresh)).await;
         let req = actix_test::TestRequest::post().uri("/refresh").to_request();
@@ -1164,6 +1234,58 @@ mod tests {
         let response = actix_test::call_service(&app, req).await;
 
         assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[actix_web::test]
+    async fn native_refresh_rotates_bearer_credentials_without_an_origin() {
+        let refresh_token =
+            generate_refresh_token(42, "alice", "admin", 3).expect("test refresh token");
+        let app =
+            actix_test::init_service(App::new().app_data(session_pool(42, 3)).service(refresh))
+                .await;
+        let req = actix_test::TestRequest::post()
+            .uri("/refresh")
+            .insert_header((header::AUTHORIZATION, format!("Bearer {refresh_token}")))
+            .insert_header((NATIVE_CLIENT_HEADER, "native"))
+            .to_request();
+
+        let response = actix_test::call_service(&app, req).await;
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body: Value = actix_test::read_body_json(response).await;
+        assert_eq!(body["status"], true);
+        assert!(
+            body["access_token"]
+                .as_str()
+                .is_some_and(|value| !value.is_empty())
+        );
+        assert!(
+            body["refresh_token"]
+                .as_str()
+                .is_some_and(|value| !value.is_empty())
+        );
+    }
+
+    #[actix_web::test]
+    async fn browser_origin_never_receives_refresh_credentials_in_json() {
+        let refresh_token =
+            generate_refresh_token(42, "alice", "admin", 3).expect("test refresh token");
+        let app =
+            actix_test::init_service(App::new().app_data(session_pool(42, 3)).service(refresh))
+                .await;
+        let req = actix_test::TestRequest::post()
+            .uri("/refresh")
+            .insert_header((header::AUTHORIZATION, format!("Bearer {refresh_token}")))
+            .insert_header((NATIVE_CLIENT_HEADER, "native"))
+            .insert_header((header::ORIGIN, "https://music.example"))
+            .to_request();
+
+        let response = actix_test::call_service(&app, req).await;
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body: Value = actix_test::read_body_json(response).await;
+        assert_eq!(body["status"], true);
+        assert_eq!(body["refresh_token"], "");
     }
 
     #[test]
@@ -1212,6 +1334,31 @@ mod tests {
             cookies
                 .iter()
                 .any(|cookie| cookie.name() == REFRESH_TOKEN_COOKIE)
+        );
+    }
+
+    #[actix_web::test]
+    async fn native_logout_revokes_the_bearer_token_generation() {
+        let database = session_pool(42, 3);
+        let token = generate_access_token(42, "alice", 320, "admin", 3).expect("test access token");
+        let app =
+            actix_test::init_service(App::new().app_data(database.clone()).service(super::logout))
+                .await;
+        let req = actix_test::TestRequest::post()
+            .uri("/logout")
+            .insert_header((header::AUTHORIZATION, format!("Bearer {token}")))
+            .to_request();
+
+        let response = actix_test::call_service(&app, req).await;
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let validation_request = actix_test::TestRequest::get()
+            .insert_header((header::AUTHORIZATION, format!("Bearer {token}")))
+            .to_http_request();
+        assert!(
+            !request_has_current_admin(&validation_request, database.get_ref().clone())
+                .await
+                .expect("session lookup")
         );
     }
 

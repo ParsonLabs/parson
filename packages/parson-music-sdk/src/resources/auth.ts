@@ -10,11 +10,27 @@ export interface AuthCredentials {
 export interface AuthResponse {
   status: boolean;
   access_token?: string;
+  refresh_token?: string;
   claims?: SessionResponse["claims"];
   message?: string;
   transient?: boolean;
   requestId?: string;
 }
+
+export interface AuthRequestOptions {
+  native?: boolean;
+  refreshToken?: string;
+}
+
+const authRequestHeaders = (
+  options?: AuthRequestOptions,
+): Record<string, string> | undefined => {
+  const headers: Record<string, string> = {};
+  if (options?.native) headers["X-Parson-Client"] = "native";
+  if (options?.refreshToken)
+    headers.Authorization = `Bearer ${options.refreshToken}`;
+  return Object.keys(headers).length ? headers : undefined;
+};
 
 export interface SessionResponse {
   status: boolean;
@@ -109,9 +125,14 @@ export async function register(
 
 export async function login(
   credentials: AuthCredentials,
+  options?: AuthRequestOptions,
 ): Promise<AuthResponse> {
   try {
-    return (await api.post<AuthResponse>("/auth/login", credentials)).data;
+    return (
+      await api.post<AuthResponse>("/auth/login", credentials, {
+        headers: authRequestHeaders(options),
+      })
+    ).data;
   } catch (error) {
     return failure(error, "Sign in failed");
   }
@@ -125,9 +146,15 @@ export async function isValid(): Promise<SessionResponse> {
   }
 }
 
-export async function refreshToken(): Promise<AuthResponse> {
+export async function refreshToken(
+  options?: AuthRequestOptions,
+): Promise<AuthResponse> {
   try {
-    return (await api.post<AuthResponse>("/auth/refresh")).data;
+    return (
+      await api.post<AuthResponse>("/auth/refresh", undefined, {
+        headers: authRequestHeaders(options),
+      })
+    ).data;
   } catch (error) {
     return failure(error, "Session refresh failed");
   }

@@ -40,6 +40,31 @@ fn transcode_cache_locks() -> &'static Mutex<HashMap<PathBuf, Arc<Mutex<()>>>> {
     TRANSCODE_CACHE_LOCKS.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
+struct TranscodeCleanup {
+    cache_lock: Arc<Mutex<()>>,
+    cache_path: PathBuf,
+    committed: bool,
+    temp_path: PathBuf,
+}
+
+impl Drop for TranscodeCleanup {
+    fn drop(&mut self) {
+        let cache_lock = self.cache_lock.clone();
+        let cache_path = self.cache_path.clone();
+        let temp_path = (!self.committed).then(|| self.temp_path.clone());
+        if let Ok(runtime) = tokio::runtime::Handle::try_current() {
+            runtime.spawn(async move {
+                if let Some(temp_path) = temp_path {
+                    let _ = tokio::fs::remove_file(temp_path).await;
+                }
+                release_transcode_lock(&cache_path, &cache_lock).await;
+            });
+        } else if let Some(temp_path) = temp_path {
+            let _ = std::fs::remove_file(temp_path);
+        }
+    }
+}
+
 fn transcode_cache_max_bytes() -> u64 {
     std::env::var("PARSON_TRANSCODE_CACHE_MAX_BYTES")
         .ok()
@@ -100,12 +125,15 @@ fn prune_transcode_cache(
 }
 use crate::app::LocalApp;
 use crate::library::indexer::{
-    CatalogProgressSender, build_instant_library_preview, enrich_library_to_database,
-    hydrate_progressive_catalog_artwork, index_available_library_to_database,
-    index_available_library_to_database_progressive, index_library_to_database,
+    CatalogProgressSender, build_instant_library_preview,
+    enrich_library_to_database_with_cancellation, hydrate_progressive_catalog_artwork,
+    index_available_library_to_database,
+    index_available_library_to_database_progressive_with_cancellation, index_library_to_database,
 };
 use crate::library::normalize::{LibraryIndexReport, normalize_library_data};
-use crate::library::state::{LibraryCache, LibraryLifecycle, library_unavailable_response};
+use crate::library::state::{
+    LibraryCache, LibraryLifecycle, LibraryScanLease, library_unavailable_response,
+};
 use crate::library::storage::{
     fetch_library, get_libraries_config_path, refresh_cache, store_library,
 };
@@ -219,11 +247,25 @@ fn merge_progressive_catalog(mut progress: Vec<Artist>, seed: &[Artist]) -> Vec<
     progress
 }
 
+/// Progressive batches represent large scans. Publish only presentation-ready
+/// albums there; the bounded instant preview remains visible as a fallback
+/// until at least one album with artwork is available.
+fn retain_progressive_albums_with_artwork(catalog: &mut Vec<Artist>) -> bool {
+    for artist in catalog.iter_mut() {
+        artist
+            .albums
+            .retain(|album| !album.cover_url.trim().is_empty());
+    }
+    catalog.retain(|artist| !artist.albums.is_empty());
+    !catalog.is_empty()
+}
+
 async fn run_index_scan(
     path: String,
     lifecycle: web::Data<LibraryLifecycle>,
-    scan_lease: tokio::sync::OwnedMutexGuard<()>,
+    scan_lease: LibraryScanLease,
 ) -> Result<LibraryIndexReport, ScanFailure> {
+    let cancellation = scan_lease.cancellation();
     lifecycle.set_indexing("Preparing your first albums.").await;
     let result = async {
         let preview_path = path.clone();
@@ -242,6 +284,12 @@ async fn run_index_scan(
                         "library_index_failed",
                     )
                 })?;
+        if cancellation.is_cancelled() {
+            return Err(ScanFailure::new(
+                "Library scan was replaced by a newer folder selection.",
+                "library_scan_replaced",
+            ));
+        }
         normalize_library_data(&mut preview);
         store_library(preview).await;
         let preview_cache = LibraryCache::available().await.map_err(|error| {
@@ -268,8 +316,12 @@ async fn run_index_scan(
             let (progress_sender, mut progress_receiver) =
                 tokio::sync::mpsc::channel::<Vec<Artist>>(1);
             let publication_lifecycle = background_lifecycle.clone();
+            let publication_cancellation = cancellation.clone();
             let publisher = tokio::spawn(async move {
                 while let Some(mut batch) = progress_receiver.recv().await {
+                    if publication_cancellation.is_cancelled() {
+                        break;
+                    }
                     batch = match tokio::task::spawn_blocking(move || {
                         hydrate_progressive_catalog_artwork(&mut batch);
                         batch
@@ -283,9 +335,12 @@ async fn run_index_scan(
                         }
                     };
                     let seed = fetch_library().await.ok();
-                    let catalog = seed
+                    let mut catalog = seed
                         .as_deref()
                         .map_or(batch.clone(), |seed| merge_progressive_catalog(batch, seed));
+                    if !retain_progressive_albums_with_artwork(&mut catalog) {
+                        continue;
+                    }
                     store_library(catalog).await;
                     match LibraryCache::available().await {
                         Ok(cache) => {
@@ -303,13 +358,25 @@ async fn run_index_scan(
                     }
                 }
             });
-            match process_available_library_progressive(&background_path, progress_sender).await {
+            match process_available_library_progressive_with_cancellation(
+                &background_path,
+                progress_sender,
+                cancellation.clone(),
+            )
+            .await
+            {
                 Ok(_) => {
                     let _ = publisher.await;
+                    if cancellation.is_cancelled() {
+                        return;
+                    }
                     // Re-read SQLite after draining a partial-publication race.
                     refresh_cache().await;
                     match LibraryCache::available().await {
-                        Ok(cache) => background_lifecycle.set_available(cache).await,
+                        Ok(cache) if !cancellation.is_cancelled() => {
+                            background_lifecycle.set_available(cache).await
+                        }
+                        Ok(_) => return,
                         Err(error) => {
                             background_lifecycle
                                 .set_enrichment_failed(error.to_string())
@@ -320,22 +387,34 @@ async fn run_index_scan(
                 }
                 Err(error) => {
                     publisher.abort();
+                    if cancellation.is_cancelled() {
+                        return;
+                    }
                     background_lifecycle
                         .set_enrichment_failed(error.to_string())
                         .await;
                     return;
                 }
             }
-            match process_enriched_library(&background_path).await {
-                Ok(_) => match LibraryCache::new().await {
-                    Ok(cache) => background_lifecycle.set_ready_and_persist(cache).await,
+            match process_enriched_library_with_cancellation(&background_path, cancellation.clone())
+                .await
+            {
+                Ok(_) if !cancellation.is_cancelled() => match LibraryCache::new().await {
+                    Ok(cache) if !cancellation.is_cancelled() => {
+                        background_lifecycle.set_ready_and_persist(cache).await
+                    }
+                    Ok(_) => (),
                     Err(error) => {
                         background_lifecycle
                             .set_enrichment_failed(error.to_string())
                             .await
                     }
                 },
+                Ok(_) => (),
                 Err(error) => {
+                    if cancellation.is_cancelled() {
+                        return;
+                    }
                     background_lifecycle
                         .set_enrichment_failed(error.to_string())
                         .await
@@ -345,7 +424,9 @@ async fn run_index_scan(
         Ok::<_, ScanFailure>(preview_report)
     }
     .await;
-    if let Err(failure) = &result {
+    if let Err(failure) = &result
+        && failure.code != "library_scan_replaced"
+    {
         error!(message = %failure.message, "library index failed");
         lifecycle.set_scan_failed(&failure.message).await;
     }
@@ -354,17 +435,26 @@ async fn run_index_scan(
 
 async fn run_refresh_scan(
     lifecycle: web::Data<LibraryLifecycle>,
-    scan_lease: tokio::sync::OwnedMutexGuard<()>,
+    scan_lease: LibraryScanLease,
     scan_message: &'static str,
 ) -> Result<LibraryRefreshResult, ScanFailure> {
+    let cancellation = scan_lease.cancellation();
     lifecycle.set_indexing(scan_message).await;
     let result = async {
-        let reports = refresh_available_libraries().await.map_err(|error| {
-            ScanFailure::new(
-                format!("Failed to refresh libraries: {error}"),
-                "library_refresh_failed",
-            )
-        })?;
+        let reports = refresh_libraries_with(false, Some(cancellation.clone()))
+            .await
+            .map_err(|error| {
+                ScanFailure::new(
+                    format!("Failed to refresh libraries: {error}"),
+                    "library_refresh_failed",
+                )
+            })?;
+        if cancellation.is_cancelled() {
+            return Err(ScanFailure::new(
+                "Library refresh was replaced by a newer folder selection.",
+                "library_scan_replaced",
+            ));
+        }
         let cache = LibraryCache::available().await.map_err(|error| {
             ScanFailure::new(
                 format!("Failed to build library cache: {error}"),
@@ -375,7 +465,7 @@ async fn run_refresh_scan(
         let enrichment_lifecycle = lifecycle.clone();
         tokio::spawn(async move {
             let _scan_lease = scan_lease;
-            match refresh_libraries().await {
+            match refresh_libraries_with(true, Some(cancellation.clone())).await {
                 Ok(enriched) => match LibraryCache::new().await {
                     Ok(cache) if enriched.failures.is_empty() => {
                         enrichment_lifecycle.set_ready_and_persist(cache).await
@@ -398,6 +488,9 @@ async fn run_refresh_scan(
                     }
                 },
                 Err(error) => {
+                    if cancellation.is_cancelled() {
+                        return;
+                    }
                     enrichment_lifecycle
                         .set_enrichment_failed(error.to_string())
                         .await
@@ -407,7 +500,9 @@ async fn run_refresh_scan(
         Ok::<_, ScanFailure>(reports)
     }
     .await;
-    if let Err(failure) = &result {
+    if let Err(failure) = &result
+        && failure.code != "library_scan_replaced"
+    {
         error!(message = %failure.message, "library refresh failed");
         lifecycle.set_scan_failed(&failure.message).await;
     }
@@ -416,11 +511,12 @@ async fn run_refresh_scan(
 
 async fn run_automatic_refresh_scan(
     lifecycle: Arc<LibraryLifecycle>,
-    scan_lease: tokio::sync::OwnedMutexGuard<()>,
+    scan_lease: LibraryScanLease,
 ) -> Result<LibraryRefreshResult, ScanFailure> {
+    let cancellation = scan_lease.cancellation();
     let _scan_lease = scan_lease;
     lifecycle.set_indexing("Adding newly detected music.").await;
-    let result = match refresh_libraries().await {
+    let result = match refresh_libraries_with(true, Some(cancellation.clone())).await {
         Ok(result) => match LibraryCache::new().await {
             Ok(cache) if result.failures.is_empty() => {
                 lifecycle
@@ -450,7 +546,9 @@ async fn run_automatic_refresh_scan(
             "library_auto_refresh_failed",
         )),
     };
-    if let Err(failure) = &result {
+    if let Err(failure) = &result
+        && !cancellation.is_cancelled()
+    {
         lifecycle.set_scan_failed(&failure.message).await;
     }
     result
@@ -746,20 +844,42 @@ async fn process_available_library(
     process_library_with(path, index_available_library_to_database).await
 }
 
-async fn process_available_library_progressive(
+async fn process_available_library_with_cancellation(
     path: &str,
-    progress: CatalogProgressSender,
+    cancellation: crate::library::indexer::ScanCancellation,
 ) -> Result<ProcessedLibrary, Box<dyn std::error::Error + Send + Sync>> {
     process_library_with(path, move |path| {
-        index_available_library_to_database_progressive(path, progress)
+        crate::library::indexer::index_available_library_to_database_with_cancellation(
+            path,
+            &cancellation,
+        )
     })
     .await
 }
 
-async fn process_enriched_library(
+async fn process_available_library_progressive_with_cancellation(
     path: &str,
+    progress: CatalogProgressSender,
+    cancellation: crate::library::indexer::ScanCancellation,
 ) -> Result<ProcessedLibrary, Box<dyn std::error::Error + Send + Sync>> {
-    process_library_with(path, enrich_library_to_database).await
+    process_library_with(path, move |path| {
+        index_available_library_to_database_progressive_with_cancellation(
+            path,
+            progress,
+            &cancellation,
+        )
+    })
+    .await
+}
+
+async fn process_enriched_library_with_cancellation(
+    path: &str,
+    cancellation: crate::library::indexer::ScanCancellation,
+) -> Result<ProcessedLibrary, Box<dyn std::error::Error + Send + Sync>> {
+    process_library_with(path, move |path| {
+        enrich_library_to_database_with_cancellation(path, &cancellation)
+    })
+    .await
 }
 
 async fn process_library_with<F>(
@@ -851,10 +971,10 @@ pub async fn index_library(
             );
         }
     };
-    let Some(scan_lease) = lifecycle.try_begin_scan() else {
+    let Some(scan_lease) = lifecycle.begin_replacing_scan().await else {
         return conflict(
-            "A library scan is already running. Wait for it to finish before starting another.",
-            "library_scan_in_progress",
+            "This library selection was replaced by a newer request.",
+            "library_scan_replaced",
         );
     };
     info!("Indexing new library path...");
@@ -868,6 +988,9 @@ pub async fn index_library(
             "library": null,
             "report": report,
         })),
+        Ok(Err(failure)) if failure.code == "library_scan_replaced" => {
+            conflict(failure.message, failure.code)
+        }
         Ok(Err(failure)) => internal_server_error(failure.message, failure.code),
         Err(error) => {
             let message = format!("Library scan coordinator stopped unexpectedly: {error}");
@@ -879,16 +1002,12 @@ pub async fn index_library(
 
 pub async fn refresh_libraries()
 -> Result<LibraryRefreshResult, Box<dyn std::error::Error + Send + Sync>> {
-    refresh_libraries_with(true).await
-}
-
-async fn refresh_available_libraries()
--> Result<LibraryRefreshResult, Box<dyn std::error::Error + Send + Sync>> {
-    refresh_libraries_with(false).await
+    refresh_libraries_with(true, None).await
 }
 
 async fn refresh_libraries_with(
     enriched: bool,
+    cancellation: Option<crate::library::indexer::ScanCancellation>,
 ) -> Result<LibraryRefreshResult, Box<dyn std::error::Error + Send + Sync>> {
     info!("Refreshing all library paths...");
 
@@ -905,10 +1024,25 @@ async fn refresh_libraries_with(
     let mut failures = Vec::new();
 
     for path in paths {
-        let processed = if enriched {
-            process_music_library(&path).await
-        } else {
-            process_available_library(&path).await
+        if cancellation
+            .as_ref()
+            .is_some_and(crate::library::indexer::ScanCancellation::is_cancelled)
+        {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::Interrupted,
+                "Library refresh was replaced by a newer folder selection",
+            )
+            .into());
+        }
+        let processed = match (enriched, cancellation.clone()) {
+            (true, Some(cancellation)) => {
+                process_enriched_library_with_cancellation(&path, cancellation).await
+            }
+            (false, Some(cancellation)) => {
+                process_available_library_with_cancellation(&path, cancellation).await
+            }
+            (true, None) => process_music_library(&path).await,
+            (false, None) => process_available_library(&path).await,
         };
         match processed {
             Ok(processed) => {
@@ -1353,10 +1487,10 @@ mod reliability_tests {
 
     use super::{
         LibraryRefreshFailure, LibraryRefreshSuccess, MAX_CONCURRENT_TRANSCODES, StreamAudioEffect,
-        automatic_change_is_settled, classify_refresh_result, merge_progressive_catalog,
-        parse_range, prune_transcode_cache, release_transcode_lock,
-        select_auto_refresh_quiet_window, transcode_cache_locks, transcode_cache_path,
-        transcode_slots,
+        TranscodeCleanup, automatic_change_is_settled, classify_refresh_result,
+        merge_progressive_catalog, parse_range, prune_transcode_cache, release_transcode_lock,
+        retain_progressive_albums_with_artwork, select_auto_refresh_quiet_window,
+        transcode_cache_locks, transcode_cache_path, transcode_slots,
     };
     use crate::domain::{Album, Artist, Song};
     use crate::library::normalize::LibraryIndexReport;
@@ -1462,6 +1596,51 @@ mod reliability_tests {
         assert_eq!(merged[0].albums[0].cover_url, "album-a.jpg");
         assert_eq!(merged[0].albums[0].songs.len(), 2);
         assert_eq!(merged[2].icon_url, "artist-c.jpg");
+    }
+
+    #[test]
+    fn large_progressive_publications_hide_albums_without_artwork() {
+        let mut catalog = vec![Artist {
+            id: "artist-a".into(),
+            name: "A".into(),
+            albums: vec![
+                Album {
+                    id: "covered".into(),
+                    name: "Covered".into(),
+                    cover_url: "cover.jpg".into(),
+                    ..Album::default()
+                },
+                Album {
+                    id: "uncovered".into(),
+                    name: "Uncovered".into(),
+                    cover_url: "  ".into(),
+                    ..Album::default()
+                },
+            ],
+            ..Artist::default()
+        }];
+
+        assert!(retain_progressive_albums_with_artwork(&mut catalog));
+        assert_eq!(catalog.len(), 1);
+        assert_eq!(catalog[0].albums.len(), 1);
+        assert_eq!(catalog[0].albums[0].id, "covered");
+    }
+
+    #[test]
+    fn progressive_publication_keeps_the_preview_when_no_artwork_is_ready() {
+        let mut catalog = vec![Artist {
+            id: "artist-a".into(),
+            name: "A".into(),
+            albums: vec![Album {
+                id: "uncovered".into(),
+                name: "Uncovered".into(),
+                ..Album::default()
+            }],
+            ..Artist::default()
+        }];
+
+        assert!(!retain_progressive_albums_with_artwork(&mut catalog));
+        assert!(catalog.is_empty());
     }
 
     #[test]
@@ -1599,6 +1778,42 @@ mod reliability_tests {
         release_transcode_lock(&path, &waiter).await;
         assert!(!transcode_cache_locks().lock().await.contains_key(&path));
     }
+
+    #[actix_web::test]
+    async fn abandoned_transcodes_remove_temporary_files_and_lock_entries() {
+        let identity = uuid::Uuid::new_v4();
+        let cache_path = std::env::temp_dir().join(format!("music-transcode-{identity}.mp3"));
+        let temp_path = std::env::temp_dir().join(format!("music-transcode-{identity}.tmp"));
+        std::fs::write(&temp_path, b"partial transcode").expect("temporary transcode fixture");
+        let cache_lock = Arc::new(Mutex::new(()));
+        transcode_cache_locks()
+            .lock()
+            .await
+            .insert(cache_path.clone(), cache_lock.clone());
+
+        drop(TranscodeCleanup {
+            cache_lock,
+            cache_path: cache_path.clone(),
+            committed: false,
+            temp_path: temp_path.clone(),
+        });
+
+        tokio::time::timeout(Duration::from_secs(1), async {
+            loop {
+                if !temp_path.exists()
+                    && !transcode_cache_locks()
+                        .lock()
+                        .await
+                        .contains_key(&cache_path)
+                {
+                    break;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("abandoned transcode cleanup");
+    }
 }
 
 async fn stream_cached_transcode(
@@ -1707,26 +1922,33 @@ async fn stream_cached_transcode(
 
     struct LiveTranscode {
         cache_guard: tokio::sync::OwnedMutexGuard<()>,
-        cache_lock: Arc<Mutex<()>>,
-        cache_path: PathBuf,
         child: tokio::process::Child,
+        cleanup: TranscodeCleanup,
+        failed: bool,
         output: tokio::fs::File,
         permit: tokio::sync::OwnedSemaphorePermit,
         stdout: tokio::process::ChildStdout,
-        temp_path: PathBuf,
     }
 
     let state = LiveTranscode {
         cache_guard,
-        cache_lock,
-        cache_path: cache_path.to_path_buf(),
         child,
+        cleanup: TranscodeCleanup {
+            cache_lock,
+            cache_path: cache_path.to_path_buf(),
+            committed: false,
+            temp_path,
+        },
+        failed: false,
         output,
         permit,
         stdout,
-        temp_path,
     };
     let stream = futures::stream::unfold(state, |mut state| async move {
+        if state.failed {
+            let _ = state.child.kill().await;
+            return None;
+        }
         let mut buffer = vec![0; STREAM_BUFFER_SIZE];
         match state.stdout.read(&mut buffer).await {
             Ok(0) => {
@@ -1738,12 +1960,13 @@ async fn stream_cached_transcode(
                     && state.output.flush().await.is_ok();
                 drop(state.output);
                 let promoted = success
-                    && tokio::fs::rename(&state.temp_path, &state.cache_path)
+                    && tokio::fs::rename(&state.cleanup.temp_path, &state.cleanup.cache_path)
                         .await
                         .is_ok();
                 if promoted {
-                    let directory = state.cache_path.parent().map(Path::to_path_buf);
-                    let protected = state.cache_path.clone();
+                    state.cleanup.committed = true;
+                    let directory = state.cleanup.cache_path.parent().map(Path::to_path_buf);
+                    let protected = state.cleanup.cache_path.clone();
                     if let Some(directory) = directory {
                         tokio::spawn(async move {
                             let max_bytes = transcode_cache_max_bytes();
@@ -1767,23 +1990,24 @@ async fn stream_cached_transcode(
                             }
                         });
                     }
-                } else {
-                    let _ = tokio::fs::remove_file(&state.temp_path).await;
                 }
                 drop(state.permit);
                 drop(state.cache_guard);
-                release_transcode_lock(&state.cache_path, &state.cache_lock).await;
                 None
             }
             Ok(size) => {
                 buffer.truncate(size);
                 if let Err(error) = state.output.write_all(&buffer).await {
                     let _ = state.child.kill().await;
+                    state.failed = true;
                     return Some((Err(error), state));
                 }
                 Some((Ok(web::Bytes::from(buffer)), state))
             }
-            Err(error) => Some((Err(error), state)),
+            Err(error) => {
+                state.failed = true;
+                Some((Err(error), state))
+            }
         }
     });
 

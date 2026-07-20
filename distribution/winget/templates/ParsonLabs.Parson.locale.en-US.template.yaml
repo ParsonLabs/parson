@@ -1,0 +1,25 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.defaultLocale.1.12.0.schema.json
+PackageIdentifier: ParsonLabs.Parson
+PackageVersion: { { VERSION } }
+PackageLocale: en-US
+Publisher: ParsonLabs
+PublisherUrl: https://github.com/ParsonLabs
+PublisherSupportUrl: https://github.com/ParsonLabs/parson/issues
+PackageName: Parson
+PackageUrl: https://parson.dev
+License: GPL-3.0-only
+LicenseUrl: https://github.com/ParsonLabs/parson/blob/master/LICENSE
+Copyright: Copyright (c) ParsonLabs contributors
+ShortDescription: A self-hosted, local-first music server and player.
+Description: Parson turns your own music library into a private streaming experience for the desktop and trusted local network.
+Moniker: parson
+Tags:
+  - audio
+  - local-first
+  - music
+  - music-player
+  - self-hosted
+  - streaming
+ReleaseNotesUrl: https://github.com/ParsonLabs/parson/releases/tag/v{{VERSION}}
+ManifestType: defaultLocale
+ManifestVersion: 1.12.0

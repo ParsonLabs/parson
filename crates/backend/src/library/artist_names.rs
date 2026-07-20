@@ -43,7 +43,11 @@ pub fn format_contributing_artists(artists: &[String]) -> Vec<(String, Vec<Strin
     for artist in artists {
         // Ignore DJ/producer credits, including truncated legacy tags.
         let artist = re_role_credit.replace(artist, "");
-        let artist = artist.trim();
+        // Tags frequently contain repeated tabs or spaces. Keep display names
+        // canonical as well as identities so one artist is not rendered with
+        // several visually different spellings.
+        let artist = artist.split_whitespace().collect::<Vec<_>>().join(" ");
+        let artist = artist.as_str();
         let mut main_artist = artist.to_string();
         let mut contributing_artists = Vec::new();
 
@@ -157,5 +161,13 @@ mod tests {
     fn empty_and_unsplit_inputs_have_predictable_results() {
         assert!(format_contributing_artists(&[String::new()]).is_empty());
         assert_eq!(parsed("Solo Artist"), ("Solo Artist".into(), Vec::new()));
+    }
+
+    #[test]
+    fn display_names_collapse_repeated_whitespace() {
+        assert_eq!(
+            parsed("  Primary  \t Artist  feat.   Guest  Artist "),
+            ("Primary Artist".into(), vec!["Guest Artist".into()])
+        );
     }
 }

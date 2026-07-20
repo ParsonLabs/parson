@@ -37,8 +37,9 @@ import {
 } from "react";
 import { Platform } from "react-native";
 
-import { authorizationHeaders, imageUrl, streamUrl } from "@/lib/runtime";
+import { freshAuthorizationHeaders, imageUrl, streamUrl } from "@/lib/runtime";
 import { downloadedSongUri, hydrateDownloads } from "@/lib/downloads";
+import { shouldRestartFinishedTrack } from "@/lib/playback-state";
 import { useSession } from "@/providers/session-provider";
 
 type RepeatMode = "none" | "one" | "all";
@@ -72,6 +73,7 @@ type PlaybackControls = {
 type PlayerContextValue = {
   current: LibrarySong | null;
   currentIndex: number;
+  error: string | null;
   isBuffering: boolean;
   isPlaying: boolean;
   queue: LibrarySong[];
@@ -284,6 +286,7 @@ function useAndroidAudioOutput({
   setDuration,
   setIsBuffering,
   setIsPlaying,
+  setPlaybackError,
 }: {
   current: LibrarySong | null;
   playbackSource: PlaybackSource | null;
@@ -297,6 +300,7 @@ function useAndroidAudioOutput({
   setDuration: Dispatch<SetStateAction<number>>;
   setIsBuffering: Dispatch<SetStateAction<boolean>>;
   setIsPlaying: Dispatch<SetStateAction<boolean>>;
+  setPlaybackError: Dispatch<SetStateAction<string | null>>;
 }) {
   useEffect(() => {
     if (Platform.OS !== "android") return;
@@ -344,6 +348,9 @@ function useAndroidAudioOutput({
             desiredPlayingRef.current = false;
             setIsBuffering(false);
             setIsPlaying(false);
+            setPlaybackError(
+              "Playback failed. Check your connection and try again.",
+            );
           }
         }
         if (
@@ -372,6 +379,7 @@ function useAndroidAudioOutput({
     setIsBuffering,
     setIsPlaying,
     setPlaybackSource,
+    setPlaybackError,
     sourceSequenceRef,
   ]);
 
@@ -412,6 +420,7 @@ function BrowserAudioOutput({
   setCurrentTime,
   setIsBuffering,
   setIsPlaying,
+  setPlaybackError,
   routeLoadedSource,
   handleEnded,
 }: {
@@ -426,6 +435,7 @@ function BrowserAudioOutput({
   setCurrentTime: Dispatch<SetStateAction<number>>;
   setIsBuffering: Dispatch<SetStateAction<boolean>>;
   setIsPlaying: Dispatch<SetStateAction<boolean>>;
+  setPlaybackError: Dispatch<SetStateAction<string | null>>;
   routeLoadedSource: () => void;
   handleEnded: () => void;
 }) {
@@ -457,6 +467,9 @@ function BrowserAudioOutput({
         desiredPlayingRef.current = false;
         setIsBuffering(false);
         setIsPlaying(false);
+        setPlaybackError(
+          "Playback failed. Check your connection and try again.",
+        );
       }}
       onPositionChange={setCurrentTime}
       onEnded={handleEnded}
@@ -487,11 +500,37 @@ export function PlayerProvider({ children }: PropsWithChildren) {
   const [duration, setDuration] = useState(0);
   const [isBuffering, setIsBuffering] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [playbackError, setPlaybackError] = useState<string | null>(null);
   const [repeat, setRepeat] = useState<RepeatMode>("none");
   const [audioPreset, setAudioPresetState] = useState<AudioPreset>("original");
   const [playbackSource, setPlaybackSource] = useState<PlaybackSource | null>(
     null,
   );
+
+  useEffect(() => {
+    if (session.claims || session.phase === "offline") return;
+    const reset = setTimeout(() => {
+      sourceSequence.current += 1;
+      desiredPlaying.current = false;
+      audioRef.current?.pause();
+      const androidPlayer = androidPlayerRef.current;
+      if (androidPlayer) {
+        androidPlayer.pause();
+        androidPlayer.replace(null);
+        androidPlayer.clearLockScreenControls();
+      }
+      if (graphRef.current) disconnectSource(graphRef.current);
+      setPlaybackSource(null);
+      setQueue([]);
+      setCurrentIndex(-1);
+      setCurrentTime(0);
+      setDuration(0);
+      setIsBuffering(false);
+      setIsPlaying(false);
+      setPlaybackError(null);
+    }, 0);
+    return () => clearTimeout(reset);
+  }, [session.claims, session.phase]);
 
   const current = queue[currentIndex] ?? null;
   const preset = getPlayerAudioPreset(audioPreset);
@@ -574,13 +613,13 @@ export function PlayerProvider({ children }: PropsWithChildren) {
   }, [applyPreset, audioContext, audioPreset, ensureGraph]);
 
   const sourceFor = useCallback(
-    (song: LibrarySong) => {
+    async (song: LibrarySong) => {
       const local = downloadedSongUri(song.id);
       const bitrate = session.claims?.bitrate ?? 0;
       return {
         // Native decoding expects a decoded path, not an Expo file URI.
         uri: local ? decodeURI(local) : streamUrl(song.id, bitrate),
-        headers: local ? undefined : authorizationHeaders(),
+        headers: local ? undefined : await freshAuthorizationHeaders(),
       };
     },
     [session.claims?.bitrate],
@@ -596,13 +635,25 @@ export function PlayerProvider({ children }: PropsWithChildren) {
       setDuration(Math.max(0, song.duration || 0));
       setIsBuffering(true);
       setIsPlaying(autoplay);
+      setPlaybackError(null);
       desiredPlaying.current = autoplay;
-      setPlaybackSource({
-        autoplay,
-        key: ++sourceSequence.current,
-        retryCount: 0,
-        value: sourceFor(song),
-      });
+      audioRef.current?.pause();
+      androidPlayerRef.current?.pause();
+      setPlaybackSource(null);
+      const key = ++sourceSequence.current;
+      void sourceFor(song)
+        .then((value) => {
+          if (sourceSequence.current !== key) return;
+          setPlaybackSource({ autoplay, key, retryCount: 0, value });
+        })
+        .catch((cause) => {
+          if (sourceSequence.current !== key) return;
+          desiredPlaying.current = false;
+          setIsBuffering(false);
+          setIsPlaying(false);
+          setPlaybackError("Could not prepare this song for playback.");
+          console.error("Could not prepare audio source", cause);
+        });
     },
     [sourceFor],
   );
@@ -639,6 +690,18 @@ export function PlayerProvider({ children }: PropsWithChildren) {
 
   const play = useCallback(() => {
     if (!current) return;
+    if (playbackError) {
+      loadAt(queue, currentIndex);
+      return;
+    }
+    if (shouldRestartFinishedTrack(currentTime, duration)) {
+      if (Platform.OS === "android") {
+        void androidPlayerRef.current?.seekTo(0);
+      } else {
+        audioRef.current?.seekToTime(0);
+      }
+      setCurrentTime(0);
+    }
     desiredPlaying.current = true;
     setIsPlaying(true);
     if (Platform.OS === "android") {
@@ -648,7 +711,16 @@ export function PlayerProvider({ children }: PropsWithChildren) {
     if (isBuffering) return;
     void AudioManager.setAudioSessionActivity(true).catch(() => {});
     audioRef.current?.play();
-  }, [current, isBuffering]);
+  }, [
+    current,
+    currentIndex,
+    currentTime,
+    duration,
+    isBuffering,
+    loadAt,
+    playbackError,
+    queue,
+  ]);
 
   const pause = useCallback(() => {
     desiredPlaying.current = false;
@@ -708,7 +780,7 @@ export function PlayerProvider({ children }: PropsWithChildren) {
   }, [currentIndex, currentTime, loadAt, queue, seek]);
 
   const toggle = useCallback(() => {
-    void Haptics.selectionAsync();
+    void Haptics.selectionAsync().catch(() => {});
     if (desiredPlaying.current) pause();
     else play();
   }, [pause, play]);
@@ -756,6 +828,7 @@ export function PlayerProvider({ children }: PropsWithChildren) {
     setDuration,
     setIsBuffering,
     setIsPlaying,
+    setPlaybackError,
   });
 
   const cleanup = useCallback(() => {
@@ -779,6 +852,7 @@ export function PlayerProvider({ children }: PropsWithChildren) {
     () => ({
       current,
       currentIndex,
+      error: playbackError,
       isBuffering,
       isPlaying,
       queue,
@@ -804,6 +878,7 @@ export function PlayerProvider({ children }: PropsWithChildren) {
       current,
       currentIndex,
       cycleRepeat,
+      playbackError,
       isBuffering,
       isPlaying,
       next,
@@ -840,6 +915,7 @@ export function PlayerProvider({ children }: PropsWithChildren) {
           setCurrentTime={setCurrentTime}
           setIsBuffering={setIsBuffering}
           setIsPlaying={setIsPlaying}
+          setPlaybackError={setPlaybackError}
           routeLoadedSource={routeLoadedSource}
           handleEnded={handleEnded}
         />

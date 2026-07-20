@@ -46,7 +46,7 @@ const AUDIO_EXTENSIONS: &[&str] = &["mp3", "flac", "ogg", "m4a", "opus", "wav", 
 const TAG_PARSER_VERSION: &str = "13";
 const COVER_RESOLVER_VERSION: &str = "2";
 // Bump when release inference semantics change.
-const CLASSIFICATION_VERSION: &str = "3";
+const CLASSIFICATION_VERSION: &str = "7";
 const DATABASE_BATCH_SIZE: usize = 10_000;
 const MAX_WARNING_DETAILS: usize = 100;
 type MetadataOverrides = HashMap<String, HashMap<String, HashMap<String, String>>>;
@@ -275,6 +275,10 @@ struct OwnedReleaseEvidence {
     album_artist: String,
     paths: Vec<String>,
     track_titles: Vec<String>,
+    #[serde(default)]
+    track_durations: Vec<f64>,
+    #[serde(default)]
+    genres: Vec<String>,
     release_dates: Vec<String>,
     #[serde(default)]
     directory_years: Vec<String>,
@@ -474,6 +478,8 @@ impl OwnedReleaseEvidence {
             album_artist: &self.album_artist,
             paths: &self.paths,
             track_titles: &self.track_titles,
+            track_durations: &self.track_durations,
+            genres: &self.genres,
         })
     }
 }
@@ -629,7 +635,17 @@ fn resolve_release_presentations_for(
                 "classification": &classification,
             }))
             .unwrap_or_else(|_| "{}".to_string());
-            let presentation = if analysis.is_edition {
+            let edition_changes_release_form = analysis.variant_kinds.iter().any(|kind| {
+                !matches!(
+                    kind,
+                    crate::library::normalize::ReleaseVariantKind::Regional
+                        | crate::library::normalize::ReleaseVariantKind::Format
+                        | crate::library::normalize::ReleaseVariantKind::Disc
+                )
+            });
+            let presentation = if analysis.is_edition
+                && (classification.primary_type == "Album" || edition_changes_release_form)
+            {
                 let original_album_id = originals
                     .get(&(
                         normalize_artist_identity(&release.album_artist),
@@ -757,6 +773,24 @@ struct CountRow {
 struct TextIdRow {
     #[diesel(sql_type = Text)]
     id: String,
+}
+
+#[cfg(test)]
+#[derive(Debug, QueryableByName)]
+struct AlbumDurationsRow {
+    #[diesel(sql_type = Text)]
+    id: String,
+    #[diesel(sql_type = Text)]
+    durations_json: String,
+}
+
+#[cfg(test)]
+#[derive(Debug, QueryableByName)]
+struct ArtworkIdentityRow {
+    #[diesel(sql_type = Text)]
+    id: String,
+    #[diesel(sql_type = Text)]
+    uri: String,
 }
 
 #[derive(Debug, QueryableByName)]
@@ -1813,6 +1847,15 @@ fn parse_file_batch(
     local_covers: &HashMap<&str, String>,
     threads: usize,
 ) -> Result<Vec<ParsedFile>, rayon::ThreadPoolBuildError> {
+    parse_file_batch_with_cancellation(files, local_covers, threads, None)
+}
+
+fn parse_file_batch_with_cancellation(
+    files: &[&DiscoveredFile],
+    local_covers: &HashMap<&str, String>,
+    threads: usize,
+    cancellation: Option<&ScanCancellation>,
+) -> Result<Vec<ParsedFile>, rayon::ThreadPoolBuildError> {
     if files.is_empty() {
         return Ok(Vec::new());
     }
@@ -1830,15 +1873,18 @@ fn parse_file_batch(
         files
             .par_iter()
             .zip(prefetched.into_par_iter())
-            .map(|(file, regions)| {
+            .filter_map(|(file, regions)| {
+                if cancellation.is_some_and(ScanCancellation::is_cancelled) {
+                    return None;
+                }
                 let local_cover = local_covers
                     .get(file.directory.as_ref())
                     .map(String::as_str)
                     .unwrap_or_default();
-                regions.map_or_else(
+                Some(regions.map_or_else(
                     || parse_audio_file(file, local_cover),
                     |regions| parse_audio_file_prefetched(file, local_cover, regions),
-                )
+                ))
             })
             .collect()
     }))
@@ -2023,6 +2069,7 @@ struct ColdParsePipeline {
     inflight: Arc<InflightLimiter>,
     selected_threads: usize,
     started: Instant,
+    cancellation: ScanCancellation,
 }
 
 pub type CatalogProgressSender = tokio::sync::mpsc::Sender<Vec<Artist>>;
@@ -2032,6 +2079,7 @@ impl ColdParsePipeline {
         library_path: &Path,
         mut connection: PooledSqliteConnection,
         progress: Option<CatalogProgressSender>,
+        cancellation: ScanCancellation,
     ) -> Result<Self, Box<dyn Error + Send + Sync>> {
         let (threads, _seek_penalty) = parse_thread_count(library_path);
         // Bound parsed-record memory with backpressure.
@@ -2052,9 +2100,10 @@ impl ColdParsePipeline {
                     let mut batch = Vec::with_capacity(500);
                     batch.push(first);
                     while batch.len() < 500 {
-                        match receiver.recv() {
+                        match receiver.try_recv() {
                             Ok(record) => batch.push(record),
-                            Err(_) => break,
+                            Err(std::sync::mpsc::TryRecvError::Empty) => break,
+                            Err(std::sync::mpsc::TryRecvError::Disconnected) => break,
                         }
                     }
                     let started = Instant::now();
@@ -2111,6 +2160,7 @@ impl ColdParsePipeline {
             }),
             selected_threads: threads,
             started: Instant::now(),
+            cancellation,
         };
         Ok(pipeline)
     }
@@ -2118,11 +2168,15 @@ impl ColdParsePipeline {
     fn schedule(&mut self, file: DiscoveredFile, regions: Option<PrefetchedRegions>) {
         let permit = self.inflight.acquire();
         let sender = self.sender.clone();
+        let cancellation = self.cancellation.clone();
         self.pool
             .as_ref()
             .expect("streaming pool initialized")
             .spawn_fifo(move || {
                 let _permit = permit;
+                if cancellation.is_cancelled() {
+                    return;
+                }
                 let parsed = regions.map_or_else(
                     || parse_audio_file(&file, ""),
                     |regions| parse_audio_file_prefetched(&file, "", regions),
@@ -4570,16 +4624,19 @@ fn infer_album_artists(
                     .filter(|(_, count)| **count * 2 >= total)
                     .map(|(name, _)| name.clone())
             });
-            let unanimous_track_artist = track_artists.get(&key).and_then(|artists| {
-                (artists.len() == 1).then(|| {
-                    artists
-                        .iter()
-                        .next()
-                        .map(|(name, count)| (name.clone(), *count))
-                        .unwrap_or_else(|| ("Unknown Artist".to_string(), 0))
-                })
+            let dominant_track_artist = track_artists.get(&key).and_then(|artists| {
+                let total = artists.values().sum::<usize>();
+                artists
+                    .iter()
+                    .max_by(|(left_name, left_count), (right_name, right_count)| {
+                        left_count
+                            .cmp(right_count)
+                            .then_with(|| right_name.cmp(left_name))
+                    })
+                    .filter(|(_, count)| artists.len() == 1 || **count * 2 > total)
+                    .map(|(name, count)| (name.clone(), *count))
             });
-            let artist = match (explicit_artist, unanimous_track_artist) {
+            let artist = match (explicit_artist, dominant_track_artist) {
                 (Some(explicit_artist), Some((track_artist, track_count)))
                     if track_count >= 2
                         && track_artist_releases
@@ -4616,6 +4673,61 @@ fn prepare_tracks<'a>(
     inferred_album_artists: &HashMap<AlbumGroupingKey, String>,
     interner: &mut StringInterner,
 ) -> Vec<PreparedTrack<'a>> {
+    // Collapse byte-quality copies only when their complete release slots agree.
+    // Different track lists remain distinct even when title and artist tags are
+    // identical (for example, an album and a same-titled single).
+    let mut slots_by_release = HashMap::<AlbumGroupingKey, Vec<String>>::new();
+    let mut artist_by_release = HashMap::<AlbumGroupingKey, String>::new();
+    for seed in &seeds {
+        let resolved_artist = inferred_album_artists
+            .get(&seed.album_grouping_key)
+            .map(String::as_str)
+            .unwrap_or(seed.primary_album_artist.as_ref());
+        let resolved_artist = aliases
+            .get(&normalize_artist_identity(resolved_artist))
+            .map(String::as_str)
+            .unwrap_or(resolved_artist);
+        artist_by_release
+            .entry(seed.album_grouping_key.clone())
+            .or_insert_with(|| normalize_artist_identity(resolved_artist));
+        slots_by_release
+            .entry(seed.album_grouping_key.clone())
+            .or_default()
+            .push(format!(
+                "{}\u{1f}{}\u{1f}{}\u{1f}{}",
+                seed.parsed.disc_number,
+                seed.parsed.track_number,
+                recording_duplicate_identity(&seed.parsed.title),
+                seed.parsed.duration_seconds.round() as i64,
+            ));
+    }
+    for slots in slots_by_release.values_mut() {
+        slots.sort_unstable();
+    }
+    let mut duplicate_groups = HashMap::<String, Vec<AlbumGroupingKey>>::new();
+    for (key, slots) in &slots_by_release {
+        duplicate_groups
+            .entry(format!(
+                "{}\u{1f}{}\u{1f}{}",
+                key.normalized_album,
+                artist_by_release.get(key).map(String::as_str).unwrap_or(""),
+                slots.join("\u{1e}")
+            ))
+            .or_default()
+            .push(key.clone());
+    }
+    let canonical_release_directory = duplicate_groups
+        .into_values()
+        .flat_map(|keys| {
+            let canonical = keys
+                .iter()
+                .map(|key| key.release_directory.to_string())
+                .min()
+                .unwrap_or_default();
+            keys.into_iter().map(move |key| (key, canonical.clone()))
+        })
+        .collect::<HashMap<_, _>>();
+
     let mut prepared = Vec::with_capacity(seeds.len());
     for seed in seeds {
         let resolved_track_artist = interner.intern(
@@ -4646,14 +4758,25 @@ fn prepare_tracks<'a>(
         } else {
             interner.intern(hash_normalized_artist(&normalized_track_artist))
         };
+        // A title and artist identify a release group, not necessarily one
+        // physical release. Keep distinct directories separate so an album and
+        // a same-titled single/EP cannot be merged into a synthetic track list.
+        let release_identity = format!(
+            "{}\u{1f}{}",
+            seed.normalized_album,
+            canonical_release_directory
+                .get(&seed.album_grouping_key)
+                .map(String::as_str)
+                .unwrap_or(seed.album_grouping_key.release_directory.as_ref())
+        );
         let album_id = interner.intern(hash_normalized_album(
-            &seed.normalized_album,
+            &release_identity,
             &normalized_album_artist,
         ));
         let track_id = interner.intern(hash_normalized_song(
             &seed.normalized_title,
             &normalized_album_artist,
-            &seed.normalized_album,
+            &album_id,
             seed.parsed.track_number,
         ));
         let recording_id = Arc::clone(&track_id);
@@ -5162,10 +5285,26 @@ where
         let Some(cover_path) = covers_by_album.get(album) else {
             continue;
         };
-        for index in indices {
-            if let Some(parsed) = parsed_files.get_mut(*index) {
-                parsed.cover_url.clone_from(cover_path);
-            }
+        // Keep file-level artwork evidence intact. Broadcasting one album cover
+        // to every parsed file makes the next unchanged scan compare that
+        // projected cover with each directory's actual local cover and
+        // needlessly restage the entire release.
+        let already_attached = indices.iter().any(|index| {
+            parsed_files
+                .get(*index)
+                .is_some_and(|parsed| parsed.cover_url == *cover_path)
+        });
+        if !already_attached
+            && let Some(index) = indices.iter().copied().find(|index| {
+                parsed_files
+                    .get(*index)
+                    .is_some_and(|parsed| refresh_paths.contains(parsed.path.as_ref()))
+            })
+            && let Some(parsed) = parsed_files.get_mut(index)
+        {
+            // Persist an extracted embedded cover on one representative so a
+            // warm scan can reuse it without reopening every track.
+            parsed.cover_url.clone_from(cover_path);
         }
         let content_hash = Path::new(cover_path)
             .file_stem()
@@ -5278,7 +5417,7 @@ fn resolve_duplicate_tracks(
             let id = hash_normalized_song(
                 &normalized_id_title,
                 &representative.normalized_album_artist,
-                &representative.normalized_album,
+                &representative.album_id,
                 representative.parsed.track_number,
             );
             let presentation = TrackPresentation {
@@ -6037,6 +6176,9 @@ fn stage_prepared_tracks(
             let track_normalized = track_presentation
                 .map(|value| value.normalized_title.as_str())
                 .unwrap_or(prepared.normalized_title.as_ref());
+            let release_type = presentation
+                .map(|value| normalize_search_text(&value.primary_type))
+                .unwrap_or_else(|| "album".to_string());
             (
                 Arc::clone(&parsed.path),
                 SearchProjection {
@@ -6045,11 +6187,11 @@ fn stage_prepared_tracks(
                         prepared.resolved_track_artist.as_ref()
                     ),
                     song: format!(
-                        "{track_normalized} {album_normalized} {}",
+                        "{track_normalized} {album_normalized} {} {release_type}",
                         prepared.normalized_track_artist.as_ref()
                     ),
                     album: format!(
-                        "{album_normalized} {}",
+                        "{album_normalized} {} {release_type}",
                         prepared.normalized_album_artist.as_ref()
                     ),
                 },
@@ -6443,6 +6585,8 @@ fn reconcile_normalized_tables(
                         album_artist: prepared.resolved_album_artist.to_string(),
                         paths: Vec::new(),
                         track_titles: Vec::new(),
+                        track_durations: Vec::new(),
+                        genres: Vec::new(),
                         release_dates: Vec::new(),
                         directory_years: Vec::new(),
                     });
@@ -6450,6 +6594,10 @@ fn reconcile_normalized_tables(
                     .paths
                     .push(prepared.album_grouping_key.release_directory.to_string());
                 evidence.track_titles.push(parsed.title.clone());
+                evidence.track_durations.push(parsed.duration_seconds);
+                evidence
+                    .genres
+                    .extend(prepared.genres.iter().map(|genre| genre.name.to_string()));
                 if let Some(year) = &prepared.release_year {
                     evidence.directory_years.push(year.to_string());
                 }
@@ -6468,11 +6616,15 @@ fn reconcile_normalized_tables(
                         album_artist: evidence.album_artist.clone(),
                         paths: Vec::new(),
                         track_titles: Vec::new(),
+                        track_durations: Vec::new(),
+                        genres: Vec::new(),
                         release_dates: Vec::new(),
                         directory_years: Vec::new(),
                     });
                 target.paths.extend(evidence.paths);
                 target.track_titles.extend(evidence.track_titles);
+                target.track_durations.extend(evidence.track_durations);
+                target.genres.extend(evidence.genres);
                 target.release_dates.extend(evidence.release_dates);
                 target.directory_years.extend(evidence.directory_years);
             }
@@ -6481,6 +6633,8 @@ fn reconcile_normalized_tables(
     for (album_id, mut evidence) in affected_evidence {
         evidence.paths.sort_unstable();
         evidence.track_titles.sort_unstable();
+        evidence.genres.sort_unstable();
+        evidence.genres.dedup();
         evidence.release_dates.sort_unstable();
         evidence.directory_years.sort_unstable();
         release_evidence.insert(album_id, evidence);
@@ -6581,6 +6735,7 @@ fn apply_normalized_stage(
                  DELETE FROM track_artist; DELETE FROM album_artist; DELETE FROM track_file;",
             )?;
         } else {
+            stage_superseded_file_identities(conn)?;
             conn.batch_execute(
                 "INSERT OR IGNORE INTO affected_track
                  SELECT id FROM track_entity WHERE album_id IN (SELECT id FROM affected_album);
@@ -6681,6 +6836,7 @@ fn apply_normalized_stage(
             conn.batch_execute(
                 "DELETE FROM track_entity WHERE id NOT IN (SELECT track_id FROM library_rebuild_stage);
                  DELETE FROM recording_entity WHERE id NOT IN (SELECT recording_id FROM library_rebuild_stage);
+                 DELETE FROM album_inference_cache WHERE album_id NOT IN (SELECT album_id FROM library_rebuild_stage);
                  DELETE FROM album_entity WHERE id NOT IN (SELECT album_id FROM library_rebuild_stage);
                  DELETE FROM release_group_entity WHERE id NOT IN (SELECT release_group_id FROM library_rebuild_stage);
                  DELETE FROM artist_entity WHERE id NOT IN (SELECT album_artist_id FROM library_rebuild_stage UNION SELECT track_artist_id FROM library_rebuild_stage);
@@ -6753,6 +6909,26 @@ fn apply_normalized_stage(
         Ok(())
     })?;
     Ok(())
+}
+
+/// Adds normalized identities that were previously attached to a staged file to
+/// the incremental cleanup scope. Enrichment can change both album and track IDs
+/// (for example, after resolving a release-level album artist), while the file ID
+/// remains stable. Without following that stable edge, the available-phase
+/// identities survive beside their enriched replacements.
+fn stage_superseded_file_identities(conn: &mut SqliteConnection) -> QueryResult<()> {
+    conn.batch_execute(
+        "INSERT OR IGNORE INTO affected_track
+         SELECT DISTINCT existing.track_id
+         FROM track_file existing
+         JOIN library_rebuild_stage staged ON staged.file_id = existing.file_id
+         WHERE existing.track_id IS NOT staged.track_id;
+         INSERT OR IGNORE INTO affected_album
+         SELECT DISTINCT track.album_id
+         FROM track_entity track
+         JOIN affected_track affected ON affected.id = track.id
+         WHERE track.album_id IS NOT NULL;",
+    )
 }
 
 fn finish_scan_job_counts(
@@ -6868,6 +7044,7 @@ fn parse_changed_files(
     local_covers: &HashMap<&str, String>,
     snapshots_by_path: &HashMap<&str, &ExistingFileSnapshot>,
     cold_parse: Option<ColdParseResult>,
+    cancellation: &ScanCancellation,
 ) -> Result<ParsedChangeBatch, Box<dyn Error + Send + Sync>> {
     let (default_threads, storage_seek_penalty) = parse_thread_count(Path::new(path_to_library));
     let explicit_threads = std::env::var("PARSON_PARSE_THREADS")
@@ -6910,11 +7087,17 @@ fn parse_changed_files(
         let parsed_prefix = tuned.parsed_prefix;
         let mut parsed = tuned.parsed;
         parsed.reserve(changed.len().saturating_sub(parsed_prefix));
-        parsed.extend(parse_file_batch(
-            &changed[parsed_prefix..],
-            local_covers,
-            threads,
-        )?);
+        for batch in changed[parsed_prefix..].chunks(512) {
+            if cancellation.is_cancelled() {
+                break;
+            }
+            parsed.extend(parse_file_batch_with_cancellation(
+                batch,
+                local_covers,
+                threads,
+                Some(cancellation),
+            )?);
+        }
         (
             parsed,
             threads,
@@ -7333,10 +7516,12 @@ fn index_library_to_database_phase(
             Path::new(path_to_library),
             conn,
             progress.clone(),
+            cancellation.clone(),
         )?;
         let mut pipeline_error = None;
         let mut callback = |file: &crate::library::discovery::DiscoveredFile| {
-            if pipeline_error.is_none()
+            if !cancellation.is_cancelled()
+                && pipeline_error.is_none()
                 && let Err(error) = pipeline.push(file.clone())
             {
                 pipeline_error = Some(error);
@@ -7365,6 +7550,14 @@ fn index_library_to_database_phase(
         };
         (inventory, None, elapsed_us(enumeration_started.elapsed()))
     };
+    if cancellation.is_cancelled() {
+        let _ = SqliteTransactionManager::rollback_transaction(&mut conn);
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::Interrupted,
+            "Library scan was replaced by a newer request",
+        )
+        .into());
+    }
     let discovered = inventory.audio_files.as_slice();
     let genuine_large_first_import = discovered.len() >= 5_000 && prior_available_files == 0;
     if discovered.is_empty() && snapshots.is_empty() {
@@ -7514,7 +7707,21 @@ fn index_library_to_database_phase(
         &local_covers,
         &snapshots_by_path,
         cold_parse,
+        cancellation,
     )?;
+    if cancellation.is_cancelled() {
+        let _ = SqliteTransactionManager::rollback_transaction(&mut conn);
+        fail_scan_job(
+            &mut conn,
+            scan_job_id,
+            "Library scan was replaced by a newer request",
+        )?;
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::Interrupted,
+            "Library scan was replaced by a newer request",
+        )
+        .into());
+    }
     let (warning_count, warnings) = collect_scan_warnings(&parsed_batch.files);
     let parsing_wall_us = parsed_batch.wall_us;
     let parsing_enumeration_overlap_us = parsed_batch.enumeration_overlap_us;
@@ -8188,6 +8395,19 @@ pub fn index_available_library_to_database(
     )
 }
 
+pub fn index_available_library_to_database_with_cancellation(
+    path_to_library: &str,
+    cancellation: &ScanCancellation,
+) -> Result<(Vec<Artist>, LibraryIndexReport), Box<dyn Error + Send + Sync>> {
+    index_library_to_database_phase(
+        path_to_library,
+        LibraryIndexPhase::Available,
+        IndexMode::Incremental,
+        cancellation,
+        None,
+    )
+}
+
 pub fn index_available_library_to_database_progressive(
     path_to_library: &str,
     progress: CatalogProgressSender,
@@ -8201,6 +8421,20 @@ pub fn index_available_library_to_database_progressive(
     )
 }
 
+pub fn index_available_library_to_database_progressive_with_cancellation(
+    path_to_library: &str,
+    progress: CatalogProgressSender,
+    cancellation: &ScanCancellation,
+) -> Result<(Vec<Artist>, LibraryIndexReport), Box<dyn Error + Send + Sync>> {
+    index_library_to_database_phase(
+        path_to_library,
+        LibraryIndexPhase::Available,
+        IndexMode::Incremental,
+        cancellation,
+        Some(progress),
+    )
+}
+
 /// Enriches albums produced by [`index_available_library_to_database`].
 pub fn enrich_library_to_database(
     path_to_library: &str,
@@ -8210,6 +8444,21 @@ pub fn enrich_library_to_database(
         LibraryIndexPhase::Enriched,
         IndexMode::Incremental,
         &ScanCancellation::default(),
+        None,
+    )?;
+    crate::persistence::connection::snapshot_after_import(&connect()?, true);
+    Ok(result)
+}
+
+pub fn enrich_library_to_database_with_cancellation(
+    path_to_library: &str,
+    cancellation: &ScanCancellation,
+) -> Result<(Vec<Artist>, LibraryIndexReport), Box<dyn Error + Send + Sync>> {
+    let result = index_library_to_database_phase(
+        path_to_library,
+        LibraryIndexPhase::Enriched,
+        IndexMode::Incremental,
+        cancellation,
         None,
     )?;
     crate::persistence::connection::snapshot_after_import(&connect()?, true);
@@ -8334,19 +8583,21 @@ mod external_library_tests {
     use parson_core::{FileId, LibraryRegistration, ProductCapability};
 
     use super::{
-        AudioFormat, DiscoveredFile, DurationSource, ExistingFileSnapshot, LibraryIndexPhase,
-        OwnedReleaseEvidence, ParsedFile, ParserStrategy, StringInterner, TAG_PARSER_VERSION,
+        AudioFormat, DiscoveredFile, DurationSource, ExistingFileSnapshot, IndexMode,
+        LibraryIndexPhase, OwnedReleaseEvidence, ParsedFile, ParserStrategy, ReconcileInputs,
+        StringInterner, TAG_PARSER_VERSION, all_available_snapshots,
         artist_identity_is_one_edit_apart, consensus_release_date, discover_files,
         embedded_cover_representative, embedded_cover_with_lofty, embedded_flac_cover,
         embedded_mp4_cover, encode_syncsafe_u32, hydrate_progressive_catalog_artwork,
         index_library_to_database, infer_album_artists, infer_artist_aliases,
         infer_artist_aliases_for, inherit_original_release_covers, inventory_candidates,
-        local_cover_for, mp3_duration, normalize_genre_key, normalized_release_date,
-        parse_aiff_fast, parse_flac_fast, parse_mp3, parse_mp4_fast, parse_ogg_fast,
-        parse_wav_fast, parse_with_lofty, prepare_track_seeds, raw_metadata_reusable,
-        resolve_duplicate_tracks, resolve_inventory_cover, resolve_release_presentations,
-        resolve_release_presentations_for, slash_decorated_variant, split_genres,
-        sync_core_file_references,
+        load_album_inference_cache, local_cover_for, mp3_duration, normalize_genre_key,
+        normalized_release_date, parse_aiff_fast, parse_flac_fast, parse_mp3, parse_mp4_fast,
+        parse_ogg_fast, parse_wav_fast, parse_with_lofty, prepare_track_seeds, prepare_tracks,
+        raw_metadata_reusable, reconcile_normalized_tables, resolve_duplicate_tracks,
+        resolve_inventory_cover, resolve_release_presentations, resolve_release_presentations_for,
+        slash_decorated_variant, snapshot_to_parsed, split_genres,
+        stage_superseded_file_identities, sync_core_file_references,
     };
 
     fn parsed_track(
@@ -8468,9 +8719,13 @@ mod external_library_tests {
         let mut connection = pool.get().expect("streaming SQLite connection");
         type Manager = <super::PooledSqliteConnection as diesel::Connection>::TransactionManager;
         Manager::begin_transaction(&mut connection).expect("begin streaming transaction");
-        let mut pipeline =
-            super::ColdParsePipeline::new_with_progress(&directory, connection, None)
-                .expect("create cold streaming pipeline");
+        let mut pipeline = super::ColdParsePipeline::new_with_progress(
+            &directory,
+            connection,
+            None,
+            super::ScanCancellation::default(),
+        )
+        .expect("create cold streaming pipeline");
         pipeline.schedule_batch(files.clone());
         let mut result = pipeline.finish(&files).expect("finish streaming parse");
         let count = diesel::sql_query("SELECT COUNT(*) AS count FROM cold_parsed_stage")
@@ -8511,6 +8766,23 @@ mod external_library_tests {
     }
 
     #[test]
+    fn cancelled_parse_batches_do_not_open_more_audio_files() {
+        let file = discovered_file("/does/not/need/to/exist.mp3", "mp3", 1_000_000);
+        let cancellation = super::ScanCancellation::default();
+        cancellation.cancel();
+
+        let parsed = super::parse_file_batch_with_cancellation(
+            &[&file],
+            &HashMap::new(),
+            1,
+            Some(&cancellation),
+        )
+        .expect("cancelled batch");
+
+        assert!(parsed.is_empty());
+    }
+
+    #[test]
     fn prepared_tracks_reuse_normalized_metadata_and_entity_ids() {
         let mut parsed = vec![
             parsed_track("C:/Music/Harbor Lights/01.mp3", "Solara", 1, 289.0),
@@ -8540,6 +8812,45 @@ mod external_library_tests {
         assert_eq!(prepared[0].album_id, prepared[1].album_id);
         assert_ne!(prepared[0].track_id, prepared[1].track_id);
         assert_eq!(prepared[0].track_id, prepared[0].recording_id);
+    }
+
+    #[test]
+    fn dominant_track_artist_supplies_missing_release_artist_without_hiding_compilations() {
+        let mut parsed = (1..=4)
+            .map(|number| {
+                parsed_track(
+                    &format!("C:/Music/Release/{number:02}.flac"),
+                    &format!("Track {number}"),
+                    number,
+                    200.0,
+                )
+            })
+            .collect::<Vec<_>>();
+        for track in &mut parsed {
+            track.album_artists.clear();
+        }
+        parsed[3].track_artists = vec!["Guest Performer".into()];
+        let mut interner = StringInterner::with_capacity(64);
+        let seeds = prepare_track_seeds(&parsed, &mut interner);
+        let inferred = infer_album_artists(&seeds, &HashMap::new());
+        assert_eq!(
+            inferred.values().next().map(String::as_str),
+            Some("Casey Rivers")
+        );
+
+        parsed[2].track_artists = vec!["Guest Performer".into()];
+        let seeds = prepare_track_seeds(&parsed, &mut interner);
+        let inferred = infer_album_artists(&seeds, &HashMap::new());
+        assert_eq!(
+            inferred.values().next().map(String::as_str),
+            Some("Various Artists"),
+            "track artists: {:?}; inferred: {:?}",
+            parsed
+                .iter()
+                .map(|track| &track.track_artists)
+                .collect::<Vec<_>>(),
+            inferred,
+        );
     }
 
     fn reusable_snapshot() -> ExistingFileSnapshot {
@@ -9202,7 +9513,10 @@ mod external_library_tests {
             Ok(_) => panic!("empty scan should be rejected"),
             Err(error) => error,
         };
-        assert!(error.to_string().contains("no supported audio files"));
+        assert!(
+            error.to_string().contains("no supported audio files"),
+            "unexpected empty scan error: {error}"
+        );
     }
 
     #[test]
@@ -9215,6 +9529,8 @@ mod external_library_tests {
                 album_artist: "Morgan Vale".to_string(),
                 paths: vec!["C:/Music/First Light".to_string()],
                 track_titles: vec!["Open the Morning".to_string(); 9],
+                track_durations: Vec::new(),
+                genres: Vec::new(),
                 release_dates: vec!["1982".to_string(); 9],
                 directory_years: Vec::new(),
             },
@@ -9226,6 +9542,8 @@ mod external_library_tests {
                 album_artist: "Morgan Vale".to_string(),
                 paths: vec!["C:/Music/First Light Special".to_string()],
                 track_titles: vec!["Open the Morning".to_string(); 12],
+                track_durations: Vec::new(),
+                genres: Vec::new(),
                 release_dates: vec!["2001".to_string(); 12],
                 directory_years: Vec::new(),
             },
@@ -9237,6 +9555,8 @@ mod external_library_tests {
                 album_artist: "Jordan Hale".to_string(),
                 paths: vec!["C:/Music/Night Signal".to_string()],
                 track_titles: vec!["One More Turn".to_string(); 15],
+                track_durations: Vec::new(),
+                genres: Vec::new(),
                 release_dates: vec!["2007".to_string(); 15],
                 directory_years: Vec::new(),
             },
@@ -9249,6 +9569,8 @@ mod external_library_tests {
                 album_artist: "Morgan Vale".to_string(),
                 paths: vec!["C:/Music/Archive/CD1".to_string()],
                 track_titles: vec!["Morning Line".to_string(); 30],
+                track_durations: Vec::new(),
+                genres: Vec::new(),
                 release_dates: vec!["1995".to_string(); 30],
                 directory_years: Vec::new(),
             },
@@ -9281,12 +9603,50 @@ mod external_library_tests {
     }
 
     #[test]
+    fn a_regional_single_variant_keeps_its_release_form() {
+        let release = |album_name: &str, path: &str| OwnedReleaseEvidence {
+            album_name: album_name.to_string(),
+            album_artist: "Artist".to_string(),
+            paths: vec![path.to_string(); 4],
+            track_titles: vec!["Lead Song".to_string(); 4],
+            track_durations: Vec::new(),
+            genres: Vec::new(),
+            release_dates: vec!["1995".to_string(); 4],
+            directory_years: vec!["1995".to_string(); 4],
+        };
+        let evidence = HashMap::from([
+            (
+                "original".to_string(),
+                release("Lead Song", "C:/Music/Artist/5 Single albums/Lead Song"),
+            ),
+            (
+                "regional".to_string(),
+                release(
+                    "Lead Song (UK CDS2 - Austria)",
+                    "C:/Music/Artist/5 Single albums/Lead Song UK",
+                ),
+            ),
+        ]);
+
+        let resolved = resolve_release_presentations(&evidence);
+        assert_eq!(resolved["regional"].primary_type, "Single");
+        assert_eq!(resolved["regional"].title, "Lead Song (UK CDS2 - Austria)");
+        assert_eq!(
+            resolved["regional"].original_album_id.as_deref(),
+            None,
+            "release variants only use edition linking for album-form releases"
+        );
+    }
+
+    #[test]
     fn ambiguous_original_candidates_do_not_drive_edition_inheritance() {
         let release = |album_name: &str| OwnedReleaseEvidence {
             album_name: album_name.to_string(),
             album_artist: "Morgan Vale".to_string(),
             paths: vec![format!("/Music/{album_name}")],
             track_titles: vec!["Pulse".to_string()],
+            track_durations: Vec::new(),
+            genres: Vec::new(),
             release_dates: vec!["1991".to_string()],
             directory_years: Vec::new(),
         };
@@ -9379,6 +9739,26 @@ mod external_library_tests {
     }
 
     #[test]
+    fn album_artwork_selection_keeps_file_level_cover_evidence() {
+        let mut first = parsed_track("disc-1/first.mp3", "First", 1, 1.0);
+        first.cover_url = "disc-1/front.jpg".into();
+        let mut second = parsed_track("disc-2/second.mp3", "Second", 2, 1.0);
+        second.cover_url = "disc-2/front.jpg".into();
+        let third = parsed_track("disc-3/third.mp3", "Third", 3, 1.0);
+        let mut parsed = vec![first, second, third];
+        let refresh_paths = parsed
+            .iter()
+            .map(|record| record.path.to_string())
+            .collect::<HashSet<_>>();
+
+        super::attach_one_embedded_cover_per_album(&mut parsed, &refresh_paths);
+
+        assert_eq!(parsed[0].cover_url, "disc-1/front.jpg");
+        assert_eq!(parsed[1].cover_url, "disc-2/front.jpg");
+        assert!(parsed[2].cover_url.is_empty());
+    }
+
+    #[test]
     fn core_reference_refresh_replaces_a_superseded_identity_at_the_same_path() {
         let mut connection = diesel::sqlite::SqliteConnection::establish(":memory:")
             .expect("in-memory core reference database");
@@ -9442,6 +9822,76 @@ mod external_library_tests {
     }
 
     #[test]
+    fn incremental_cleanup_follows_stable_files_to_superseded_normalized_identities() {
+        let mut connection = SqliteConnection::establish(":memory:")
+            .expect("in-memory normalized identity database");
+        connection
+            .batch_execute(
+                "CREATE TABLE track_entity (id TEXT PRIMARY KEY, album_id TEXT);
+                 CREATE TABLE track_file (track_id TEXT NOT NULL, file_id INTEGER NOT NULL);
+                 CREATE TEMP TABLE library_rebuild_stage (track_id TEXT NOT NULL, file_id INTEGER);
+                 CREATE TEMP TABLE affected_track (id TEXT PRIMARY KEY) WITHOUT ROWID;
+                 CREATE TEMP TABLE affected_album (id TEXT PRIMARY KEY) WITHOUT ROWID;
+                 INSERT INTO track_entity VALUES
+                    ('available-track', 'available-album'),
+                    ('unchanged-track', 'unchanged-album'),
+                    ('unrelated-track', 'unrelated-album');
+                 INSERT INTO track_file VALUES
+                    ('available-track', 10),
+                    ('unchanged-track', 20),
+                    ('unrelated-track', 30);
+                 INSERT INTO library_rebuild_stage VALUES
+                    ('enriched-track', 10),
+                    ('unchanged-track', 20);",
+            )
+            .expect("normalized identity fixture");
+
+        stage_superseded_file_identities(&mut connection).expect("stage superseded identities");
+
+        let tracks = diesel::sql_query("SELECT id FROM affected_track ORDER BY id")
+            .load::<super::TextIdRow>(&mut connection)
+            .expect("affected tracks")
+            .into_iter()
+            .map(|row| row.id)
+            .collect::<Vec<_>>();
+        let albums = diesel::sql_query("SELECT id FROM affected_album ORDER BY id")
+            .load::<super::TextIdRow>(&mut connection)
+            .expect("affected albums")
+            .into_iter()
+            .map(|row| row.id)
+            .collect::<Vec<_>>();
+
+        assert_eq!(tracks, ["available-track"]);
+        assert_eq!(albums, ["available-album"]);
+    }
+
+    #[test]
+    fn same_titled_releases_in_distinct_directories_keep_distinct_identities() {
+        let mut album_track = parsed_track(
+            "/music/artist/albums/2001-release/01.flac",
+            "Opening Track",
+            1,
+            240.0,
+        );
+        album_track.album = "Shared Title".into();
+        let mut single_track = parsed_track(
+            "/music/artist/singles/2002-release/01.flac",
+            "Shared Title",
+            1,
+            210.0,
+        );
+        single_track.album = "Shared Title".into();
+        let parsed = vec![album_track, single_track];
+        let mut interner = StringInterner::with_capacity(32);
+        let seeds = prepare_track_seeds(&parsed, &mut interner);
+        let album_artists = infer_album_artists(&seeds, &HashMap::new());
+        let prepared = prepare_tracks(seeds, &HashMap::new(), &album_artists, &mut interner);
+
+        assert_ne!(prepared[0].album_id, prepared[1].album_id);
+        assert_ne!(prepared[0].track_id, prepared[1].track_id);
+    }
+
+    #[test]
     fn editions_inherit_original_art_only_when_their_own_cover_is_unsuitable() {
         let directory =
             std::env::temp_dir().join(format!("music-edition-cover-test-{}", uuid::Uuid::new_v4()));
@@ -9467,6 +9917,8 @@ mod external_library_tests {
                 album_artist: "Morgan Vale".to_string(),
                 paths: vec!["/Music/Open Circuit".to_string()],
                 track_titles: vec!["Pulse".to_string()],
+                track_durations: Vec::new(),
+                genres: Vec::new(),
                 release_dates: vec!["1991".to_string()],
                 directory_years: Vec::new(),
             },
@@ -9478,6 +9930,8 @@ mod external_library_tests {
                 album_artist: "Morgan Vale".to_string(),
                 paths: vec!["/Music/Open Circuit Special Edition".to_string()],
                 track_titles: vec!["Pulse".to_string()],
+                track_durations: Vec::new(),
+                genres: Vec::new(),
                 release_dates: vec!["2001".to_string()],
                 directory_years: Vec::new(),
             },
@@ -10018,6 +10472,8 @@ mod external_library_tests {
                     album_artist: "Artist".into(),
                     paths: vec!["/music/live".into()],
                     track_titles: vec!["Live Song".into()],
+                    track_durations: Vec::new(),
+                    genres: Vec::new(),
                     release_dates: vec!["2000".into()],
                     directory_years: Vec::new(),
                 },
@@ -10029,6 +10485,8 @@ mod external_library_tests {
                     album_artist: "Other Artist".into(),
                     paths: vec!["/music/studio".into()],
                     track_titles: vec!["Song".into()],
+                    track_durations: Vec::new(),
+                    genres: Vec::new(),
                     release_dates: vec!["2001".into()],
                     directory_years: Vec::new(),
                 },
@@ -10145,6 +10603,141 @@ mod external_library_tests {
             "suspicious edition truncations: {suspicious:#?}"
         );
         println!("AUDITED_RAW_ALBUM_TITLES={}", titles.len());
+    }
+
+    #[test]
+    #[ignore = "requires PARSON_REBUILD_CATALOG_DB and mutates that explicit isolated database"]
+    fn rebuilds_external_catalog_from_persisted_metadata() {
+        let path = std::env::var("PARSON_REBUILD_CATALOG_DB")
+            .expect("PARSON_REBUILD_CATALOG_DB must point to an isolated catalog copy");
+        let mut connection = SqliteConnection::establish(&path).expect("open isolated catalog");
+        connection
+            .batch_execute("PRAGMA foreign_keys = ON;")
+            .expect("enable catalog integrity checks");
+        let snapshots = all_available_snapshots(&mut connection).expect("load persisted metadata");
+        let parsed = snapshots.iter().map(snapshot_to_parsed).collect::<Vec<_>>();
+        let file_ids = snapshots
+            .iter()
+            .map(|snapshot| (snapshot.path.clone(), snapshot.file_id))
+            .collect::<HashMap<_, _>>();
+        let changed_paths = parsed
+            .iter()
+            .map(|parsed| parsed.path.as_ref())
+            .collect::<HashSet<_>>();
+        let discovered_files = HashMap::new();
+        let artwork_hashes = diesel::sql_query("SELECT id, uri FROM artwork")
+            .load::<super::ArtworkIdentityRow>(&mut connection)
+            .expect("load persisted artwork identities")
+            .into_iter()
+            .map(|row| (row.uri, row.id))
+            .collect::<HashMap<_, _>>();
+
+        reconcile_normalized_tables(
+            &mut connection,
+            ReconcileInputs {
+                root_id: 0,
+                parsed_files: &parsed,
+                file_ids: &file_ids,
+                discovered_files: &discovered_files,
+                artwork_hashes: &artwork_hashes,
+                phase: LibraryIndexPhase::Enriched,
+                mode: IndexMode::Repair,
+                changed_paths: &changed_paths,
+            },
+        )
+        .expect("rebuild normalized catalog from persisted metadata");
+
+        let duplicate_file_links = diesel::sql_query(
+            "SELECT COUNT(*) AS count FROM (
+                 SELECT file_id FROM track_file GROUP BY file_id HAVING COUNT(*) > 1
+             )",
+        )
+        .get_result::<super::CountRow>(&mut connection)
+        .expect("audit duplicate file links")
+        .count;
+        let orphaned_search_documents = diesel::sql_query(
+            "SELECT COUNT(*) AS count FROM library_search_document document
+             WHERE (entity_type = 'album' AND NOT EXISTS (SELECT 1 FROM album_entity WHERE id = document.entity_id))
+                OR (entity_type = 'song' AND NOT EXISTS (SELECT 1 FROM track_entity WHERE id = document.entity_id))
+                OR (entity_type = 'artist' AND NOT EXISTS (SELECT 1 FROM artist_entity WHERE id = document.entity_id))",
+        )
+        .get_result::<super::CountRow>(&mut connection)
+        .expect("audit orphaned search documents")
+        .count;
+        assert_eq!(duplicate_file_links, 0);
+        assert_eq!(orphaned_search_documents, 0);
+        println!("REBUILT_FILES={}", snapshots.len());
+    }
+
+    #[test]
+    #[ignore = "requires PARSON_CATALOG_DB and audits cached release evidence"]
+    fn audits_external_catalog_release_classification() {
+        let path = std::env::var("PARSON_CATALOG_DB")
+            .expect("PARSON_CATALOG_DB must point to the catalog database");
+        let filter = std::env::var("PARSON_AUDIT_FILTER")
+            .unwrap_or_default()
+            .to_ascii_lowercase();
+        let mut connection = SqliteConnection::establish(&path).expect("open catalog read-only");
+        diesel::sql_query("PRAGMA query_only = ON")
+            .execute(&mut connection)
+            .expect("make catalog audit connection read-only");
+        let mut cached =
+            load_album_inference_cache(&mut connection).expect("load release evidence");
+        let durations = diesel::sql_query(
+            "SELECT album_id AS id, json_group_array(duration_seconds) AS durations_json
+             FROM track_entity GROUP BY album_id",
+        )
+        .load::<super::AlbumDurationsRow>(&mut connection)
+        .expect("load release durations");
+        for row in durations {
+            if let Some((evidence, _)) = cached.get_mut(&row.id) {
+                evidence.track_durations =
+                    serde_json::from_str(&row.durations_json).expect("decode release durations");
+            }
+        }
+        let mut categories = BTreeMap::<String, usize>::new();
+        let mut changed = BTreeMap::<(String, String), usize>::new();
+        let mut findings = Vec::new();
+
+        for (album_id, (evidence, stored)) in cached {
+            let classification = evidence.classify();
+            *categories
+                .entry(classification.primary_type.clone())
+                .or_default() += 1;
+            if stored.primary_type != classification.primary_type {
+                *changed
+                    .entry((
+                        stored.primary_type.clone(),
+                        classification.primary_type.clone(),
+                    ))
+                    .or_default() += 1;
+            }
+            let searchable =
+                format!("{} {}", evidence.album_artist, evidence.album_name).to_ascii_lowercase();
+            if (!filter.is_empty() && searchable.contains(&filter))
+                || (filter.is_empty()
+                    && (classification.confidence < 0.5
+                        || stored.primary_type != classification.primary_type))
+            {
+                findings.push(format!(
+                    "{:.3}\t{}\t{}\t{}\t{}\t{}\t{}",
+                    classification.confidence,
+                    stored.primary_type,
+                    classification.primary_type,
+                    evidence.track_titles.len(),
+                    evidence.album_artist,
+                    evidence.album_name,
+                    album_id,
+                ));
+            }
+        }
+        findings.sort();
+        println!("CATEGORY_COUNTS={categories:?}");
+        println!("CLASSIFICATION_CHANGES={changed:?}");
+        println!("AUDIT_FINDINGS={}", findings.len());
+        for finding in findings {
+            println!("{finding}");
+        }
     }
 }
 

@@ -20,7 +20,7 @@ type BoxError = Box<dyn Error + Send + Sync + 'static>;
 // Embed crates/backend/migrations.
 const MIGRATIONS: EmbeddedMigrations = embed_migrations!("./migrations");
 const V1_BASELINE_MIGRATION: &str = "20260719000000";
-const LAST_PRE_BASELINE_MIGRATION: &str = "20260717030000";
+const LEGACY_MUSIC_MIGRATION: &str = "20240721200400";
 const DEFAULT_SNAPSHOT_GENERATIONS: usize = 3;
 const DEFAULT_INTEGRITY_INTERVAL: Duration = Duration::from_secs(7 * 24 * 60 * 60);
 static DATABASE_POOL: OnceLock<Result<DbPool, String>> = OnceLock::new();
@@ -355,7 +355,7 @@ fn open_pool() -> Result<DbPool, BoxError> {
         "PRAGMA journal_mode = WAL;
          PRAGMA busy_timeout = 30000;",
     )?;
-    adopt_pre_baseline_migration_history(&mut connection)?;
+    prepare_legacy_schema_for_baseline(&mut connection)?;
     connection.run_pending_migrations(MIGRATIONS)?;
     let marker = startup_marker(&path);
     let abnormal_shutdown = marker.exists();
@@ -379,13 +379,10 @@ fn open_pool() -> Result<DbPool, BoxError> {
     Ok(pool)
 }
 
-/// Recognizes databases created by the final pre-1.0 migration set after that
-/// set was squashed into the 1.0 baseline. Without this bridge, Diesel attempts
-/// to apply the baseline to an already-populated database and fails at the first
-/// `CREATE TABLE` statement.
-fn adopt_pre_baseline_migration_history(
-    connection: &mut SqliteConnection,
-) -> Result<bool, BoxError> {
+/// Prepares the schema created by the deleted pre-1.0 migration for the
+/// idempotent v1 baseline. The baseline then creates every newer table, index,
+/// view, and trigger while preserving rows in the overlapping legacy tables.
+fn prepare_legacy_schema_for_baseline(connection: &mut SqliteConnection) -> Result<bool, BoxError> {
     let migration_tables = diesel::sql_query(
         "SELECT CAST(COUNT(*) AS BIGINT) AS count FROM sqlite_schema
          WHERE type = 'table' AND name = '__diesel_schema_migrations'",
@@ -395,27 +392,39 @@ fn adopt_pre_baseline_migration_history(
     if migration_tables == 0 {
         return Ok(false);
     }
-    let changed = diesel::sql_query(format!(
-        "INSERT INTO __diesel_schema_migrations (version, run_on)
-         SELECT '{V1_BASELINE_MIGRATION}', CURRENT_TIMESTAMP
-         WHERE EXISTS (
-             SELECT 1 FROM __diesel_schema_migrations
-             WHERE version = '{LAST_PRE_BASELINE_MIGRATION}'
-         )
-         AND NOT EXISTS (
-             SELECT 1 FROM __diesel_schema_migrations
-             WHERE version = '{V1_BASELINE_MIGRATION}'
-         )"
+    let legacy_recorded = diesel::sql_query(format!(
+        "SELECT CAST(COUNT(*) AS BIGINT) AS count
+         FROM __diesel_schema_migrations
+         WHERE version = '{LEGACY_MUSIC_MIGRATION}'"
     ))
-    .execute(connection)?;
-    if changed > 0 {
-        tracing::info!(
-            legacy_version = LAST_PRE_BASELINE_MIGRATION,
-            baseline_version = V1_BASELINE_MIGRATION,
-            "adopted pre-1.0 database migration history"
-        );
+    .get_result::<CountQueryRow>(connection)?
+    .count
+        > 0;
+    if !legacy_recorded {
+        return Ok(false);
     }
-    Ok(changed > 0)
+
+    let token_version_exists = diesel::sql_query(
+        "SELECT CAST(COUNT(*) AS BIGINT) AS count
+         FROM pragma_table_info('user') WHERE name = 'token_version'",
+    )
+    .get_result::<CountQueryRow>(connection)?
+    .count
+        > 0;
+    if token_version_exists {
+        return Ok(false);
+    }
+
+    connection.batch_execute(
+        "ALTER TABLE \"user\"
+         ADD COLUMN token_version INTEGER NOT NULL DEFAULT 0;",
+    )?;
+    tracing::info!(
+        legacy_version = LEGACY_MUSIC_MIGRATION,
+        baseline_version = V1_BASELINE_MIGRATION,
+        "prepared pre-1.0 database for the v1 baseline migration"
+    );
+    Ok(true)
 }
 
 fn migrate_legacy_database(legacy: &Path, product: &Path) -> Result<bool, std::io::Error> {
@@ -483,9 +492,9 @@ mod tests {
     }
 
     use super::{
-        LAST_PRE_BASELINE_MIGRATION, MIGRATIONS, V1_BASELINE_MIGRATION,
-        adopt_pre_baseline_migration_history, catalog_fingerprint, check_integrity,
-        create_verified_snapshot, recover_interrupted_scan_jobs, snapshot_files,
+        LEGACY_MUSIC_MIGRATION, MIGRATIONS, V1_BASELINE_MIGRATION, catalog_fingerprint,
+        check_integrity, create_verified_snapshot, prepare_legacy_schema_for_baseline,
+        recover_interrupted_scan_jobs, snapshot_files,
     };
     use diesel_migrations::MigrationHarness;
 
@@ -497,7 +506,7 @@ mod tests {
     }
 
     #[test]
-    fn final_pre_baseline_databases_adopt_the_squashed_migration() {
+    fn legacy_database_is_upgraded_by_the_idempotent_baseline() {
         let mut connection = SqliteConnection::establish(":memory:").expect("migration database");
         connection
             .batch_execute(&format!(
@@ -506,17 +515,39 @@ mod tests {
                     run_on TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
                  );
                  INSERT INTO __diesel_schema_migrations (version)
-                 VALUES ('{LAST_PRE_BASELINE_MIGRATION}');"
+                 VALUES ('{LEGACY_MUSIC_MIGRATION}');
+                 CREATE TABLE \"user\" (
+                    id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+                    name TEXT,
+                    username TEXT NOT NULL UNIQUE,
+                    password TEXT NOT NULL,
+                    image TEXT,
+                    bitrate INTEGER NOT NULL DEFAULT 0,
+                    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    now_playing TEXT,
+                    role TEXT NOT NULL DEFAULT 'user'
+                 );
+                 INSERT INTO \"user\" (username, password, role)
+                 VALUES ('legacy-admin', 'preserved-hash', 'admin');
+                 CREATE TABLE listen_history_item (
+                    id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL,
+                    song_id TEXT NOT NULL,
+                    listened_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+                 );
+                 CREATE INDEX idx_listen_history_user
+                 ON listen_history_item(user_id);"
             ))
-            .expect("legacy migration history");
+            .expect("legacy database fixture");
 
         assert!(
-            adopt_pre_baseline_migration_history(&mut connection).expect("adopt migration history")
+            prepare_legacy_schema_for_baseline(&mut connection).expect("prepare legacy schema")
         );
-        assert!(
-            !adopt_pre_baseline_migration_history(&mut connection)
-                .expect("migration adoption is idempotent")
-        );
+        connection
+            .run_pending_migrations(MIGRATIONS)
+            .expect("apply idempotent baseline");
+
         let adopted = diesel::sql_query(format!(
             "SELECT COUNT(*) AS count FROM __diesel_schema_migrations
              WHERE version = '{V1_BASELINE_MIGRATION}'"
@@ -525,6 +556,25 @@ mod tests {
         .expect("adopted migration count")
         .count;
         assert_eq!(adopted, 1);
+        let token_version = diesel::sql_query(
+            "SELECT CAST(token_version AS TEXT) AS value
+             FROM \"user\" WHERE username = 'legacy-admin'",
+        )
+        .get_result::<TextRow>(&mut connection)
+        .expect("preserved legacy account");
+        assert_eq!(token_version.value, "0");
+        let new_schema = diesel::sql_query(
+            "SELECT COUNT(*) AS count FROM sqlite_schema
+             WHERE type = 'table' AND name IN ('library_root', 'file_entry', 'playback_event')",
+        )
+        .get_result::<CountRow>(&mut connection)
+        .expect("new baseline tables")
+        .count;
+        assert_eq!(new_schema, 3);
+        assert!(
+            !prepare_legacy_schema_for_baseline(&mut connection)
+                .expect("legacy preparation is idempotent")
+        );
     }
 
     #[test]

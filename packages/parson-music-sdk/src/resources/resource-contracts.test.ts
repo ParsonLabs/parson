@@ -1,7 +1,11 @@
 import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
 import api, { ApiError } from "../core/http";
-import { getAlbumInfo, getAlbumInfos } from "./albums";
-import { getArtistInfo, getArtistInfos } from "./artists";
+import { clearCachedAlbumInfos, getAlbumInfo, getAlbumInfos } from "./albums";
+import {
+  clearCachedArtistInfos,
+  getArtistInfo,
+  getArtistInfos,
+} from "./artists";
 import {
   discoverNearbyServers,
   getLibrarySuggestions,
@@ -17,6 +21,7 @@ import {
 import {
   editAlbumMetadata,
   editLibraryMetadata,
+  clearCachedSongInfos,
   getSongInfo,
   getSongInfos,
   uploadAlbumCover,
@@ -38,6 +43,30 @@ test("favorite membership checks are bounded for embedded clients", async () => 
   expect(get).toHaveBeenCalledWith("/users/me/favorites/folder%2Fsong%20%231", {
     timeout: 4_000,
   });
+});
+
+test("catalog cache invalidation forces entity metadata to refresh", async () => {
+  const get = spyOn(api, "get").mockImplementation(async (path) => {
+    if (path === "/albums/cache-refresh") {
+      return { data: { Bare: { id: "cache-refresh" } } } as never;
+    }
+    if (path === "/artists/cache-refresh") {
+      return { data: { id: "cache-refresh" } } as never;
+    }
+    return { data: { Bare: { id: "cache-refresh" } } } as never;
+  });
+
+  await getAlbumInfo("cache-refresh");
+  await getArtistInfo("cache-refresh");
+  await getSongInfo("cache-refresh");
+  clearCachedAlbumInfos();
+  clearCachedArtistInfos();
+  clearCachedSongInfos();
+  await getAlbumInfo("cache-refresh");
+  await getArtistInfo("cache-refresh");
+  await getSongInfo("cache-refresh");
+
+  expect(get).toHaveBeenCalledTimes(6);
 });
 
 test("folder suggestions use the bounded setup endpoint", async () => {

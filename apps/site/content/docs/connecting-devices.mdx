@@ -14,13 +14,13 @@ Android discovers `_parson._tcp` services for a short window and validates each 
 
 ## Pairing and approval
 
-Parson 1.0.x uses account sign-in as device approval; it does not have a second QR pairing ceremony for normal devices. The discovery manifest says pairing is required because a device must authenticate before library access.
-
-The 12-character setup code is only for creating the **first** account from a non-local device. It is not a reusable device credential.
+Parson 1.0.x uses account sign-in as device approval; it does not have a second QR pairing ceremony for normal devices. The discovery manifest says pairing is required because a device must authenticate before library access. On a new server, the first account created becomes the administrator, so finish setup before exposing the server beyond a trusted network.
 
 ## Manual fallback
 
 If the library does not appear, choose **Enter address** and enter the full origin shown by Parson. On a trusted local network it normally looks like `http://computer-name:1993`. Remote deployments should use an HTTPS hostname. A QR fallback is not currently built in.
+
+Container discovery requires mDNS to reach the physical network. On a Linux NAS, use host networking for the Parson container if you want it to appear automatically; bridge networking still supports direct address entry.
 
 ## Revoke a device
 

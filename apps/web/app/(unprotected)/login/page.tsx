@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { login, refreshMediaToken } from "@parson/music-sdk";
 import { Input } from "@/components/ui/input";
@@ -16,6 +16,22 @@ export default function LoginPage() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [selectedLibrary, setSelectedLibrary] = useState("");
+  const [libraryAddress, setLibraryAddress] = useState("");
+
+  useEffect(() => {
+    const name = new URLSearchParams(window.location.search)
+      .get("library")
+      ?.trim();
+    if (!name) return;
+    setSelectedLibrary(name);
+    try {
+      const configured = window.localStorage.getItem("server_url");
+      setLibraryAddress(configured ? new URL(configured).host : "");
+    } catch {
+      setLibraryAddress("");
+    }
+  }, []);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -43,9 +59,19 @@ export default function LoginPage() {
 
   return (
     <main className="flex min-h-screen min-h-dvh items-center justify-center px-5 py-24">
-      <form onSubmit={submit} className="w-full max-w-sm space-y-4">
+      <form
+        onSubmit={submit}
+        className="w-full max-w-md space-y-4 motion-safe:animate-in motion-safe:fade-in-0 motion-safe:slide-in-from-right-2 motion-safe:duration-200"
+      >
         <ParsonBrandMark className="mb-7 h-16 w-16 sm:hidden" />
-        <h1 className="pb-2 text-3xl font-bold tracking-tight">Welcome back</h1>
+        <div className="pb-2">
+          <h1 className="text-3xl font-bold tracking-tight">
+            {selectedLibrary ? `Sign in to ${selectedLibrary}` : "Welcome back"}
+          </h1>
+          {libraryAddress && (
+            <p className="mt-2 text-sm text-zinc-500">{libraryAddress}</p>
+          )}
+        </div>
         <Input
           aria-label="Username"
           autoComplete="username"
@@ -74,7 +100,9 @@ export default function LoginPage() {
           className="block min-h-12 rounded-full py-3 text-center text-sm font-medium text-zinc-500 hover:bg-white/[0.04] hover:text-white"
           href="/connect"
         >
-          Connect to another server
+          {selectedLibrary
+            ? "Choose another library"
+            : "Connect to another library"}
         </Link>
       </form>
     </main>

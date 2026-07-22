@@ -1,6 +1,7 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
+import { invalidateCatalogRevisionQueries } from "@/features/library/library-readiness-state";
 import {
   Dialog,
   DialogContent,
@@ -18,12 +19,13 @@ import {
   indexLibrary,
   refreshCurrentLibrary,
 } from "@parson/music-sdk";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Folder, Loader2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
 export default function LibrarySettings() {
+  const queryClient = useQueryClient();
   const [desktop, setDesktop] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
   const [path, setPath] = useState("");
@@ -79,6 +81,7 @@ export default function LibrarySettings() {
     try {
       await refreshCurrentLibrary();
       await Promise.all([readiness.refetch(), catalog.refetch()]);
+      await invalidateCatalogRevisionQueries(queryClient);
       toast.success("Library checked for changes.");
     } catch {
       toast("Could not check the library right now.");
@@ -108,7 +111,7 @@ export default function LibrarySettings() {
                 : "Folders mounted and available to Parson."}
             </p>
           </div>
-          <Button onClick={() => void changeFolder()} variant="outline">
+          <Button onClick={() => void changeFolder()}>
             {paths.length
               ? desktop
                 ? "Change folder"

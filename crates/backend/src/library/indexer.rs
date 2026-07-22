@@ -44,7 +44,7 @@ use crate::persistence::connection::{DbPool, connect};
 
 const AUDIO_EXTENSIONS: &[&str] = &["mp3", "flac", "ogg", "m4a", "opus", "wav", "aiff", "alac"];
 const TAG_PARSER_VERSION: &str = "13";
-const COVER_RESOLVER_VERSION: &str = "3";
+const COVER_RESOLVER_VERSION: &str = "4";
 // Bump when release inference semantics change.
 const CLASSIFICATION_VERSION: &str = "7";
 const DATABASE_BATCH_SIZE: usize = 10_000;
@@ -137,6 +137,15 @@ struct FilesystemInventory {
 struct CoverResolution {
     path: String,
     content_hash: String,
+    preferred: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum CoverSuitability {
+    Fallback,
+    NearSquare,
+    Square,
+    Preferred,
 }
 
 #[derive(Debug, QueryableByName)]
@@ -890,6 +899,25 @@ fn raw_metadata_reusable(
         && (file.tag_fingerprint.is_none()
             || file.tag_fingerprint.as_deref() == snapshot.tag_fingerprint.as_deref())
         && snapshot.parser_version.as_deref() == Some(phase.parser_version())
+}
+
+fn reconcile_reused_cover(
+    parsed: &mut ParsedFile,
+    local_cover: String,
+    force_reselection: bool,
+) -> bool {
+    if force_reselection {
+        if local_cover == parsed.cover_url {
+            return false;
+        }
+        parsed.cover_url = local_cover;
+        return true;
+    }
+    if local_cover.is_empty() || local_cover == parsed.cover_url {
+        return false;
+    }
+    parsed.cover_url = local_cover;
+    true
 }
 
 fn discover_files(path_to_library: &str) -> FilesystemInventory {
@@ -2524,24 +2552,81 @@ fn filename_cover_score(path: &Path, album_directory: &Path) -> i32 {
         .split_whitespace()
         .collect::<Vec<_>>()
         .join(" ");
+    let compact = normalized.replace(' ', "");
     let tokens = normalized.split_whitespace().collect::<HashSet<_>>();
     let mut score = 0;
 
     if matches!(normalized.as_str(), "f" | "front") {
         score += 1_400;
-    } else if matches!(normalized.as_str(), "c" | "cover" | "folder" | "album") {
+    } else if matches!(normalized.as_str(), "cover" | "folder" | "album") {
         score += 1_200;
-    } else if tokens.contains("front") {
+    } else if tokens.contains("front") || compact.starts_with("front") || compact.ends_with("front")
+    {
         score += 1_000;
-    } else if tokens.contains("cover") || tokens.contains("folder") {
+    } else if tokens.contains("cover")
+        || tokens.contains("folder")
+        || tokens.contains("jacket")
+        || tokens.contains("sleeve")
+        || compact.starts_with("cover")
+        || compact.starts_with("folder")
+        || compact.starts_with("albumart")
+        || compact.starts_with("jacket")
+        || compact.starts_with("sleeve")
+    {
         score += 850;
     }
 
+    let non_front_prefix = [
+        "back",
+        "rear",
+        "booklet",
+        "tray",
+        "inlay",
+        "disc",
+        "disk",
+        "cd",
+        "inside",
+        "inner",
+        "spine",
+        "obi",
+        "label",
+        "matrix",
+        "artist",
+        "logo",
+        "fanart",
+        "banner",
+        "wallpaper",
+    ]
+    .iter()
+    .any(|prefix| compact.starts_with(prefix));
     if matches!(normalized.as_str(), "b" | "back" | "rear")
+        || non_front_prefix
+        || matches!(
+            compact.as_str(),
+            "coverback" | "coverrear" | "frontback" | "frontrear"
+        )
         || tokens.iter().any(|token| {
             matches!(
                 *token,
-                "back" | "rear" | "tray" | "inlay" | "booklet" | "disc" | "disk" | "cd"
+                "back"
+                    | "rear"
+                    | "tray"
+                    | "inlay"
+                    | "booklet"
+                    | "disc"
+                    | "disk"
+                    | "cd"
+                    | "inside"
+                    | "inner"
+                    | "spine"
+                    | "obi"
+                    | "label"
+                    | "matrix"
+                    | "artist"
+                    | "logo"
+                    | "fanart"
+                    | "banner"
+                    | "wallpaper"
             )
         })
     {
@@ -2565,29 +2650,37 @@ fn filename_cover_score(path: &Path, album_directory: &Path) -> i32 {
     score
 }
 
-fn cover_candidate_score(path: &Path, album_directory: &Path) -> i32 {
-    let mut score = filename_cover_score(path, album_directory);
-    if let Ok((width, height)) = image::image_dimensions(path) {
-        let shortest = width.min(height);
-        let longest = width.max(height);
-        if shortest > 0 {
-            let ratio = longest as f64 / shortest as f64;
-            if ratio <= 1.08 {
-                score += 500;
-            } else if ratio <= 1.25 {
-                score += 200;
-            } else {
-                score -= 250;
-            }
-        }
-        if shortest >= 500 {
-            score += 150;
-        } else if shortest < 200 {
-            score -= 250;
-        }
+fn cover_candidate_score(path: &Path, album_directory: &Path) -> Option<(i32, CoverSuitability)> {
+    let filename_score = filename_cover_score(path, album_directory);
+    let mut score = filename_score;
+    let (width, height) = image::image_dimensions(path).ok()?;
+    let shortest = width.min(height);
+    if shortest == 0 {
+        return None;
+    }
+    let longest = width.max(height);
+    let ratio = longest as f64 / shortest as f64;
+    if ratio <= 1.08 {
+        score += 500;
+    } else if ratio <= 1.25 {
+        score += 200;
+    } else {
+        score -= 250;
+    }
+    if shortest < 200 {
+        score -= 250;
     }
 
-    score
+    let suitability = if shortest < 200 || ratio > 1.25 {
+        CoverSuitability::Fallback
+    } else if ratio > 1.08 {
+        CoverSuitability::NearSquare
+    } else if filename_score >= 850 {
+        CoverSuitability::Preferred
+    } else {
+        CoverSuitability::Square
+    };
+    Some((score, suitability))
 }
 
 fn inventory_candidates(
@@ -2669,53 +2762,33 @@ fn resolve_inventory_cover(
     candidates: &[DiscoveredImage],
     album_directory: &Path,
 ) -> CoverResolution {
-    if let Some(candidate) = candidates
-        .iter()
-        .map(|candidate| {
-            (
-                candidate,
-                filename_cover_score(&candidate.path, album_directory),
-            )
-        })
-        .filter(|(_, score)| *score >= 1_000)
-        .max_by(|(left, left_score), (right, right_score)| {
-            left_score
-                .cmp(right_score)
-                .then_with(|| right.path.cmp(&left.path))
-        })
-        .map(|(candidate, _)| candidate)
-    {
-        return CoverResolution {
-            path: normalize_path(&candidate.path),
-            content_hash: hash_file(&candidate.path),
-        };
-    }
-
     candidates
         .iter()
-        .map(|candidate| {
-            (
-                candidate,
-                cover_candidate_score(&candidate.path, album_directory),
-            )
+        .filter_map(|candidate| {
+            cover_candidate_score(&candidate.path, album_directory)
+                .map(|(score, suitability)| (candidate, score, suitability))
         })
-        .filter(|(_, score)| *score >= 200)
-        .max_by(|(left, left_score), (right, right_score)| {
-            left_score
-                .cmp(right_score)
-                .then_with(|| right.path.cmp(&left.path))
-        })
-        .map(|(candidate, _)| CoverResolution {
+        .filter(|(_, score, _)| *score >= 200)
+        .max_by(
+            |(left, left_score, left_suitability), (right, right_score, right_suitability)| {
+                left_suitability
+                    .cmp(right_suitability)
+                    .then_with(|| left_score.cmp(right_score))
+                    .then_with(|| right.path.cmp(&left.path))
+            },
+        )
+        .map(|(candidate, _, suitability)| CoverResolution {
             path: normalize_path(&candidate.path),
             content_hash: hash_file(&candidate.path),
+            preferred: suitability == CoverSuitability::Preferred,
         })
         .unwrap_or_default()
 }
 
 #[cfg(test)]
-fn local_cover_for(path: &Path) -> String {
+fn local_cover_resolution_for(path: &Path) -> CoverResolution {
     let Some(directory) = path.parent() else {
-        return String::new();
+        return CoverResolution::default();
     };
     let album_directory = album_directory(directory);
     let inventory = discover_files(&normalize_path(album_directory));
@@ -2723,7 +2796,11 @@ fn local_cover_for(path: &Path) -> String {
         &inventory_candidates(&inventory, album_directory),
         album_directory,
     )
-    .path
+}
+
+#[cfg(test)]
+fn local_cover_for(path: &Path) -> String {
+    local_cover_resolution_for(path).path
 }
 
 fn cover_has_preferred_geometry(path: &str) -> bool {
@@ -2779,6 +2856,7 @@ fn persist_embedded_cover(
         return CoverResolution {
             path: normalize_path(&cover_path),
             content_hash,
+            preferred: true,
         };
     }
 
@@ -2789,6 +2867,7 @@ fn persist_embedded_cover(
         Ok(()) => CoverResolution {
             path: normalize_path(&cover_path),
             content_hash,
+            preferred: true,
         },
         Err(_)
             if cover_path
@@ -2799,6 +2878,7 @@ fn persist_embedded_cover(
             CoverResolution {
                 path: normalize_path(&cover_path),
                 content_hash,
+                preferred: true,
             }
         }
         Err(error) => {
@@ -4930,6 +5010,8 @@ fn resolve_local_covers(
                 .map(|row| CoverResolution {
                     path: row.cover_path.clone(),
                     content_hash: row.content_hash.clone().unwrap_or_default(),
+                    preferred: cover_candidate_score(Path::new(&row.cover_path), &directory)
+                        .is_some_and(|(_, suitability)| suitability == CoverSuitability::Preferred),
                 })
                 .unwrap_or_else(|| resolve_inventory_cover(&candidates, &directory));
             (directory, database_directory, signature, cover, cache_hit)
@@ -5253,10 +5335,15 @@ fn embedded_cover_representative<'a, S>(
 where
     S: std::borrow::Borrow<str> + Eq + std::hash::Hash,
 {
-    indices
-        .iter()
-        .filter_map(|index| parsed_files.get(*index))
-        .find(|parsed| refresh_paths.contains(parsed.path.as_ref()))
+    let refreshed = || {
+        indices
+            .iter()
+            .filter_map(|index| parsed_files.get(*index))
+            .filter(|parsed| refresh_paths.contains(parsed.path.as_ref()))
+    };
+    refreshed()
+        .find(|parsed| parsed.embedded_artwork.is_some())
+        .or_else(|| refreshed().next())
 }
 
 fn attach_one_embedded_cover_per_album<S>(
@@ -5373,6 +5460,52 @@ where
         artwork_hashes.insert(cover_path.clone(), content_hash);
     }
     artwork_hashes
+}
+
+fn attach_fallback_local_covers<S>(
+    parsed_files: &mut [ParsedFile],
+    fallback_covers: &HashMap<&str, String>,
+    refresh_paths: &HashSet<S>,
+) where
+    S: std::borrow::Borrow<str> + Eq + std::hash::Hash,
+{
+    let mut groups = HashMap::<String, Vec<usize>>::with_capacity(parsed_files.len());
+    for (index, parsed) in parsed_files.iter().enumerate() {
+        groups.entry(album_key(parsed)).or_default().push(index);
+    }
+
+    for indices in groups.values() {
+        if indices.iter().any(|index| {
+            parsed_files
+                .get(*index)
+                .is_some_and(|parsed| !parsed.cover_url.is_empty())
+        }) {
+            continue;
+        }
+        let fallback = indices
+            .iter()
+            .filter_map(|index| parsed_files.get(*index))
+            .filter_map(|parsed| Path::new(parsed.path.as_ref()).parent())
+            .map(normalize_path)
+            .filter_map(|directory| fallback_covers.get(directory.as_str()))
+            .min()
+            .cloned();
+        let Some(fallback) = fallback else {
+            continue;
+        };
+        let target = indices
+            .iter()
+            .copied()
+            .find(|index| {
+                parsed_files
+                    .get(*index)
+                    .is_some_and(|parsed| refresh_paths.contains(parsed.path.as_ref()))
+            })
+            .or_else(|| indices.first().copied());
+        if let Some(parsed) = target.and_then(|index| parsed_files.get_mut(index)) {
+            parsed.cover_url = fallback;
+        }
+    }
 }
 
 fn quality_rank(file: &DiscoveredFile, parsed: &ParsedFile) -> i32 {
@@ -7641,7 +7774,22 @@ fn index_library_to_database_phase(
     } else {
         HashMap::new()
     };
-    info!(covers = album_covers.len(), "library covers resolved");
+    let preferred_covers = album_covers
+        .values()
+        .filter(|cover| cover.preferred && !cover.path.is_empty())
+        .count();
+    let fallback_covers = album_covers
+        .values()
+        .filter(|cover| !cover.preferred && !cover.path.is_empty())
+        .count();
+    let missing_covers = album_covers
+        .values()
+        .filter(|cover| cover.path.is_empty())
+        .count();
+    info!(
+        preferred_covers,
+        fallback_covers, missing_covers, "library covers resolved"
+    );
     let local_covers = discovered
         .iter()
         .map(|file| {
@@ -7650,9 +7798,20 @@ fn index_library_to_database_phase(
                 file.directory.as_ref(),
                 album_covers
                     .get(directory)
+                    .filter(|cover| cover.preferred)
                     .map(|cover| cover.path.clone())
                     .unwrap_or_default(),
             )
+        })
+        .collect::<HashMap<_, _>>();
+    let fallback_local_covers = discovered
+        .iter()
+        .filter_map(|file| {
+            let directory = album_directory(&file.native_directory);
+            album_covers
+                .get(directory)
+                .filter(|cover| !cover.preferred && !cover.path.is_empty())
+                .map(|cover| (file.directory.as_ref(), cover.path.clone()))
         })
         .collect::<HashMap<_, _>>();
     let mut cover_discovery_us = elapsed_us(cover_started.elapsed());
@@ -7692,14 +7851,20 @@ fn index_library_to_database_phase(
             && raw_metadata_reusable(snapshot, file, phase)
         {
             let mut parsed = snapshot_to_parsed(snapshot);
-            if let Some(local_cover) = local_covers
+            let resolver_changed =
+                snapshot.cover_resolver_version.as_deref() != Some(COVER_RESOLVER_VERSION);
+            let local_cover = local_covers
                 .get(file.directory.as_ref())
-                .filter(|cover| !cover.is_empty() && **cover != parsed.cover_url)
-            {
-                parsed.cover_url.clone_from(local_cover);
+                .cloned()
+                .unwrap_or_default();
+            if reconcile_reused_cover(
+                &mut parsed,
+                local_cover,
+                mode == IndexMode::Repair || resolver_changed,
+            ) {
                 artwork_changed_paths.insert(file.path.clone());
             }
-            if snapshot.cover_resolver_version.as_deref() != Some(COVER_RESOLVER_VERSION)
+            if resolver_changed
                 || snapshot.classification_version.as_deref() != Some(CLASSIFICATION_VERSION)
             {
                 artwork_changed_paths.insert(file.path.clone());
@@ -7728,14 +7893,20 @@ fn index_library_to_database_phase(
         if let Some(snapshot) = renamed_snapshot {
             let mut parsed = snapshot_to_parsed(snapshot);
             parsed.path = file.path.clone();
-            if let Some(local_cover) = local_covers
+            let resolver_changed =
+                snapshot.cover_resolver_version.as_deref() != Some(COVER_RESOLVER_VERSION);
+            let local_cover = local_covers
                 .get(file.directory.as_ref())
-                .filter(|cover| !cover.is_empty() && **cover != parsed.cover_url)
-            {
-                parsed.cover_url.clone_from(local_cover);
+                .cloned()
+                .unwrap_or_default();
+            if reconcile_reused_cover(
+                &mut parsed,
+                local_cover,
+                mode == IndexMode::Repair || resolver_changed,
+            ) {
                 artwork_changed_paths.insert(file.path.clone());
             }
-            if snapshot.cover_resolver_version.as_deref() != Some(COVER_RESOLVER_VERSION)
+            if resolver_changed
                 || snapshot.classification_version.as_deref() != Some(CLASSIFICATION_VERSION)
             {
                 artwork_changed_paths.insert(file.path.clone());
@@ -7840,8 +8011,18 @@ fn index_library_to_database_phase(
     let embedded_cover_started = Instant::now();
     let mut embedded_cover_refresh_paths = artwork_changed_paths.clone();
     embedded_cover_refresh_paths.extend(changed.iter().map(|file| file.path.clone()));
+    if mode == IndexMode::Repair {
+        embedded_cover_refresh_paths.extend(parsed_files.iter().map(|file| file.path.clone()));
+    }
     let embedded_artwork_hashes = if phase == LibraryIndexPhase::Enriched && !projection_unchanged {
-        attach_one_embedded_cover_per_album(&mut parsed_files, &embedded_cover_refresh_paths)
+        let hashes =
+            attach_one_embedded_cover_per_album(&mut parsed_files, &embedded_cover_refresh_paths);
+        attach_fallback_local_covers(
+            &mut parsed_files,
+            &fallback_local_covers,
+            &embedded_cover_refresh_paths,
+        );
+        hashes
     } else {
         HashMap::new()
     };
@@ -9451,6 +9632,27 @@ mod external_library_tests {
     }
 
     #[test]
+    fn resolver_changes_clear_stale_fallbacks_without_clearing_warm_embedded_art() {
+        let mut stale = parsed_track("/library/release/01.flac", "First", 1, 180.0);
+        stale.cover_url = "/library/release/c.jpg".into();
+        assert!(super::reconcile_reused_cover(
+            &mut stale,
+            String::new(),
+            true
+        ));
+        assert!(stale.cover_url.is_empty());
+
+        let mut warm = parsed_track("/library/release/01.flac", "First", 1, 180.0);
+        warm.cover_url = "/managed/embedded.jpg".into();
+        assert!(!super::reconcile_reused_cover(
+            &mut warm,
+            String::new(),
+            false
+        ));
+        assert_eq!(warm.cover_url, "/managed/embedded.jpg");
+    }
+
+    #[test]
     fn artist_typo_gate_accepts_one_edit_but_not_similar_real_names() {
         assert!(artist_identity_is_one_edit_apart(
             "mrogan vale",
@@ -9833,9 +10035,13 @@ mod external_library_tests {
         for front_name in [
             "F.JPG",
             "front.jpeg",
+            "frontcover.jpg",
             "album-front.png",
+            "AlbumArtSmall.jpg",
             "folder.webp",
             "cover.jpg",
+            "jacket.jpg",
+            "sleeve.png",
         ] {
             let directory = std::env::temp_dir()
                 .join(format!("music-cover-alias-test-{}", uuid::Uuid::new_v4()));
@@ -9860,7 +10066,27 @@ mod external_library_tests {
     }
 
     #[test]
-    fn obvious_cover_name_is_selected_without_decoding_dimensions() {
+    fn ambiguous_single_letter_scan_does_not_override_an_earlier_square_candidate() {
+        let directory = std::env::temp_dir().join(format!(
+            "music-ambiguous-cover-test-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&directory).expect("create ambiguous cover fixture");
+        image::RgbImage::new(320, 320)
+            .save(directory.join("a.jpg"))
+            .expect("write first cover candidate");
+        image::RgbImage::new(1200, 1200)
+            .save(directory.join("c.jpg"))
+            .expect("write ambiguous scan candidate");
+
+        let selected = local_cover_for(&directory.join("track.mp3"));
+
+        assert!(selected.ends_with("a.jpg"), "selected {selected}");
+        std::fs::remove_dir_all(directory).expect("remove ambiguous cover fixture");
+    }
+
+    #[test]
+    fn corrupt_named_cover_does_not_override_a_decodable_candidate() {
         let directory =
             std::env::temp_dir().join(format!("music-obvious-cover-test-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&directory).expect("create obvious cover fixture");
@@ -9871,8 +10097,127 @@ mod external_library_tests {
             .expect("write decodable alternative fixture");
 
         let selected = local_cover_for(&directory.join("track.mp3"));
-        assert!(selected.ends_with("folder.jpg"), "selected {selected}");
+        assert!(selected.ends_with("scan.png"), "selected {selected}");
         std::fs::remove_dir_all(directory).expect("remove obvious cover fixture");
+    }
+
+    #[test]
+    fn ambiguous_artwork_is_fallback_while_square_named_front_art_is_preferred() {
+        let directory = std::env::temp_dir().join(format!(
+            "music-cover-confidence-test-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&directory).expect("create cover confidence fixture");
+
+        image::RgbImage::new(1200, 600)
+            .save(directory.join("cover.jpg"))
+            .expect("write panoramic named cover");
+        let panoramic = super::local_cover_resolution_for(&directory.join("track.mp3"));
+        assert!(panoramic.path.ends_with("cover.jpg"));
+        assert!(!panoramic.preferred);
+
+        image::RgbImage::new(600, 600)
+            .save(directory.join("scan.jpg"))
+            .expect("write square alternative");
+        let square_over_panorama = super::local_cover_resolution_for(&directory.join("track.mp3"));
+        assert!(square_over_panorama.path.ends_with("scan.jpg"));
+        assert!(!square_over_panorama.preferred);
+
+        std::fs::remove_file(directory.join("cover.jpg")).expect("remove panoramic cover");
+        std::fs::remove_file(directory.join("scan.jpg")).expect("remove square alternative");
+        image::RgbImage::new(1200, 600)
+            .save(directory.join("scan.jpg"))
+            .expect("write generic panoramic artwork");
+        let generic_panorama = super::local_cover_resolution_for(&directory.join("track.mp3"));
+        assert!(generic_panorama.path.is_empty());
+
+        std::fs::remove_file(directory.join("scan.jpg")).expect("remove generic panorama");
+        image::RgbImage::new(120, 120)
+            .save(directory.join("front.jpg"))
+            .expect("write tiny named cover");
+        let tiny = super::local_cover_resolution_for(&directory.join("track.mp3"));
+        assert!(tiny.path.ends_with("front.jpg"));
+        assert!(!tiny.preferred);
+
+        image::RgbImage::new(600, 600)
+            .save(directory.join("scan.jpg"))
+            .expect("write full-size alternative");
+        let full_size_over_tiny = super::local_cover_resolution_for(&directory.join("track.mp3"));
+        assert!(full_size_over_tiny.path.ends_with("scan.jpg"));
+        assert!(!full_size_over_tiny.preferred);
+
+        std::fs::remove_file(directory.join("front.jpg")).expect("remove tiny cover");
+        let generic = super::local_cover_resolution_for(&directory.join("track.mp3"));
+        assert!(generic.path.ends_with("scan.jpg"));
+        assert!(!generic.preferred);
+
+        std::fs::remove_file(directory.join("scan.jpg")).expect("remove generic artwork");
+        image::RgbImage::new(600, 600)
+            .save(directory.join("front.jpg"))
+            .expect("write square named cover");
+        let preferred = super::local_cover_resolution_for(&directory.join("track.mp3"));
+        assert!(preferred.path.ends_with("front.jpg"));
+        assert!(preferred.preferred);
+
+        std::fs::remove_dir_all(directory).expect("remove cover confidence fixture");
+    }
+
+    #[test]
+    fn back_and_booklet_art_are_not_used_as_last_resort_covers() {
+        for name in [
+            "back.jpg",
+            "backcover.jpg",
+            "coverback.jpg",
+            "front-back.jpg",
+            "rear.png",
+            "booklet01.jpg",
+            "traycard.jpg",
+            "inlay.png",
+            "cd1.jpg",
+            "disc.webp",
+            "inside.jpg",
+            "spine.jpg",
+            "obi.jpg",
+            "artist.jpg",
+            "logo.png",
+            "fanart.jpg",
+            "banner.jpg",
+        ] {
+            let directory = std::env::temp_dir().join(format!(
+                "music-non-front-cover-test-{}",
+                uuid::Uuid::new_v4()
+            ));
+            std::fs::create_dir_all(&directory).expect("create non-front fixture");
+            image::RgbImage::new(800, 800)
+                .save(directory.join(name))
+                .expect("write non-front artwork");
+
+            let selected = super::local_cover_resolution_for(&directory.join("track.mp3"));
+
+            assert!(selected.path.is_empty(), "selected {}", selected.path);
+            std::fs::remove_dir_all(directory).expect("remove non-front fixture");
+        }
+    }
+
+    #[test]
+    fn local_fallback_is_used_only_when_embedded_art_is_absent() {
+        let fallback_covers =
+            HashMap::from([("/library/release", "/library/release/a.jpg".to_string())]);
+        let refresh_paths = HashSet::from(["/library/release/01.flac".to_string()]);
+        let mut with_embedded = vec![parsed_track("/library/release/01.flac", "First", 1, 180.0)];
+        with_embedded[0].cover_url = "/managed/embedded.jpg".into();
+
+        super::attach_fallback_local_covers(&mut with_embedded, &fallback_covers, &refresh_paths);
+        assert_eq!(with_embedded[0].cover_url, "/managed/embedded.jpg");
+
+        let mut without_embedded =
+            vec![parsed_track("/library/release/01.flac", "First", 1, 180.0)];
+        super::attach_fallback_local_covers(
+            &mut without_embedded,
+            &fallback_covers,
+            &refresh_paths,
+        );
+        assert_eq!(without_embedded[0].cover_url, "/library/release/a.jpg");
     }
 
     #[test]
@@ -9888,6 +10233,23 @@ mod external_library_tests {
             .expect("one changed representative");
 
         assert_eq!(&*representative.path, "first.mp3");
+    }
+
+    #[test]
+    fn embedded_cover_lookup_prefers_a_track_with_known_artwork() {
+        let first = parsed_track("first.mp3", "First", 1, 1.0);
+        let mut second = parsed_track("second.mp3", "Second", 2, 1.0);
+        second.embedded_artwork = Some(super::EmbeddedArtworkRegion {
+            offset: 128,
+            length: 512,
+        });
+        let parsed = vec![first, second];
+        let refresh_paths = HashSet::from(["first.mp3".to_string(), "second.mp3".to_string()]);
+
+        let representative = embedded_cover_representative(&[0, 1], &parsed, &refresh_paths)
+            .expect("one artwork-bearing representative");
+
+        assert_eq!(&*representative.path, "second.mp3");
     }
 
     #[test]
@@ -10126,6 +10488,28 @@ mod external_library_tests {
         let selected = local_cover_for(&disc.join("01 Track.mp3"));
         assert!(selected.ends_with("front.jpg"), "selected {selected}");
         std::fs::remove_dir_all(directory).expect("remove multidisc fixture");
+    }
+
+    #[test]
+    fn artwork_subdirectories_contribute_front_covers_without_contributing_back_scans() {
+        let directory = std::env::temp_dir().join(format!(
+            "music-artwork-directory-test-{}",
+            uuid::Uuid::new_v4()
+        ));
+        let artwork = directory.join("Artwork");
+        std::fs::create_dir_all(&artwork).expect("create artwork directory fixture");
+        image::RgbImage::new(900, 900)
+            .save(directory.join("back.jpg"))
+            .expect("write release-level back scan");
+        image::RgbImage::new(600, 600)
+            .save(artwork.join("front.jpg"))
+            .expect("write nested front cover");
+
+        let selected = super::local_cover_resolution_for(&directory.join("track.flac"));
+
+        assert!(selected.path.ends_with("Artwork/front.jpg"));
+        assert!(selected.preferred);
+        std::fs::remove_dir_all(directory).expect("remove artwork directory fixture");
     }
 
     #[test]
@@ -10677,7 +11061,7 @@ mod external_library_tests {
                     .is_some_and(|stem| {
                         matches!(
                             stem.to_ascii_lowercase().as_str(),
-                            "f" | "c" | "front" | "cover" | "folder"
+                            "f" | "front" | "cover" | "folder"
                         )
                     })
             });

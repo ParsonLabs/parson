@@ -58,20 +58,22 @@ export default function AlbumCard({
 
         <div className="pointer-events-none relative z-[1] mt-3 w-full">
           <p
-            className="truncate text-sm font-semibold leading-5 text-zinc-100"
+            className="line-clamp-2 min-h-10 text-sm font-semibold leading-5 text-zinc-100"
             title={album_name}
           >
             {album_name}
           </p>
 
-          <p className="min-w-0 text-sm leading-5 text-zinc-500">
-            <Link
-              className="pointer-events-auto relative z-10 truncate hover:text-white hover:underline"
-              href={`/artist?id=${artist_id}`}
-            >
-              {artist_name || "Album"}
-            </Link>
-          </p>
+          {artist_name && (
+            <p className="min-w-0 text-sm leading-5 text-zinc-500">
+              <Link
+                className="pointer-events-auto relative z-10 truncate hover:text-white hover:underline"
+                href={`/artist?id=${artist_id}`}
+              >
+                {artist_name}
+              </Link>
+            </p>
+          )}
         </div>
       </div>
     </AlbumMenu>

@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { PermissionsAndroid, Platform } from "react-native";
 
 import ParsonDiscovery from "../../modules/parson-discovery";
 import { useSession } from "@/providers/session-provider";
@@ -36,7 +37,24 @@ export function useLibraryDiscovery() {
         void tryPending();
       },
     );
-    ParsonDiscovery.start();
+    void (async () => {
+      try {
+        if (Platform.OS === "android" && Number(Platform.Version) >= 33) {
+          const permission = PermissionsAndroid.PERMISSIONS.NEARBY_WIFI_DEVICES;
+          if (!(await PermissionsAndroid.check(permission))) {
+            await PermissionsAndroid.request(permission, {
+              title: "Find your Parson library",
+              message:
+                "Allow nearby-device access so Parson can find music libraries on this network.",
+              buttonPositive: "Allow",
+              buttonNegative: "Not now",
+            });
+          }
+        }
+      } finally {
+        if (active) ParsonDiscovery.start();
+      }
+    })();
     return () => {
       active = false;
       pending.length = 0;

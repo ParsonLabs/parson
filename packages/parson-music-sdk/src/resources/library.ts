@@ -81,6 +81,10 @@ export interface LibraryRefreshResult {
   failures: Array<{ path: string; message: string }>;
 }
 
+export interface LibraryRoot {
+  path: string;
+}
+
 export interface SetupStatus {
   server_ready: boolean;
   setup_required: boolean;
@@ -147,6 +151,11 @@ export function getLibraryUnavailable(error: unknown): LibraryReadiness | null {
 export async function getLibraryReadiness(): Promise<LibraryReadiness> {
   const response = await api.get<LibraryReadiness>("/library/status");
   return response.data;
+}
+
+export async function getLibraryRoots(): Promise<LibraryRoot[]> {
+  const response = await api.get<LibraryRoot[]>("/library/roots");
+  return Array.isArray(response.data) ? response.data : [];
 }
 
 export async function getSetupStatus(baseURL?: string): Promise<SetupStatus> {

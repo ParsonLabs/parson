@@ -10,7 +10,7 @@ import {
   discoverNearbyServers,
   type DiscoveredServer,
 } from "@parson/music-sdk";
-import { Laptop, Loader2, RefreshCw, Server } from "lucide-react";
+import { Laptop, Loader2, RefreshCw, Radio } from "lucide-react";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { toast } from "sonner";
 
@@ -55,11 +55,16 @@ export default function ServerConnectionPanel() {
   return (
     <div className="grid gap-8">
       <section>
-        <h2 className="text-base font-semibold text-white">Current server</h2>
+        <h2 className="text-base font-semibold text-white">
+          Library availability
+        </h2>
+        <p className="mt-1 text-sm text-zinc-500">
+          Parson is available to your devices.
+        </p>
         <div className="mt-3 flex items-center gap-3 rounded-lg border border-white/10 p-4">
           <Laptop className="h-5 w-5 text-zinc-400" />
           <div className="min-w-0 flex-1">
-            <p className="text-sm font-medium text-white">This library</p>
+            <p className="text-sm font-medium text-white">Local address</p>
             <p className="truncate text-xs text-zinc-500">{currentOrigin}</p>
           </div>
           <span className="text-xs text-zinc-500">Connected</span>
@@ -69,13 +74,15 @@ export default function ServerConnectionPanel() {
       <section>
         <div className="flex items-center justify-between gap-3">
           <div>
-            <h2 className="text-base font-semibold text-white">Nearby</h2>
+            <h2 className="text-base font-semibold text-white">
+              Nearby libraries
+            </h2>
             <p className="mt-1 text-sm text-zinc-500">
-              Parson libraries advertised on your local network.
+              Parson libraries and devices available on your local network.
             </p>
           </div>
           <Button
-            aria-label="Look for nearby servers"
+            aria-label="Look for nearby devices"
             className="border-white/10 bg-transparent text-zinc-300 hover:bg-white/5"
             disabled={discoveryState === "loading"}
             onClick={() => void refreshDiscovery()}
@@ -103,7 +110,7 @@ export default function ServerConnectionPanel() {
                     className="flex items-center gap-3 p-4"
                     key={server.instanceId}
                   >
-                    <Server className="h-5 w-5 text-zinc-500" />
+                    <Radio className="h-5 w-5 text-zinc-500" />
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-sm font-medium text-white">
                         {server.name}
@@ -128,22 +135,20 @@ export default function ServerConnectionPanel() {
             <p className="p-4 text-sm text-zinc-500">
               {discoveryState === "error"
                 ? "Nearby discovery is unavailable. You can still enter an address below."
-                : "No other Parson libraries found."}
+                : "No other Parson devices found."}
             </p>
           )}
         </div>
       </section>
 
       <section>
-        <h2 className="text-base font-semibold text-white">
-          Connect by address
-        </h2>
+        <h2 className="text-base font-semibold text-white">Pair a device</h2>
         <p className="mt-1 text-sm text-zinc-500">
-          Enter a hostname or IP address. Port 1993 is used automatically.
+          Enter the address shown by Parson on the other device.
         </p>
         <form className="mt-3 flex gap-3" onSubmit={connectManual}>
           <Input
-            aria-label="Parson server address"
+            aria-label="Parson device address"
             onChange={(event) => setManualServer(event.target.value)}
             placeholder="music-room.local or 192.168.1.20"
             value={manualServer}

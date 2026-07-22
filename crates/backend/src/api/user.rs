@@ -24,6 +24,78 @@ use crate::recommendation::{
 };
 use std::collections::HashMap;
 
+#[derive(Serialize)]
+struct SettingsUser {
+    id: i32,
+    username: String,
+    role: String,
+}
+
+#[get("")]
+async fn get_users(
+    pool: web::Data<DbPool>,
+    request: HttpRequest,
+) -> Result<HttpResponse, Box<dyn Error>> {
+    use crate::persistence::schema::user::dsl::*;
+
+    let authenticated = match authenticated_user_id(&request) {
+        Ok(authenticated) => authenticated,
+        Err(response) => return Ok(response),
+    };
+    let users_pool = pool.get_ref().clone();
+    let result = web::block(move || -> Result<Option<Vec<SettingsUser>>, String> {
+        let mut connection = users_pool.get().map_err(|error| error.to_string())?;
+        let requester_role = user
+            .filter(id.eq(authenticated))
+            .select(role)
+            .first::<String>(&mut connection)
+            .optional()
+            .map_err(|error| error.to_string())?;
+        if requester_role.as_deref() != Some("admin") {
+            return Ok(None);
+        }
+        user.order(username.asc())
+            .select((id, username, role))
+            .load::<(i32, String, String)>(&mut connection)
+            .map(|users| {
+                Some(
+                    users
+                        .into_iter()
+                        .map(|(user_id, user_name, user_role)| SettingsUser {
+                            id: user_id,
+                            username: user_name,
+                            role: user_role,
+                        })
+                        .collect(),
+                )
+            })
+            .map_err(|error| error.to_string())
+    })
+    .await;
+
+    match result {
+        Ok(Ok(Some(users))) => Ok(HttpResponse::Ok().json(users)),
+        Ok(Ok(None)) => Ok(crate::api::error::forbidden(
+            "Administrator access is required.",
+            "admin_required",
+        )),
+        Ok(Err(error)) => {
+            tracing::error!(%error, "user list lookup failed");
+            Ok(internal_server_error(
+                "Could not load users.",
+                "users_load_failed",
+            ))
+        }
+        Err(error) => {
+            tracing::error!(%error, "user list worker failed");
+            Ok(internal_server_error(
+                "Could not load users.",
+                "users_load_failed",
+            ))
+        }
+    }
+}
+
 fn hydrate_song_ids(ids: Vec<String>, cache: &LibraryCache) -> Vec<ResponseSong> {
     let mut seen = std::collections::HashSet::new();
     ids.into_iter()
@@ -1076,6 +1148,7 @@ pub async fn fetch_recommended_song_ids(
 pub fn configure(cfg: &mut web::ServiceConfig) {
     cfg.service(
         web::scope("/users")
+            .service(get_users)
             .service(change_password)
             .service(get_listen_history_songs)
             .service(get_listen_history)

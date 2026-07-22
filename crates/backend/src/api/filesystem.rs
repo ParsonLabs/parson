@@ -17,9 +17,11 @@ pub struct Directory {
 #[derive(Deserialize)]
 pub struct ListQuery {
     pub path: String,
+    #[serde(default)]
+    pub show_hidden: bool,
 }
 
-pub async fn list_path(directory_path: &str) -> io::Result<Vec<Directory>> {
+pub async fn list_path(directory_path: &str, show_hidden: bool) -> io::Result<Vec<Directory>> {
     if directory_path.is_empty() || directory_path.len() > MAX_DIRECTORY_PATH_BYTES {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
@@ -39,6 +41,9 @@ pub async fn list_path(directory_path: &str) -> io::Result<Vec<Directory>> {
                 ));
             }
             let name = entry.file_name().into_string().unwrap_or_default();
+            if !show_hidden && name.starts_with('.') {
+                continue;
+            }
             directories.push(Directory {
                 name,
                 path: path.to_string_lossy().to_string(),
@@ -52,7 +57,7 @@ pub async fn list_path(directory_path: &str) -> io::Result<Vec<Directory>> {
 
 #[get("")]
 pub async fn list_directory(query: web::Query<ListQuery>) -> impl Responder {
-    match list_path(&query.path).await {
+    match list_path(&query.path, query.show_hidden).await {
         Ok(directories) => HttpResponse::Ok().json(directories),
         Err(_) => internal_server_error("Failed to list directory.", "list_directory_failed"),
     }
@@ -69,13 +74,13 @@ mod tests {
     #[actix_web::test]
     async fn directory_paths_are_bounded_before_filesystem_access() {
         assert_eq!(
-            list_path("")
+            list_path("", false)
                 .await
                 .expect_err("empty paths should fail")
                 .kind(),
             std::io::ErrorKind::InvalidInput
         );
-        let error = list_path(&"x".repeat(MAX_DIRECTORY_PATH_BYTES + 1))
+        let error = list_path(&"x".repeat(MAX_DIRECTORY_PATH_BYTES + 1), false)
             .await
             .expect_err("oversized directory path should fail");
         assert_eq!(error.kind(), std::io::ErrorKind::InvalidInput);
@@ -86,14 +91,22 @@ mod tests {
         let root = std::env::temp_dir().join(format!("music-fs-test-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(root.join("z-last")).unwrap();
         std::fs::create_dir_all(root.join("a-first")).unwrap();
+        std::fs::create_dir_all(root.join(".hidden")).unwrap();
         std::fs::write(root.join("ignored.mp3"), b"fixture").unwrap();
 
-        let directories = list_path(root.to_str().unwrap()).await.unwrap();
+        let directories = list_path(root.to_str().unwrap(), false).await.unwrap();
         let names = directories
             .into_iter()
             .map(|entry| entry.name)
             .collect::<Vec<_>>();
         assert_eq!(names, ["a-first", "z-last"]);
+
+        let directories = list_path(root.to_str().unwrap(), true).await.unwrap();
+        let names = directories
+            .into_iter()
+            .map(|entry| entry.name)
+            .collect::<Vec<_>>();
+        assert_eq!(names, [".hidden", "a-first", "z-last"]);
 
         std::fs::remove_dir_all(root).unwrap();
     }

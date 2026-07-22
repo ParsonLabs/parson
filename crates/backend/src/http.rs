@@ -4,7 +4,7 @@ use actix_web::dev::{ServiceRequest, ServiceResponse};
 use actix_web::http::header::HeaderValue;
 use actix_web::http::{Method, header};
 use actix_web::middleware::Next;
-use actix_web::{Error, HttpMessage, HttpRequest};
+use actix_web::{Error, HttpMessage};
 use std::time::Instant;
 
 const REQUEST_ID_HEADER: &str = "x-request-id";
@@ -12,23 +12,6 @@ const CONTENT_SECURITY_POLICY: &str = "default-src 'self'; base-uri 'self'; obje
 
 #[derive(Clone, Debug)]
 pub struct RequestId(pub String);
-
-pub fn request_is_local_loopback(request: &HttpRequest) -> bool {
-    let peer_is_loopback = request
-        .peer_addr()
-        .is_some_and(|address| address.ip().is_loopback());
-    let host = request.connection_info().host().to_ascii_lowercase();
-    let host_is_loopback = host == "localhost"
-        || host.starts_with("localhost:")
-        || host == "[::1]"
-        || host.starts_with("[::1]:")
-        || host
-            .split_once(':')
-            .map_or(host.as_str(), |(address, _)| address)
-            .parse::<std::net::IpAddr>()
-            .is_ok_and(|address| address.is_loopback());
-    peer_is_loopback && host_is_loopback
-}
 
 fn valid_request_id(value: &str) -> bool {
     !value.is_empty()
@@ -135,6 +118,7 @@ pub fn cors() -> Cors {
             header::ACCEPT,
             header::CONTENT_TYPE,
             header::HeaderName::from_static(REQUEST_ID_HEADER),
+            header::HeaderName::from_static("x-parson-client"),
         ])
         .expose_headers([header::HeaderName::from_static(REQUEST_ID_HEADER)])
         .supports_credentials()
@@ -155,10 +139,7 @@ mod tests {
         App, HttpMessage, HttpRequest, HttpResponse, middleware, test as actix_test, web,
     };
 
-    use super::{
-        REQUEST_ID_HEADER, RequestId, origin_matches_host, request_context,
-        request_is_local_loopback,
-    };
+    use super::{REQUEST_ID_HEADER, RequestId, origin_matches_host, request_context};
 
     #[test]
     fn same_origin_lan_hosts_are_allowed_without_opening_cross_origin_access() {
@@ -171,21 +152,6 @@ mod tests {
             "http://attacker.example",
             "192.168.1.25:1993"
         ));
-    }
-
-    #[test]
-    fn local_setup_requires_both_a_loopback_peer_and_loopback_host() {
-        let local = actix_test::TestRequest::default()
-            .peer_addr("127.0.0.1:4000".parse().unwrap())
-            .insert_header((header::HOST, "127.0.0.1:1993"))
-            .to_http_request();
-        assert!(request_is_local_loopback(&local));
-
-        let reverse_proxied = actix_test::TestRequest::default()
-            .peer_addr("127.0.0.1:4000".parse().unwrap())
-            .insert_header((header::HOST, "music.example.com"))
-            .to_http_request();
-        assert!(!request_is_local_loopback(&reverse_proxied));
     }
 
     async fn request_id(req: HttpRequest) -> HttpResponse {

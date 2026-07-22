@@ -11,7 +11,7 @@ use crate::api::auth::{
 use crate::api::image::image;
 use crate::api::library::{
     head_stream_song, index, library_catalog, library_catalog_artists, library_readiness,
-    library_refresh, stream_song,
+    library_refresh, library_roots, stream_song,
 };
 use crate::api::{
     album, artist, cast, filesystem, genres, home, lyrics, metadata, playback, playlist, search,
@@ -47,7 +47,8 @@ fn library_routes_at(path: &'static str) -> impl HttpServiceFactory {
             web::scope("")
                 .wrap(HttpAuthentication::with_fn(admin_guard))
                 .service(index)
-                .service(library_refresh),
+                .service(library_refresh)
+                .service(library_roots),
         )
 }
 

@@ -51,6 +51,10 @@ export function replaceCachedAlbumInfo(id: string, album: LibraryAlbum) {
   writeCachedAlbumInfo(id, false, album);
 }
 
+export function clearCachedAlbumInfos() {
+  albumInfoCache.clear();
+}
+
 export async function getRandomAlbum(amount: number): Promise<LibraryAlbum[]> {
   const response = await api.get<LibraryAlbum[]>(`/albums/random/${amount}`);
   return response.data;

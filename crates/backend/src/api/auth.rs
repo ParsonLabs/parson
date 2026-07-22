@@ -587,23 +587,18 @@ pub struct RegisterData {
     pub username: String,
     pub password: String,
     pub role: String,
-    #[serde(default)]
-    pub setup_code: Option<String>,
 }
 
-fn setup_code_matches(provided: Option<&str>) -> bool {
-    let expected = crate::settings::initial_setup_code();
-    let Some(provided) = provided.map(str::trim) else {
-        return false;
-    };
-    provided.len() == expected.len()
-        && provided
-            .bytes()
-            .zip(expected.bytes())
-            .fold(0_u8, |difference, (left, right)| {
-                difference | (left ^ right)
-            })
-            == 0
+fn registration_role(
+    existing_users_count: i64,
+    authorized_role: Option<&str>,
+) -> Result<String, &'static str> {
+    if existing_users_count == 0 {
+        return Ok("admin".to_string());
+    }
+    authorized_role
+        .map(str::to_string)
+        .ok_or("admin_authorization_required")
 }
 
 #[post("/register")]
@@ -640,8 +635,6 @@ pub async fn register(
             ));
         }
     };
-    let initial_registration_authorized = crate::http::request_is_local_loopback(&req)
-        || setup_code_matches(form.setup_code.as_deref());
     let registration_pool = pool.get_ref().clone();
     let registration_username = form.username.clone();
     let registration_password = form.password.clone();
@@ -652,16 +645,11 @@ pub async fn register(
         connection
             .immediate_transaction::<_, diesel::result::Error, _>(|connection| {
                 let existing_users_count: i64 = user.count().get_result(connection)?;
-                let new_user_role = if existing_users_count == 0 {
-                    if !initial_registration_authorized {
-                        return Ok(Err("setup_code_required"));
-                    }
-                    "admin".to_string()
-                } else if let Some(requested_role) = authorized_role.as_ref() {
-                    requested_role.clone()
-                } else {
-                    return Ok(Err("admin_authorization_required"));
-                };
+                let new_user_role =
+                    match registration_role(existing_users_count, authorized_role.as_deref()) {
+                        Ok(selected_role) => selected_role,
+                        Err(error) => return Ok(Err(error)),
+                    };
                 let new_user = NewUser {
                     username: registration_username.clone(),
                     password: hashed_password.clone(),
@@ -681,9 +669,6 @@ pub async fn register(
             clear_auth_attempts(&attempt_key);
             HttpResponse::Ok().json(auth_response(true, Some("User registered successfully")))
         }
-        Ok(Ok(Err("setup_code_required"))) => HttpResponse::Unauthorized().json(auth_error(
-            "Enter the setup code shown in the Parson server log.",
-        )),
         Ok(Ok(Err(_))) => HttpResponse::Unauthorized()
             .json(auth_error("A valid administrator session is required")),
         Ok(Err(error)) => {
@@ -1098,8 +1083,8 @@ mod tests {
         ACCESS_TOKEN_COOKIE, Claims, NATIVE_CLIENT_HEADER, REFRESH_TOKEN_COOKIE,
         claims_are_current, clear_auth_attempts, client_attempt_key, generate_access_token,
         generate_media_token, generate_refresh_token, hash_password, is_valid,
-        media_token_from_service_request, record_auth_attempt, refresh, request_has_current_admin,
-        setup_code_matches, token_from_service_request, valid_password, valid_username,
+        media_token_from_service_request, record_auth_attempt, refresh, registration_role,
+        request_has_current_admin, token_from_service_request, valid_password, valid_username,
         verify_password,
     };
     use actix_web::{
@@ -1144,12 +1129,13 @@ mod tests {
     }
 
     #[test]
-    fn setup_codes_are_exact_and_allow_pasted_whitespace() {
-        let expected = crate::settings::initial_setup_code();
-        assert_eq!(expected.len(), 12);
-        assert!(setup_code_matches(Some(&format!(" {expected}\n"))));
-        assert!(!setup_code_matches(None));
-        assert!(!setup_code_matches(Some(&expected.to_lowercase())));
+    fn first_registration_is_admin_without_bootstrap_credentials() {
+        assert_eq!(registration_role(0, None), Ok("admin".to_string()));
+        assert_eq!(
+            registration_role(1, None),
+            Err("admin_authorization_required")
+        );
+        assert_eq!(registration_role(1, Some("user")), Ok("user".to_string()));
     }
 
     #[actix_web::test]

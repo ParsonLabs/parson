@@ -778,6 +778,22 @@ pub async fn library_readiness(lifecycle: web::Data<LibraryLifecycle>) -> impl R
     }))
 }
 
+#[derive(Serialize)]
+pub struct LibraryRootResponse {
+    path: String,
+}
+
+#[get("/roots")]
+pub async fn library_roots() -> impl Responder {
+    HttpResponse::Ok().json(
+        read_library_paths()
+            .await
+            .into_iter()
+            .map(|path| LibraryRootResponse { path })
+            .collect::<Vec<_>>(),
+    )
+}
+
 #[derive(Deserialize)]
 pub struct CatalogQuery {
     pub offset: Option<usize>,

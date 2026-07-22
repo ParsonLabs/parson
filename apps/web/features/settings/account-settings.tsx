@@ -10,7 +10,7 @@ import { toast } from "sonner";
 import { PasswordForm } from "./password-form";
 
 export default function AccountSettings() {
-  const { setSession } = useSession();
+  const { session, setSession } = useSession();
   const router = useRouter();
   const requestInFlight = useRef(false);
   const [signingOut, setSigningOut] = useState(false);
@@ -34,7 +34,16 @@ export default function AccountSettings() {
 
   return (
     <div className="space-y-8">
-      <PasswordForm />
+      <section>
+        <h2 className="text-base font-semibold text-white">Username</h2>
+        <p className="mt-2 text-sm text-zinc-300">{session?.username}</p>
+      </section>
+      <section className="border-t border-white/[0.08] pt-7">
+        <h2 className="mb-4 text-base font-semibold text-white">
+          Change password
+        </h2>
+        <PasswordForm />
+      </section>
       <div className="border-t border-white/[0.08] pt-6">
         <Button
           disabled={signingOut}

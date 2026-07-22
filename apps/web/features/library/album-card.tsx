@@ -58,7 +58,7 @@ export default function AlbumCard({
 
         <div className="pointer-events-none relative z-[1] mt-3 w-full">
           <p
-            className="line-clamp-2 min-h-10 text-sm font-semibold leading-5 text-zinc-100"
+            className="line-clamp-2 text-sm font-semibold leading-5 text-zinc-100"
             title={album_name}
           >
             {album_name}

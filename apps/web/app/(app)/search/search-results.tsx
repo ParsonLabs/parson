@@ -268,7 +268,7 @@ export default function SearchResults() {
                     {item.item_type}
                     {item.artist_object?.name && (
                       <>
-                        {" - "}
+                        {" · "}
                         {playable ? (
                           <span className="normal-case">
                             {item.artist_object.name}

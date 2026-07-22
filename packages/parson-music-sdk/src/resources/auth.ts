@@ -1,10 +1,46 @@
 import api, { isApiError } from "../core/http";
+import { deleteCookie, getCookie, setCookie } from "cookies-next";
+
+const ACCESS_TOKEN_COOKIE = "plm_accessToken";
+const REFRESH_TOKEN_COOKIE = "plm_refreshToken";
+
+function usesRemoteBrowserServer(): boolean {
+  try {
+    const configured = globalThis.localStorage?.getItem("server_url");
+    const current = globalThis.location?.origin;
+    return Boolean(
+      configured && current && new URL(configured).origin !== current,
+    );
+  } catch {
+    return false;
+  }
+}
+
+function persistRemoteBrowserTokens(response: AuthResponse): void {
+  if (!usesRemoteBrowserServer() || !response.status) return;
+  const secure = globalThis.location?.protocol === "https:";
+  if (response.access_token) {
+    setCookie(ACCESS_TOKEN_COOKIE, response.access_token, {
+      maxAge: 7 * 24 * 60 * 60,
+      path: "/",
+      sameSite: "lax",
+      secure,
+    });
+  }
+  if (response.refresh_token) {
+    setCookie(REFRESH_TOKEN_COOKIE, response.refresh_token, {
+      maxAge: 30 * 24 * 60 * 60,
+      path: "/",
+      sameSite: "lax",
+      secure,
+    });
+  }
+}
 
 export interface AuthCredentials {
   username: string;
   password: string;
   role?: string;
-  setup_code?: string;
 }
 
 export interface AuthResponse {
@@ -128,11 +164,16 @@ export async function login(
   options?: AuthRequestOptions,
 ): Promise<AuthResponse> {
   try {
-    return (
+    const remoteBrowser = usesRemoteBrowserServer();
+    const response = (
       await api.post<AuthResponse>("/auth/login", credentials, {
-        headers: authRequestHeaders(options),
+        headers: authRequestHeaders(
+          remoteBrowser ? { ...options, native: true } : options,
+        ),
       })
     ).data;
+    persistRemoteBrowserTokens(response);
+    return response;
   } catch (error) {
     return failure(error, "Sign in failed");
   }
@@ -150,11 +191,24 @@ export async function refreshToken(
   options?: AuthRequestOptions,
 ): Promise<AuthResponse> {
   try {
-    return (
+    const remoteBrowser = usesRemoteBrowserServer();
+    const response = (
       await api.post<AuthResponse>("/auth/refresh", undefined, {
-        headers: authRequestHeaders(options),
+        headers: authRequestHeaders(
+          remoteBrowser
+            ? {
+                ...options,
+                native: true,
+                refreshToken:
+                  options?.refreshToken ||
+                  String(getCookie(REFRESH_TOKEN_COOKIE) || ""),
+              }
+            : options,
+        ),
       })
     ).data;
+    persistRemoteBrowserTokens(response);
+    return response;
   } catch (error) {
     return failure(error, "Session refresh failed");
   }
@@ -165,5 +219,7 @@ export async function logout(): Promise<void> {
     await api.post("/auth/logout");
   } finally {
     clearMediaToken();
+    deleteCookie(ACCESS_TOKEN_COOKIE, { path: "/" });
+    deleteCookie(REFRESH_TOKEN_COOKIE, { path: "/" });
   }
 }

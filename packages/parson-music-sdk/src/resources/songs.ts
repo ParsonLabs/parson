@@ -61,6 +61,10 @@ const clearSongInfoCacheForId = (id: string) => {
   songInfoCache.delete(songInfoCacheKey(id, false));
 };
 
+export function clearCachedSongInfos() {
+  songInfoCache.clear();
+}
+
 export async function getRandomSong(
   amount: number,
   genre?: string,

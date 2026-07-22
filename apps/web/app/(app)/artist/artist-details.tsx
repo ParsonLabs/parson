@@ -145,7 +145,7 @@ export default function ArtistDetails({
                           </div>
                           <div className="mt-3 min-w-0">
                             <h4
-                              className="line-clamp-2 min-h-10 text-sm font-semibold leading-5 text-zinc-100"
+                              className="line-clamp-2 text-sm font-semibold leading-5 text-zinc-100"
                               title={album.name}
                             >
                               {album.name}

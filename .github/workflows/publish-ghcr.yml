@@ -37,8 +37,6 @@ jobs:
           images: ghcr.io/parsonlabs/parson
           tags: |
             type=raw,value=nightly,enable=${{ github.ref == 'refs/heads/nightly' }}
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
             type=sha
 
       - name: Login to GitHub Container Registry

@@ -5,7 +5,6 @@ use std::sync::OnceLock;
 
 use rand::RngExt;
 use rand::distr::Alphanumeric;
-use sha2::{Digest, Sha256};
 
 static SESSION_SECRET: OnceLock<String> = OnceLock::new();
 pub const DEFAULT_PORT: u16 = 1993;
@@ -214,15 +213,6 @@ pub fn session_secret() -> &'static str {
     SESSION_SECRET
         .get()
         .expect("session secret must be initialized during server startup")
-}
-
-/// Returns the short bootstrap code derived from the private session key.
-pub fn initial_setup_code() -> String {
-    let digest = Sha256::digest(session_secret().as_bytes());
-    digest[..6]
-        .iter()
-        .map(|byte| format!("{byte:02X}"))
-        .collect()
 }
 
 #[cfg(not(test))]

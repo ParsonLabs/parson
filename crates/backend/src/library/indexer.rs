@@ -44,7 +44,7 @@ use crate::persistence::connection::{DbPool, connect};
 
 const AUDIO_EXTENSIONS: &[&str] = &["mp3", "flac", "ogg", "m4a", "opus", "wav", "aiff", "alac"];
 const TAG_PARSER_VERSION: &str = "13";
-const COVER_RESOLVER_VERSION: &str = "2";
+const COVER_RESOLVER_VERSION: &str = "3";
 // Bump when release inference semantics change.
 const CLASSIFICATION_VERSION: &str = "7";
 const DATABASE_BATCH_SIZE: usize = 10_000;
@@ -2622,7 +2622,18 @@ fn inventory_candidates(
 }
 
 fn inventory_signature(candidates: &[DiscoveredImage]) -> String {
+    inventory_signature_for_version(candidates, COVER_RESOLVER_VERSION)
+}
+
+fn inventory_signature_for_version(
+    candidates: &[DiscoveredImage],
+    resolver_version: &str,
+) -> String {
     let mut digest = Sha256::new();
+    // Resolver changes invalidate cached selections.
+    digest.update(b"parson-directory-cover\0");
+    digest.update(resolver_version.as_bytes());
+    digest.update(b"\0");
     for image in candidates {
         digest.update(normalize_path(&image.path).as_bytes());
         digest.update(image.size_bytes.to_le_bytes());
@@ -9751,6 +9762,56 @@ mod external_library_tests {
         let selected = local_cover_for(&directory.join("track.mp3"));
         assert!(selected.ends_with("f.jpeg"), "selected {selected}");
         std::fs::remove_dir_all(directory).expect("remove cover fixture directory");
+    }
+
+    #[test]
+    fn cover_cache_signature_changes_with_the_resolver() {
+        let candidates = vec![super::DiscoveredImage {
+            path: PathBuf::from("Album/front.jpg"),
+            size_bytes: 42,
+            modified_at_ns: 7,
+        }];
+
+        let previous = super::inventory_signature_for_version(&candidates, "legacy");
+        let current = super::inventory_signature(&candidates);
+
+        assert_ne!(previous, current);
+        assert_eq!(
+            current,
+            super::inventory_signature(&candidates),
+            "the same resolver and inventory should retain a warm cache hit"
+        );
+    }
+
+    #[test]
+    fn front_cover_aliases_beat_back_and_booklet_scans() {
+        for front_name in [
+            "F.JPG",
+            "front.jpeg",
+            "album-front.png",
+            "folder.webp",
+            "cover.jpg",
+        ] {
+            let directory = std::env::temp_dir()
+                .join(format!("music-cover-alias-test-{}", uuid::Uuid::new_v4()));
+            std::fs::create_dir_all(&directory).expect("create cover alias fixture");
+            image::RgbImage::new(900, 900)
+                .save(directory.join("back.jpg"))
+                .expect("write back fixture");
+            image::RgbImage::new(900, 900)
+                .save(directory.join("booklet-01.jpg"))
+                .expect("write booklet fixture");
+            image::RgbImage::new(400, 400)
+                .save(directory.join(front_name))
+                .expect("write front fixture");
+
+            let selected = local_cover_for(&directory.join("track.flac"));
+            assert!(
+                selected.ends_with(front_name),
+                "{front_name} should win, selected {selected}"
+            );
+            std::fs::remove_dir_all(directory).expect("remove cover alias fixture");
+        }
     }
 
     #[test]

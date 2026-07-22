@@ -20,6 +20,6 @@ Parson starts a recursive native filesystem watcher for each library root. It wa
 
 ## Manual rescan
 
-Use **Settings → Library → Refresh** when you do not want to wait, after reconnecting an external root, or when a tool preserved a file's old modified time. A normal refresh uses incremental discovery. Repair diagnostics can force a complete filesystem reconciliation.
+Use **Settings → Library → Check for changes** when you do not want to wait, after reconnecting an external root, or when a tool preserved a file's old modified time. A normal check uses incremental discovery. Repair diagnostics can force a complete filesystem reconciliation.
 
 Unchanged files reuse stored metadata. They are not fully reparsed on every rescan.

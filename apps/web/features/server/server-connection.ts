@@ -20,12 +20,17 @@ export function normalizeServerOrigin(value: string): string {
   }
 }
 
-export function connectToServer(origin: string) {
+export function connectToServer(origin: string, libraryName?: string) {
   const normalized = normalizeServerOrigin(origin);
   if (!normalized || typeof window === "undefined") return false;
   try {
-    window.localStorage.removeItem("server_url");
-  } catch {}
-  window.location.assign(`${normalized}/`);
+    window.localStorage.setItem("server_url", normalized);
+  } catch {
+    return false;
+  }
+  const destination = libraryName
+    ? `/login?library=${encodeURIComponent(libraryName)}`
+    : "/";
+  window.location.assign(destination);
   return true;
 }

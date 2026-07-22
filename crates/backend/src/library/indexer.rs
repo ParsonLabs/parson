@@ -2791,7 +2791,7 @@ fn local_cover_resolution_for(path: &Path) -> CoverResolution {
         return CoverResolution::default();
     };
     let album_directory = album_directory(directory);
-    let inventory = discover_files(&normalize_path(album_directory));
+    let inventory = reconcile_files(&normalize_path(album_directory));
     resolve_inventory_cover(
         &inventory_candidates(&inventory, album_directory),
         album_directory,

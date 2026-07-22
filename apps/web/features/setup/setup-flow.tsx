@@ -7,14 +7,13 @@ import FileBrowser from "@/features/setup/file-browser";
 import { setupScreenFor, type SetupScreen } from "@/features/setup/setup-state";
 import {
   getSetupStatus,
-  getLibrarySuggestions,
+  indexSetupLibrary,
   login,
   refreshToken,
   register,
   type SetupStatus,
-  type LibrarySuggestion,
 } from "@parson/music-sdk";
-import { ChevronRight, Folder, Loader2 } from "lucide-react";
+import { Folder, Loader2 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
@@ -30,13 +29,9 @@ export default function SetupFlow() {
   const [attempt, setAttempt] = useState(0);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
-  const [setupCode, setSetupCode] = useState("");
   const [creatingAccount, setCreatingAccount] = useState(false);
-  const [suggestions, setSuggestions] = useState<LibrarySuggestion[]>([]);
-  const [loadingSuggestions, setLoadingSuggestions] = useState(false);
-  const [selectedDirectory, setSelectedDirectory] = useState<string | null>(
-    null,
-  );
+  const [addingDefaultLibrary, setAddingDefaultLibrary] = useState(false);
+  const [showFolderBrowser, setShowFolderBrowser] = useState(false);
 
   const applyStatus = useCallback(
     (nextStatus: SetupStatus, hasAdminSession: boolean) => {
@@ -90,25 +85,6 @@ export default function SetupFlow() {
     return () => window.clearTimeout(retry);
   }, [view, attempt]);
 
-  useEffect(() => {
-    if (view !== "library") return;
-    let active = true;
-    setLoadingSuggestions(true);
-    void getLibrarySuggestions()
-      .then((items) => {
-        if (active) setSuggestions(items);
-      })
-      .catch(() => {
-        if (active) setSuggestions([]);
-      })
-      .finally(() => {
-        if (active) setLoadingSuggestions(false);
-      });
-    return () => {
-      active = false;
-    };
-  }, [view]);
-
   async function createAccount(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (creatingAccount) return;
@@ -117,7 +93,6 @@ export default function SetupFlow() {
       username: username.trim(),
       password,
       role: "admin",
-      setup_code: status?.setup_code_required ? setupCode.trim() : undefined,
     };
     try {
       const created = await register(credentials);
@@ -146,6 +121,22 @@ export default function SetupFlow() {
       toast("The server did not respond. Try again.");
     } finally {
       setCreatingAccount(false);
+    }
+  }
+
+  async function useDefaultFolder() {
+    if (addingDefaultLibrary) return;
+    const path = status?.suggested_library_path?.trim() || "/music";
+    setAddingDefaultLibrary(true);
+    try {
+      await indexSetupLibrary(path);
+      router.replace("/");
+      router.refresh();
+    } catch {
+      toast(`Couldn’t add music from ${path}. Choose a different folder.`);
+      setShowFolderBrowser(true);
+    } finally {
+      setAddingDefaultLibrary(false);
     }
   }
 
@@ -196,28 +187,10 @@ export default function SetupFlow() {
             type="password"
             value={password}
           />
-          {status?.setup_code_required && (
-            <Input
-              aria-label="Server setup code"
-              autoCapitalize="characters"
-              autoComplete="one-time-code"
-              maxLength={12}
-              minLength={12}
-              onChange={(event) =>
-                setSetupCode(event.target.value.toUpperCase())
-              }
-              placeholder="Server setup code"
-              required
-              value={setupCode}
-            />
-          )}
           <Button
             className="mt-2 bg-white text-black hover:bg-zinc-200"
             disabled={
-              creatingAccount ||
-              !username.trim() ||
-              password.length < 8 ||
-              (status?.setup_code_required && setupCode.trim().length !== 12)
+              creatingAccount || !username.trim() || password.length < 8
             }
             type="submit"
           >
@@ -227,7 +200,7 @@ export default function SetupFlow() {
             className="text-center text-sm text-zinc-500 hover:text-white"
             href="/connect"
           >
-            Connect to another server
+            Connect to another library
           </Link>
         </form>
       </SetupFrame>
@@ -237,64 +210,55 @@ export default function SetupFlow() {
   return (
     <main className="mx-auto min-h-screen w-full max-w-[760px] px-5 pb-16 pt-24 sm:px-7">
       <h1 className="mt-3 text-3xl font-semibold">Where is your music?</h1>
-      {(loadingSuggestions || suggestions.length > 0) && (
-        <section className="mb-6 mt-8 overflow-hidden rounded-lg border border-white/10">
-          <div className="border-b border-white/10 px-5 py-4">
-            <h2 className="text-sm font-semibold text-white">Suggested</h2>
+      <section className="mt-8 rounded-xl border border-white/10 bg-white/[0.03] p-5">
+        <div className="flex items-center gap-3">
+          <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-white/[0.06]">
+            <Folder className="h-5 w-5 text-zinc-300" />
+          </span>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-semibold text-white">Music folder</p>
+            <p className="truncate text-sm text-zinc-500">
+              {status?.suggested_library_path || "/music"}
+            </p>
           </div>
-          {loadingSuggestions ? (
-            <div className="flex items-center gap-2 px-5 py-4 text-sm text-zinc-400">
-              <Loader2 className="h-4 w-4 animate-spin" />
-              Checking likely folders…
-            </div>
-          ) : (
-            <div className="divide-y divide-white/10">
-              {suggestions.map((suggestion) => (
-                <button
-                  key={suggestion.path}
-                  type="button"
-                  className="flex w-full items-center gap-3 px-5 py-4 text-left transition-colors hover:bg-white/[0.05]"
-                  onClick={() => setSelectedDirectory(suggestion.path)}
-                  title={suggestion.path}
-                >
-                  <Folder className="h-4 w-4 shrink-0 text-zinc-500" />
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-sm text-zinc-200">
-                      {suggestion.label}
-                    </span>
-                    <span className="block truncate text-xs text-zinc-500">
-                      {suggestion.path}
-                    </span>
-                  </span>
-                  <span className="shrink-0 text-xs text-zinc-400">
-                    {suggestion.count_is_limited ? "At least" : "About"}{" "}
-                    {suggestion.track_count.toLocaleString()} tracks
-                  </span>
-                  <ChevronRight className="h-4 w-4 shrink-0 text-zinc-600" />
-                </button>
-              ))}
-            </div>
+        </div>
+        <Button
+          className="mt-5 w-full bg-white text-black hover:bg-zinc-200"
+          disabled={addingDefaultLibrary}
+          onClick={() => void useDefaultFolder()}
+        >
+          {addingDefaultLibrary && (
+            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
           )}
+          {addingDefaultLibrary ? "Adding your music…" : "Use this folder"}
+        </Button>
+        <Button
+          className="mt-2 w-full text-zinc-400 hover:text-white"
+          disabled={addingDefaultLibrary}
+          onClick={() => setShowFolderBrowser((shown) => !shown)}
+          variant="ghost"
+        >
+          {showFolderBrowser
+            ? "Hide folder browser"
+            : "Choose a different folder"}
+        </Button>
+      </section>
+      {showFolderBrowser && (
+        <section className="mt-8">
+          <h2 className="mb-3 text-sm font-semibold text-zinc-200">
+            Choose a different folder
+          </h2>
+          <FileBrowser
+            actionLabel="Use this folder"
+            initialDirectory={status?.suggested_library_path || "/"}
+            onIndexed={async () => {
+              router.replace("/");
+              router.refresh();
+            }}
+            setupMode
+          />
         </section>
       )}
-      <h2
-        className={`mb-3 text-sm font-semibold text-zinc-200 ${
-          loadingSuggestions || suggestions.length > 0 ? "" : "mt-8"
-        }`}
-      >
-        Choose another folder
-      </h2>
-      <FileBrowser
-        actionLabel="Use this folder"
-        initialDirectory={
-          selectedDirectory || status?.suggested_library_path || "/"
-        }
-        onIndexed={async () => {
-          router.replace("/");
-          router.refresh();
-        }}
-        setupMode
-      />
     </main>
   );
 }

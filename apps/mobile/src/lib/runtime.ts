@@ -72,6 +72,7 @@ export function normalizeOrigin(value: string) {
     ? candidate
     : `http://${candidate}`;
   const parsed = new URL(withScheme);
+  if (parsed.protocol === "http:" && !parsed.port) parsed.port = "1993";
   return parsed.origin;
 }
 

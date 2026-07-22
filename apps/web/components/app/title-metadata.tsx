@@ -16,7 +16,7 @@ function routeTitle(pathname: string, query: string) {
   if (pathname === "/artist") return "Artist";
   if (pathname === "/profile") return "Profile";
   if (pathname === "/login") return "Log in";
-  if (pathname === "/connect") return "Choose a server";
+  if (pathname === "/connect") return "Choose a library";
   if (pathname === "/setup") return "Set up Parson";
   if (pathname === "/settings") return "Settings";
   if (pathname === "/search") {

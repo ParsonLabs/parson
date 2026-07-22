@@ -23,11 +23,11 @@ import { PageTitle, Screen } from "@/components/music-ui";
 import { layout, palette } from "@/constants/colors";
 import { useSession } from "@/providers/session-provider";
 
-type Tab = "account" | "playback" | "server" | "library" | "users";
+type Tab = "account" | "playback" | "devices" | "library" | "users";
 const labels: Record<Tab, string> = {
   account: "Account",
   playback: "Playback",
-  server: "Server",
+  devices: "Devices",
   library: "Library",
   users: "Users",
 };
@@ -38,10 +38,10 @@ export default function SettingsScreen() {
   const admin = session.claims?.role === "admin";
   const tabs: Tab[] =
     session.phase === "offline"
-      ? ["account", "server"]
+      ? ["account", "devices"]
       : admin
-        ? ["account", "playback", "server", "library", "users"]
-        : ["account", "playback", "server"];
+        ? ["account", "playback", "devices", "library", "users"]
+        : ["account", "playback", "devices"];
   const [tab, setTab] = useState<Tab>("account");
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -215,7 +215,7 @@ export default function SettingsScreen() {
                 onSave={saveQuality}
                 quality={quality}
               />
-            ) : tab === "server" ? (
+            ) : tab === "devices" ? (
               <ServerSettings
                 busy={busy}
                 offline={session.phase === "offline"}
@@ -333,7 +333,7 @@ const qualityOptions = [
   [96, "Low · 96 kbps"],
   [128, "Normal · 128 kbps"],
   [256, "High · 256 kbps"],
-  [0, "Original quality"],
+  [0, "Original"],
 ] as const;
 
 function PlaybackSettings({
@@ -347,7 +347,7 @@ function PlaybackSettings({
 }) {
   return (
     <>
-      <Text style={styles.heading}>Audio quality</Text>
+      <Text style={styles.heading}>Streaming quality</Text>
       {qualityOptions.map(([bitrate, label]) => (
         <Pressable
           accessibilityRole="radio"
@@ -455,7 +455,7 @@ function LibrarySettings({
         style={[styles.primary, (busy || !path.trim()) && styles.disabled]}
         onPress={() => void onIndex()}
       >
-        <Text style={styles.primaryText}>Index folder</Text>
+        <Text style={styles.primaryText}>Use this folder</Text>
       </Pressable>
       <Pressable
         accessibilityRole="button"
@@ -464,7 +464,7 @@ function LibrarySettings({
         onPress={() => void onRefresh()}
       >
         <Radio color="white" size={21} />
-        <Text style={styles.actionText}>Refresh current library</Text>
+        <Text style={styles.actionText}>Check for changes</Text>
       </Pressable>
     </>
   );

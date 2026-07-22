@@ -14,7 +14,12 @@ import {
 import AppSidebar from "@/components/layout/app-sidebar";
 import ParsonBrandMark from "@/components/icons/parson-brand-mark";
 import { DesktopWindowControls } from "@/components/layout/desktop-window-controls";
-import { getLibraryReadiness } from "@parson/music-sdk";
+import {
+  clearCachedAlbumInfos,
+  clearCachedArtistInfos,
+  clearCachedSongInfos,
+  getLibraryReadiness,
+} from "@parson/music-sdk";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   invalidateCatalogRevisionQueries,
@@ -40,6 +45,9 @@ export default function AppShell({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!readiness.data) return;
+    clearCachedAlbumInfos();
+    clearCachedArtistInfos();
+    clearCachedSongInfos();
     void invalidateCatalogRevisionQueries(queryClient);
   }, [queryClient, readiness.data?.catalog_revision]);
 

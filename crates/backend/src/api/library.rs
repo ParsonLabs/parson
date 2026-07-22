@@ -129,6 +129,7 @@ use crate::library::indexer::{
     enrich_library_to_database_with_cancellation, hydrate_progressive_catalog_artwork,
     index_available_library_to_database,
     index_available_library_to_database_progressive_with_cancellation, index_library_to_database,
+    repair_library_database_with_cancellation,
 };
 use crate::library::normalize::{LibraryIndexReport, normalize_library_data};
 use crate::library::state::{
@@ -441,7 +442,7 @@ async fn run_refresh_scan(
     let cancellation = scan_lease.cancellation();
     lifecycle.set_indexing(scan_message).await;
     let result = async {
-        let reports = refresh_libraries_with(false, Some(cancellation.clone()))
+        refresh_libraries_with(false, false, Some(cancellation.clone()))
             .await
             .map_err(|error| {
                 ScanFailure::new(
@@ -462,42 +463,35 @@ async fn run_refresh_scan(
             )
         })?;
         lifecycle.set_available(cache).await;
-        let enrichment_lifecycle = lifecycle.clone();
-        tokio::spawn(async move {
-            let _scan_lease = scan_lease;
-            match refresh_libraries_with(true, Some(cancellation.clone())).await {
-                Ok(enriched) => match LibraryCache::new().await {
-                    Ok(cache) if enriched.failures.is_empty() => {
-                        enrichment_lifecycle.set_ready_and_persist(cache).await
-                    }
-                    Ok(cache) => {
-                        enrichment_lifecycle
-                            .set_ready_with_message(
-                                cache,
-                                format!(
-                                    "Library enrichment completed with {} failed root(s).",
-                                    enriched.failures.len()
-                                ),
-                            )
-                            .await
-                    }
-                    Err(error) => {
-                        enrichment_lifecycle
-                            .set_enrichment_failed(error.to_string())
-                            .await
-                    }
-                },
-                Err(error) => {
-                    if cancellation.is_cancelled() {
-                        return;
-                    }
-                    enrichment_lifecycle
-                        .set_enrichment_failed(error.to_string())
-                        .await
-                }
-            }
-        });
-        Ok::<_, ScanFailure>(reports)
+        let _scan_lease = scan_lease;
+        let enriched = refresh_libraries_with(true, true, Some(cancellation.clone()))
+            .await
+            .map_err(|error| {
+                ScanFailure::new(
+                    format!("Failed to refresh library artwork and metadata: {error}"),
+                    "library_refresh_failed",
+                )
+            })?;
+        let cache = LibraryCache::new().await.map_err(|error| {
+            ScanFailure::new(
+                format!("Failed to build library cache: {error}"),
+                "library_cache_build_failed",
+            )
+        })?;
+        if enriched.failures.is_empty() {
+            lifecycle.set_ready_and_persist(cache).await;
+        } else {
+            lifecycle
+                .set_ready_with_message(
+                    cache,
+                    format!(
+                        "Library refresh completed with {} failed root(s).",
+                        enriched.failures.len()
+                    ),
+                )
+                .await;
+        }
+        Ok::<_, ScanFailure>(enriched)
     }
     .await;
     if let Err(failure) = &result
@@ -516,7 +510,7 @@ async fn run_automatic_refresh_scan(
     let cancellation = scan_lease.cancellation();
     let _scan_lease = scan_lease;
     lifecycle.set_indexing("Adding newly detected music.").await;
-    let result = match refresh_libraries_with(true, Some(cancellation.clone())).await {
+    let result = match refresh_libraries_with(true, false, Some(cancellation.clone())).await {
         Ok(result) => match LibraryCache::new().await {
             Ok(cache) if result.failures.is_empty() => {
                 lifecycle
@@ -898,6 +892,16 @@ async fn process_enriched_library_with_cancellation(
     .await
 }
 
+async fn process_repaired_library_with_cancellation(
+    path: &str,
+    cancellation: crate::library::indexer::ScanCancellation,
+) -> Result<ProcessedLibrary, Box<dyn std::error::Error + Send + Sync>> {
+    process_library_with(path, move |path| {
+        repair_library_database_with_cancellation(path, &cancellation)
+    })
+    .await
+}
+
 async fn process_library_with<F>(
     path: &str,
     indexer: F,
@@ -1018,11 +1022,12 @@ pub async fn index_library(
 
 pub async fn refresh_libraries()
 -> Result<LibraryRefreshResult, Box<dyn std::error::Error + Send + Sync>> {
-    refresh_libraries_with(true, None).await
+    refresh_libraries_with(true, false, None).await
 }
 
 async fn refresh_libraries_with(
     enriched: bool,
+    repair: bool,
     cancellation: Option<crate::library::indexer::ScanCancellation>,
 ) -> Result<LibraryRefreshResult, Box<dyn std::error::Error + Send + Sync>> {
     info!("Refreshing all library paths...");
@@ -1050,15 +1055,18 @@ async fn refresh_libraries_with(
             )
             .into());
         }
-        let processed = match (enriched, cancellation.clone()) {
-            (true, Some(cancellation)) => {
+        let processed = match (enriched, repair, cancellation.clone()) {
+            (true, true, Some(cancellation)) => {
+                process_repaired_library_with_cancellation(&path, cancellation).await
+            }
+            (true, false, Some(cancellation)) => {
                 process_enriched_library_with_cancellation(&path, cancellation).await
             }
-            (false, Some(cancellation)) => {
+            (false, _, Some(cancellation)) => {
                 process_available_library_with_cancellation(&path, cancellation).await
             }
-            (true, None) => process_music_library(&path).await,
-            (false, None) => process_available_library(&path).await,
+            (true, _, None) => process_music_library(&path).await,
+            (false, _, None) => process_available_library(&path).await,
         };
         match processed {
             Ok(processed) => {

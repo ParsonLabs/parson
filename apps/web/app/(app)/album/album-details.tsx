@@ -212,9 +212,6 @@ export default function AlbumDetails({ devAlbum }: AlbumDetailsProps = {}) {
             ref={titleWrapRef}
             className="flex w-full min-w-0 flex-1 flex-col"
           >
-            <span className="text-xs font-bold tracking-widest text-zinc-200 uppercase mb-2">
-              Album
-            </span>
             <h1
               ref={titleRef}
               className={`mb-5 font-black leading-[0.95] text-white ${titleWrapped ? "text-balance whitespace-normal" : "whitespace-nowrap"}`}

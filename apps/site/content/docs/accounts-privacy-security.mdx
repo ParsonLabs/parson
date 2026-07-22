@@ -15,9 +15,7 @@ There is no email-based or built-in forgotten-password reset in Parson 1.0.x bec
 
 ## Sessions and devices
 
-Access and refresh tokens are signed with the private key in `Secrets\session.key`. Logout and password changes increment the account's token generation, invalidating older credentials. Clients should store credentials in platform-protected storage; Android app data is excluded from cloud/device-transfer backup.
-
-The temporary first-run setup code is 12 uppercase hexadecimal characters derived from the private session key. It is printed only while remote first-account setup is needed. Keep logs private.
+Access and refresh tokens are signed with the private key in `Secrets\session.key`. Logout and password changes increment the account's token generation, invalidating older credentials. Clients should store credentials in platform-protected storage; Android app data is excluded from cloud/device-transfer backup. The first account created on a new server becomes its administrator, so complete setup on a trusted network before exposing the server remotely.
 
 ## Privacy
 

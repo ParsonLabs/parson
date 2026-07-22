@@ -61,23 +61,33 @@ export default function BitrateForm({
   }
 
   return (
-    <form onSubmit={submit} className="flex flex-wrap items-center gap-3">
-      <Select
-        value={quality}
-        onValueChange={(value) => setQuality(value as Quality)}
-      >
-        <SelectTrigger aria-label="Audio quality" className="w-48">
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="low">Low · 96 kbps</SelectItem>
-          <SelectItem value="normal">Normal · 128 kbps</SelectItem>
-          <SelectItem value="high">High · 256 kbps</SelectItem>
-          <SelectItem value="lossless">Original quality</SelectItem>
-        </SelectContent>
-      </Select>
+    <form onSubmit={submit} className="max-w-md space-y-5">
+      <div>
+        <label className="mb-2 block text-sm font-medium text-zinc-200">
+          Streaming quality
+        </label>
+        <Select
+          value={quality}
+          onValueChange={(value) => setQuality(value as Quality)}
+        >
+          <SelectTrigger aria-label="Streaming quality" className="w-full">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="low">Low · 96 kbps</SelectItem>
+            <SelectItem value="normal">Normal · 128 kbps</SelectItem>
+            <SelectItem value="high">High · 256 kbps</SelectItem>
+            <SelectItem value="lossless">Original</SelectItem>
+          </SelectContent>
+        </Select>
+        <p className="mt-2 text-sm text-zinc-500">
+          {quality === "lossless"
+            ? "Streams the source file without transcoding."
+            : "Uses less bandwidth by transcoding while you listen."}
+        </p>
+      </div>
       <Button type="submit" disabled={saving}>
-        {saving ? "Saving..." : "Save"}
+        {saving ? "Applying…" : "Apply quality"}
       </Button>
       {message && (
         <p aria-live="polite" className="basis-full text-sm text-zinc-500">

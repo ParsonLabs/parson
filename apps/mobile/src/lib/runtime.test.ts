@@ -1,6 +1,10 @@
 import { afterEach, expect, mock, test } from "bun:test";
 
-import { configureNativeRuntime, freshAuthorizationHeaders } from "./runtime";
+import {
+  configureNativeRuntime,
+  freshAuthorizationHeaders,
+  normalizeOrigin,
+} from "./runtime";
 
 const originalFetch = globalThis.fetch;
 afterEach(() => {
@@ -21,6 +25,16 @@ const token = (expiresInSeconds: number, name: string) => {
   );
   return `${name}.${payload}.signature`;
 };
+
+test("plain local addresses use the Parson port", () => {
+  expect(normalizeOrigin("192.168.1.10")).toBe("http://192.168.1.10:1993");
+  expect(normalizeOrigin("http://music.local:8123/path")).toBe(
+    "http://music.local:8123",
+  );
+  expect(normalizeOrigin("https://music.example")).toBe(
+    "https://music.example",
+  );
+});
 
 test("a refresh finishing after a server switch cannot authorize old media work", async () => {
   let releaseResponse: ((response: Response) => void) | undefined;

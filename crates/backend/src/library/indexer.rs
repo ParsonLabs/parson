@@ -53,6 +53,8 @@ type MetadataOverrides = HashMap<String, HashMap<String, HashMap<String, String>
 type PooledSqliteConnection = PooledConnection<ConnectionManager<SqliteConnection>>;
 static DISC_DIRECTORY: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
 static TRAILING_FEATURE_CREDIT: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+#[cfg(target_os = "linux")]
+static IO_URING_AVAILABLE: OnceLock<bool> = OnceLock::new();
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum IndexMode {
@@ -1544,6 +1546,35 @@ fn tag_region_plan(format: AudioFormat, file_length: u64) -> (usize, usize) {
 }
 
 #[cfg(target_os = "linux")]
+fn probe_io_uring() -> std::io::Result<()> {
+    // `tokio_uring::start` unwraps runtime initialization failures. Probe the
+    // same kernel interface first so restricted containers and kernels without
+    // io_uring take the ordinary buffered-I/O path instead of panicking.
+    let ring = tokio_uring::uring_builder().build(256)?;
+    drop(ring);
+    Ok(())
+}
+
+#[cfg(target_os = "linux")]
+fn io_uring_probe_succeeded(result: std::io::Result<()>) -> bool {
+    match result {
+        Ok(()) => true,
+        Err(error) => {
+            warn!(
+                %error,
+                "io_uring is unavailable; falling back to buffered metadata reads"
+            );
+            false
+        }
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn io_uring_available() -> bool {
+    *IO_URING_AVAILABLE.get_or_init(|| io_uring_probe_succeeded(probe_io_uring()))
+}
+
+#[cfg(target_os = "linux")]
 fn prefetch_tag_regions(
     files: &[&DiscoveredFile],
     queue_depth: usize,
@@ -1552,6 +1583,10 @@ fn prefetch_tag_regions(
     use std::os::fd::FromRawFd;
     use std::os::unix::ffi::OsStrExt;
     use tokio_uring::fs::File as UringFile;
+
+    if !io_uring_available() {
+        return None;
+    }
 
     #[repr(C)]
     struct OpenHow {
@@ -8655,6 +8690,13 @@ mod external_library_tests {
 
     #[cfg(target_os = "linux")]
     #[test]
+    fn denied_io_uring_probe_selects_the_buffered_fallback() {
+        let denied = std::io::Error::from(std::io::ErrorKind::PermissionDenied);
+        assert!(!super::io_uring_probe_succeeded(Err(denied)));
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
     fn io_uring_prefetches_bounded_start_and_end_regions() {
         let path = std::env::temp_dir().join(format!(
             "parson-io-uring-region-test-{}.bin",
@@ -8667,8 +8709,12 @@ mod external_library_tests {
         std::fs::write(&path, &contents).expect("write io_uring fixture");
         let path_text = path.to_string_lossy().into_owned();
         let file = discovered_file(&path_text, "m4a", contents.len() as i64);
-        let result = super::prefetch_tag_regions(&[&file], 16)
-            .expect("io_uring runtime should initialize on the test kernel")
+        let Some(prefetched) = super::prefetch_tag_regions(&[&file], 16) else {
+            // Restricted containers intentionally use buffered metadata reads.
+            std::fs::remove_file(path).expect("remove io_uring fixture");
+            return;
+        };
+        let result = prefetched
             .into_iter()
             .next()
             .flatten()

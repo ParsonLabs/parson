@@ -281,19 +281,11 @@ async fn setup_status(
         .as_ref()
         .is_some_and(|claims| claims.role == "admin");
     let needs_library = setup_state_allowed(&readiness.state);
-    let setup_code_required = user_count == 0 && !crate::http::request_is_local_loopback(&request);
-    if setup_code_required {
-        tracing::warn!(
-            setup_code = %crate::settings::initial_setup_code(),
-            "remote first-account setup requires this one-time code"
-        );
-    }
 
     HttpResponse::Ok().json(serde_json::json!({
         "server_ready": true,
         "setup_required": setup_required(user_count, &readiness.state),
         "account_setup_required": user_count == 0,
-        "setup_code_required": setup_code_required,
         "library_setup_required": needs_library,
         "library_state": readiness.state,
         "message": readiness.message,
@@ -327,7 +319,7 @@ async fn setup_filesystem(
         }
     }
 
-    match filesystem::list_path(&query.path).await {
+    match filesystem::list_path(&query.path, query.show_hidden).await {
         Ok(directories) => HttpResponse::Ok().json(directories),
         Err(_) => internal_server_error("Failed to list directory.", "list_directory_failed"),
     }

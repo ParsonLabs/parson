@@ -5,16 +5,22 @@ interface Directory {
   path: string;
 }
 
-export async function listDirectory(path: string): Promise<Directory[]> {
+export async function listDirectory(
+  path: string,
+  showHidden = false,
+): Promise<Directory[]> {
   const response = await api.get<Directory[]>("/filesystem", {
-    params: { path },
+    params: { path, show_hidden: showHidden },
   });
   return response.data;
 }
 
-export async function listSetupDirectory(path: string): Promise<Directory[]> {
+export async function listSetupDirectory(
+  path: string,
+  showHidden = false,
+): Promise<Directory[]> {
   const response = await api.get<Directory[]>("/setup/filesystem", {
-    params: { path },
+    params: { path, show_hidden: showHidden },
   });
   return response.data;
 }

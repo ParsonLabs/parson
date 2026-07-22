@@ -67,11 +67,7 @@ type SessionContextValue = {
   changeServer: () => Promise<void>;
   retry: () => Promise<void>;
   updateBitrate: (bitrate: number) => void;
-  setupAccount: (
-    username: string,
-    password: string,
-    setupCode?: string,
-  ) => Promise<boolean>;
+  setupAccount: (username: string, password: string) => Promise<boolean>;
   setupLibrary: (path: string) => Promise<boolean>;
 };
 
@@ -324,7 +320,7 @@ export function SessionProvider({ children }: PropsWithChildren) {
   }, []);
 
   const setupAccount = useCallback(
-    async (username: string, password: string, setupCode?: string) => {
+    async (username: string, password: string) => {
       if (userOperationInFlight.current) return false;
       userOperationInFlight.current = true;
       const expectedGeneration = generation.current;
@@ -335,7 +331,6 @@ export function SessionProvider({ children }: PropsWithChildren) {
           username: username.trim(),
           password,
           role: "admin",
-          setup_code: setupCode?.trim() || undefined,
         };
         const response = await register(credentials);
         if (expectedGeneration !== generation.current) return false;

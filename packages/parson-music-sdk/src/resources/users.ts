@@ -1,6 +1,17 @@
 import api from "../core/http";
 import type { LibrarySong, ListenHistoryItem, User } from "../domain/types";
 
+export interface SettingsUser {
+  id: number;
+  username: string;
+  role: "admin" | "user";
+}
+
+export async function getUsers(): Promise<SettingsUser[]> {
+  const response = await api.get<SettingsUser[]>("/users");
+  return Array.isArray(response.data) ? response.data : [];
+}
+
 export async function changePassword(
   currentPassword: string,
   newPassword: string,

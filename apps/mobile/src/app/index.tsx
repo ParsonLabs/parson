@@ -22,8 +22,8 @@ export default function EntryScreen() {
   const [serverEdited, setServerEdited] = useState(false);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
-  const [setupCode, setSetupCode] = useState("");
   const [libraryPath, setLibraryPath] = useState("");
+  const [showCustomFolder, setShowCustomFolder] = useState(false);
   const serverValue = serverEdited ? server : (session.origin ?? server);
   if (session.phase === "ready" || session.phase === "offline") return null;
 
@@ -31,10 +31,7 @@ export default function EntryScreen() {
     session.phase === "loading" ||
     session.phase === "connecting" ||
     session.phase === "indexing";
-  const invalidAccount =
-    !username.trim() ||
-    password.length < 8 ||
-    Boolean(session.setupStatus?.setup_code_required && !setupCode.trim());
+  const invalidAccount = !username.trim() || password.length < 8;
   const libraryTarget =
     libraryPath.trim() ||
     session.setupStatus?.suggested_library_path?.trim() ||
@@ -101,17 +98,6 @@ export default function EntryScreen() {
                   value={password}
                   onChangeText={setPassword}
                 />
-                {session.setupStatus.setup_code_required ? (
-                  <TextInput
-                    accessibilityLabel="Setup code"
-                    autoCapitalize="characters"
-                    placeholder="Setup code"
-                    placeholderTextColor={palette.muted}
-                    style={styles.input}
-                    value={setupCode}
-                    onChangeText={setSetupCode}
-                  />
-                ) : null}
                 <Pressable
                   accessibilityRole="button"
                   disabled={busy || invalidAccount}
@@ -119,29 +105,17 @@ export default function EntryScreen() {
                     styles.primary,
                     (busy || invalidAccount) && styles.disabledPrimary,
                   ]}
-                  onPress={() =>
-                    void session.setupAccount(username, password, setupCode)
-                  }
+                  onPress={() => void session.setupAccount(username, password)}
                 >
                   <Text style={styles.primaryText}>Create account</Text>
                 </Pressable>
               </>
             ) : (
               <>
-                <TextInput
-                  accessibilityLabel="Music folder path"
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  placeholder={
-                    session.setupStatus?.suggested_library_path ||
-                    "Music folder path"
-                  }
-                  placeholderTextColor={palette.muted}
-                  style={styles.input}
-                  value={libraryPath}
-                  editable={!busy}
-                  onChangeText={setLibraryPath}
-                />
+                <View style={styles.folderCard}>
+                  <Text style={styles.folderLabel}>Music folder</Text>
+                  <Text style={styles.folderPath}>{libraryTarget}</Text>
+                </View>
                 <Pressable
                   accessibilityRole="button"
                   disabled={busy || !libraryTarget}
@@ -151,8 +125,32 @@ export default function EntryScreen() {
                   ]}
                   onPress={() => void session.setupLibrary(libraryTarget)}
                 >
-                  <Text style={styles.primaryText}>Index library</Text>
+                  <Text style={styles.primaryText}>Use this folder</Text>
                 </Pressable>
+                <Pressable
+                  accessibilityRole="button"
+                  disabled={busy}
+                  onPress={() => setShowCustomFolder((shown) => !shown)}
+                >
+                  <Text style={styles.link}>
+                    {showCustomFolder
+                      ? "Hide different folder"
+                      : "Choose a different folder"}
+                  </Text>
+                </Pressable>
+                {showCustomFolder ? (
+                  <TextInput
+                    accessibilityLabel="Music folder path"
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    placeholder="Music folder path"
+                    placeholderTextColor={palette.muted}
+                    style={styles.input}
+                    value={libraryPath}
+                    editable={!busy}
+                    onChangeText={setLibraryPath}
+                  />
+                ) : null}
               </>
             )}
           </View>
@@ -292,5 +290,15 @@ const styles = StyleSheet.create({
   primaryText: { color: "black", fontSize: 16, fontWeight: "800" },
   disabledPrimary: { opacity: 0.62 },
   link: { color: "white", textAlign: "center", fontWeight: "700", padding: 12 },
+  folderCard: {
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: palette.border,
+    backgroundColor: palette.elevatedStrong,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+  },
+  folderLabel: { color: "white", fontSize: 14, fontWeight: "700" },
+  folderPath: { color: palette.muted, fontSize: 14, marginTop: 4 },
   error: { color: "#fb7185", textAlign: "center", marginTop: 16 },
 });

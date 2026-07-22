@@ -4889,9 +4889,18 @@ fn serialize_stage<T: Serialize + ?Sized>(value: &T) -> QueryResult<String> {
         .map_err(|error| diesel::result::Error::SerializationError(Box::new(error)))
 }
 
+fn cached_cover_is_reusable(
+    row: &CoverCacheRow,
+    inventory_signature: &str,
+    reuse_cached_resolution: bool,
+) -> bool {
+    reuse_cached_resolution && row.inventory_signature == inventory_signature
+}
+
 fn resolve_local_covers(
     conn: &mut SqliteConnection,
     inventory: &FilesystemInventory,
+    reuse_cached_resolution: bool,
 ) -> QueryResult<HashMap<PathBuf, CoverResolution>> {
     let cached = diesel::sql_query(
         "SELECT directory, inventory_signature, cover_path, content_hash
@@ -4915,7 +4924,7 @@ fn resolve_local_covers(
             let database_directory = normalize_path(&directory);
             let cached_cover = cached
                 .get(&database_directory)
-                .filter(|row| row.inventory_signature == signature);
+                .filter(|row| cached_cover_is_reusable(row, &signature, reuse_cached_resolution));
             let cache_hit = cached_cover.is_some();
             let cover = cached_cover
                 .map(|row| CoverResolution {
@@ -7628,7 +7637,7 @@ fn index_library_to_database_phase(
     let cover_started = Instant::now();
     info!(phase = ?phase, "resolving library covers");
     let album_covers = if phase == LibraryIndexPhase::Enriched {
-        resolve_local_covers(&mut conn, &inventory)?
+        resolve_local_covers(&mut conn, &inventory, mode != IndexMode::Repair)?
     } else {
         HashMap::new()
     };
@@ -8541,6 +8550,21 @@ pub fn repair_library_database(
         LibraryIndexPhase::Enriched,
         IndexMode::Repair,
         &ScanCancellation::default(),
+        None,
+    )?;
+    crate::persistence::connection::snapshot_after_import(&connect()?, true);
+    Ok(result)
+}
+
+pub fn repair_library_database_with_cancellation(
+    path_to_library: &str,
+    cancellation: &ScanCancellation,
+) -> Result<(Vec<Artist>, LibraryIndexReport), Box<dyn Error + Send + Sync>> {
+    let result = index_library_to_database_phase(
+        path_to_library,
+        LibraryIndexPhase::Enriched,
+        IndexMode::Repair,
+        cancellation,
         None,
     )?;
     crate::persistence::connection::snapshot_after_import(&connect()?, true);
@@ -9781,6 +9805,27 @@ mod external_library_tests {
             super::inventory_signature(&candidates),
             "the same resolver and inventory should retain a warm cache hit"
         );
+    }
+
+    #[test]
+    fn repair_scans_bypass_matching_cover_cache_entries() {
+        let cached = super::CoverCacheRow {
+            directory: "/library/release".into(),
+            inventory_signature: "matching-signature".into(),
+            cover_path: "/library/release/front.jpg".into(),
+            content_hash: Some("cached-hash".into()),
+        };
+
+        assert!(super::cached_cover_is_reusable(
+            &cached,
+            "matching-signature",
+            true
+        ));
+        assert!(!super::cached_cover_is_reusable(
+            &cached,
+            "matching-signature",
+            false
+        ));
     }
 
     #[test]

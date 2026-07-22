@@ -42,6 +42,7 @@ export default function FileBrowser({
   );
   const [indexMessage, setIndexMessage] = useState<string | null>(null);
   const [directoryError, setDirectoryError] = useState(false);
+  const [showHidden, setShowHidden] = useState(false);
   const [desktopBridgeAvailable, setDesktopBridgeAvailable] = useState(false);
   const directoryRequest = useRef(0);
   const mounted = useRef(true);
@@ -52,8 +53,8 @@ export default function FileBrowser({
       const request = ++directoryRequest.current;
       try {
         const directoryList = await (setupMode
-          ? listSetupDirectory(directoryPath)
-          : listDirectory(directoryPath));
+          ? listSetupDirectory(directoryPath, showHidden)
+          : listDirectory(directoryPath, showHidden));
         if (request !== directoryRequest.current) return;
         setCurrentDirectory(directoryPath);
         setCurrentDirectoryList(directoryList);
@@ -69,7 +70,7 @@ export default function FileBrowser({
         }
       }
     },
-    [setupMode],
+    [setupMode, showHidden],
   );
 
   function goBack() {
@@ -182,6 +183,8 @@ export default function FileBrowser({
       }
       onRefresh={() => void handleRefreshCurrentLibrary()}
       onRetry={() => void updateList(initialDirectory)}
+      onShowHiddenChange={setShowHidden}
+      showHidden={showHidden}
       setupMode={setupMode}
     />
   );

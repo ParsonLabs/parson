@@ -85,7 +85,6 @@ export interface SetupStatus {
   server_ready: boolean;
   setup_required: boolean;
   account_setup_required: boolean;
-  setup_code_required?: boolean;
   library_setup_required: boolean;
   library_state: LibraryReadinessState;
   message?: string | null;

@@ -29,6 +29,10 @@ export function replaceCachedArtistInfo(id: string, artist: Artist) {
   writeCachedArtistInfo(id, artist);
 }
 
+export function clearCachedArtistInfos() {
+  artistInfoCache.clear();
+}
+
 export async function getRandomArtist(amount: number): Promise<Artist[]> {
   const response = await api.get<Artist[]>(`/artists/random/${amount}`);
   return response.data;

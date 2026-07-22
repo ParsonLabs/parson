@@ -1,6 +1,7 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import type { LibraryIndexReport } from "@parson/music-sdk";
 import { ChevronRight, Folder, FolderUp, Loader2 } from "lucide-react";
 import { parentDirectory } from "./setup-state";
@@ -25,6 +26,8 @@ export function FileBrowserView({
   onOpenNativePicker,
   onRefresh,
   onRetry,
+  onShowHiddenChange,
+  showHidden,
   setupMode,
 }: {
   actionLabel?: string;
@@ -41,6 +44,8 @@ export function FileBrowserView({
   onOpenNativePicker?: () => void;
   onRefresh: () => void;
   onRetry: () => void;
+  onShowHiddenChange: (show: boolean) => void;
+  showHidden: boolean;
   setupMode: boolean;
 }) {
   const navigationRow = (label: string, path: string) => (
@@ -67,7 +72,7 @@ export function FileBrowserView({
               className="h-8 rounded-md border-white/10 bg-white/[0.03] px-3 text-xs text-zinc-200 hover:bg-white/[0.08] hover:text-white"
               onClick={onOpenNativePicker}
             >
-              Choose folder
+              {setupMode ? "Choose folder" : "Change folder"}
             </Button>
           )}
         </div>
@@ -113,6 +118,13 @@ export function FileBrowserView({
             )}
           </div>
         </div>
+        <label className="mt-4 flex cursor-pointer items-center gap-2 text-sm text-zinc-400">
+          <Checkbox
+            checked={showHidden}
+            onCheckedChange={(checked) => onShowHiddenChange(checked === true)}
+          />
+          Show hidden folders
+        </label>
         {(indexMessage || indexReport) && (
           <div className="mt-4 rounded-md border border-white/10 bg-white/[0.03] px-3 py-2 text-sm text-zinc-300">
             {indexMessage && <p>{indexMessage}</p>}
@@ -134,7 +146,7 @@ export function FileBrowserView({
             disabled={isRefreshing || isIndexing}
           >
             {isRefreshing && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            {isRefreshing ? "Checking..." : "Check for changes now"}
+            {isRefreshing ? "Checking..." : "Check for changes"}
           </Button>
         )}
         <Button
@@ -147,7 +159,7 @@ export function FileBrowserView({
             ? setupMode
               ? "Adding your music…"
               : "Updating library…"
-            : actionLabel || "Index selected folder"}
+            : actionLabel || "Use this folder"}
         </Button>
       </div>
     </section>

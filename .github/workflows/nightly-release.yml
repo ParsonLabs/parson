@@ -1,0 +1,60 @@
+name: Publish Nightly Release
+
+on:
+  push:
+    branches:
+      - nightly
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: read
+
+concurrency:
+  group: publish-nightly-release
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build release packages
+    uses: ./.github/workflows/test.yml
+
+  release:
+    name: GitHub nightly release
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Download release packages
+        uses: actions/download-artifact@v6
+        with:
+          pattern: parson-*
+          path: artifacts
+          merge-multiple: true
+      - name: Verify release package set
+        run: |
+          test "$(find artifacts -maxdepth 1 -type f -name '*.AppImage' | wc -l)" -eq 2
+          test "$(find artifacts -maxdepth 1 -type f -name '*.deb' | wc -l)" -eq 2
+          test "$(find artifacts -maxdepth 1 -type f -name '*-setup.exe' | wc -l)" -eq 2
+          test "$(find artifacts -maxdepth 1 -type f -name '*-portable.exe' | wc -l)" -eq 2
+          test "$(find artifacts -maxdepth 1 -type f -name '*.apk' | wc -l)" -eq 3
+          find artifacts -maxdepth 1 -type f -print0 | sort -z | xargs -0 sha256sum > "$RUNNER_TEMP/SHA256SUMS"
+          mv "$RUNNER_TEMP/SHA256SUMS" artifacts/SHA256SUMS
+      - name: Publish rolling nightly release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if gh release view nightly >/dev/null 2>&1; then
+            gh release delete nightly --yes
+          fi
+          git tag --force nightly "$GITHUB_SHA"
+          git push origin refs/tags/nightly --force
+          mapfile -d '' packages < <(find artifacts -maxdepth 1 -type f -print0 | sort -z)
+          gh release create nightly "${packages[@]}" \
+            --target "$GITHUB_SHA" \
+            --title "Parson Nightly" \
+            --notes "Automated nightly packages for Linux, Windows, and Android." \
+            --prerelease

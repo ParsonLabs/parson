@@ -5,6 +5,7 @@ import AlbumCard from "@/features/library/album-card";
 import SongCard from "@/features/library/song-card";
 import { useSession } from "@/features/account/session-provider";
 import { Button } from "@/components/ui/button";
+import { homeFeedShouldShowSkeleton } from "@/features/library/library-readiness-state";
 import {
   emptyLibraryFeed,
   useLibraryFeed,
@@ -16,7 +17,7 @@ import Link from "next/link";
 import { useRef, type ReactNode } from "react";
 
 export default function LibraryFeed() {
-  const { session } = useSession();
+  const { librarySetupPending, session } = useSession();
   const feedQuery = useLibraryFeed(Boolean(session));
   const feed = feedQuery.data ?? emptyLibraryFeed;
   const libraryReadiness = getLibraryUnavailable(feedQuery.error);
@@ -26,6 +27,16 @@ export default function LibraryFeed() {
     feed.recommended.length > 0 ? feed.recommended : feed.shuffle;
   const recommendedAlbums = feed.albums;
 
+  if (
+    homeFeedShouldShowSkeleton(
+      librarySetupPending,
+      feedQuery.isPending,
+      libraryReadiness?.state,
+    )
+  ) {
+    return <HomeLoading />;
+  }
+
   if (libraryReadiness) {
     return (
       <LibraryStatus
@@ -33,10 +44,6 @@ export default function LibraryFeed() {
         onRetry={() => void feedQuery.refetch()}
       />
     );
-  }
-
-  if (feedQuery.isPending) {
-    return <HomeLoading />;
   }
 
   if (feedQuery.isError) {

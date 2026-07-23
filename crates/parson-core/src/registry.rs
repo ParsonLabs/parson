@@ -104,6 +104,19 @@ impl CoreRegistry {
             .collect()
     }
 
+    pub fn unregister(
+        &self,
+        path: &Path,
+        capability: &ProductCapability,
+    ) -> Result<bool, RegistryError> {
+        let mut connection = self.connect()?;
+        let removed = diesel::sql_query("DELETE FROM library WHERE path = ? AND capability = ?")
+            .bind::<Text, _>(path.to_string_lossy().as_ref())
+            .bind::<Text, _>(capability.as_str())
+            .execute(&mut connection)?;
+        Ok(removed > 0)
+    }
+
     fn connect(&self) -> Result<SqliteConnection, RegistryError> {
         let url = self
             .path
@@ -129,6 +142,15 @@ mod tests {
         );
         registry.register(&music).expect("register");
         assert_eq!(registry.libraries().expect("libraries"), vec![music]);
+        assert!(
+            registry
+                .unregister(
+                    Path::new("/media/music"),
+                    &ProductCapability::new("music").unwrap()
+                )
+                .expect("unregister")
+        );
+        assert!(registry.libraries().expect("libraries").is_empty());
         fs::remove_file(path).expect("remove registry");
     }
 }

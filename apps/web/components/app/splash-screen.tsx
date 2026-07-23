@@ -16,7 +16,11 @@ export default function AppBootstrap({ children }: { children: ReactNode }) {
   const [attempt, setAttempt] = useState(0);
   const pathname = usePathname();
   const router = useRouter();
-  const { session: activeSession, setSession } = useSession();
+  const {
+    librarySetupPending,
+    session: activeSession,
+    setSession,
+  } = useSession();
   const initializedAttempt = useRef<number | null>(null);
 
   useEffect(() => {
@@ -30,10 +34,10 @@ export default function AppBootstrap({ children }: { children: ReactNode }) {
 
     async function initialize() {
       setBootstrapFailed(false);
-      setLoading(true);
+      setLoading(!librarySetupPending);
       try {
         const setup = await getSetupStatus();
-        if (setup.setup_required) {
+        if (setup.setup_required && !librarySetupPending) {
           router.replace("/setup");
           return;
         }
@@ -64,7 +68,7 @@ export default function AppBootstrap({ children }: { children: ReactNode }) {
     }
 
     void initialize();
-  }, [attempt, pathname, router, setSession]);
+  }, [attempt, librarySetupPending, pathname, router, setSession]);
 
   useEffect(() => {
     if (!activeSession) return;

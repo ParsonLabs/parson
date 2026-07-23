@@ -10,6 +10,7 @@ import {
   discoverNearbyServers,
   getLibrarySuggestions,
   getLibraryUnavailable,
+  removeLibraryRoot,
 } from "./library";
 import { findLyrics, getCachedLyrics } from "./lyrics";
 import {
@@ -86,6 +87,20 @@ test("folder suggestions use the bounded setup endpoint", async () => {
 
   expect(await getLibrarySuggestions()).toEqual(suggestions);
   expect(get).toHaveBeenCalledWith("/setup/suggestions", { timeout: 4_000 });
+});
+
+test("library roots are removed through the admin library endpoint", async () => {
+  const remaining = [{ path: "/srv/audio-two" }];
+  const remove = spyOn(api, "delete").mockResolvedValue({
+    data: remaining,
+    status: 200,
+    headers: new Headers(),
+  } as never);
+
+  expect(await removeLibraryRoot("/srv/audio-one")).toEqual(remaining);
+  expect(remove).toHaveBeenCalledWith("/library/roots", {
+    params: { path: "/srv/audio-one" },
+  });
 });
 
 test("nearby server discovery is public, bounded, and validated", async () => {

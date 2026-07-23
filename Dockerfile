@@ -1,6 +1,6 @@
-FROM oven/bun:1.3.14-alpine AS bun-runtime
+FROM --platform=$BUILDPLATFORM oven/bun:1.3.14-alpine AS bun-runtime
 
-FROM node:24-alpine AS web-deps
+FROM --platform=$BUILDPLATFORM node:24-alpine AS web-deps
 WORKDIR /app
 ENV NEXT_TELEMETRY_DISABLED=1
 COPY --from=bun-runtime /usr/local/bin/bun /usr/local/bin/bun

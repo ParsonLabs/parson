@@ -11,7 +11,7 @@ use crate::api::auth::{
 use crate::api::image::image;
 use crate::api::library::{
     head_stream_song, index, library_catalog, library_catalog_artists, library_readiness,
-    library_refresh, library_roots, stream_song,
+    library_refresh, library_roots, remove_library_root, stream_song,
 };
 use crate::api::{
     album, artist, cast, filesystem, genres, home, lyrics, metadata, playback, playlist, search,
@@ -48,7 +48,8 @@ fn library_routes_at(path: &'static str) -> impl HttpServiceFactory {
                 .wrap(HttpAuthentication::with_fn(admin_guard))
                 .service(index)
                 .service(library_refresh)
-                .service(library_roots),
+                .service(library_roots)
+                .service(remove_library_root),
         )
 }
 
@@ -422,6 +423,23 @@ mod tests {
             &app,
             test::TestRequest::post()
                 .uri("/api/v1/library/refresh")
+                .to_request(),
+        )
+        .await;
+
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[actix_web::test]
+    async fn library_root_removal_is_registered_at_its_public_api_path() {
+        let app =
+            test::init_service(App::new().service(super::library_routes_at("/api/v1/library")))
+                .await;
+
+        let response = test::call_service(
+            &app,
+            test::TestRequest::delete()
+                .uri("/api/v1/library/roots?path=%2Fsrv%2Faudio")
                 .to_request(),
         )
         .await;

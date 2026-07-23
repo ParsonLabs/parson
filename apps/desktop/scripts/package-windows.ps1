@@ -17,7 +17,7 @@ try {
     & bun install --frozen-lockfile
     if ($LASTEXITCODE -ne 0) { throw "Installing JavaScript dependencies failed." }
     & bun --filter parson-music-desktop desktop:build
-    if ($LASTEXITCODE -ne 0) { throw "Building the Windows Electron installer failed." }
+    if ($LASTEXITCODE -ne 0) { throw "Building the Windows Electron packages failed." }
 
     $bundle = Join-Path $workspace "target\release\bundle\electron"
     $output = Join-Path $workspace $OutputDirectory
@@ -25,7 +25,7 @@ try {
     Get-ChildItem -LiteralPath $bundle -File -Filter "*.exe" |
         Copy-Item -Destination $output -Force
 
-    Write-Output "Created Windows Electron installer(s) in: $output"
+    Write-Output "Created Windows Electron packages in: $output"
 }
 finally {
     Set-Location -LiteralPath $previousLocation

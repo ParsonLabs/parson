@@ -7,10 +7,11 @@ use std::time::Instant;
 use std::time::{Duration, SystemTime};
 
 use actix_web::http::header;
-use actix_web::{HttpRequest, HttpResponse, Responder, get, head, post, web};
-use diesel::RunQueryDsl;
+use actix_web::{HttpRequest, HttpResponse, Responder, delete, get, head, post, web};
+use diesel::connection::SimpleConnection;
 use diesel::deserialize::QueryableByName;
 use diesel::sql_types::Text;
+use diesel::{Connection, RunQueryDsl};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -292,6 +293,9 @@ async fn run_index_scan(
             ));
         }
         normalize_library_data(&mut preview);
+        if let Ok(seed) = fetch_library().await {
+            preview = merge_progressive_catalog(preview, seed.as_ref());
+        }
         store_library(preview).await;
         let preview_cache = LibraryCache::available().await.map_err(|error| {
             ScanFailure::new(
@@ -789,6 +793,130 @@ pub async fn library_roots() -> impl Responder {
 }
 
 #[derive(Deserialize)]
+pub struct RemoveLibraryRootQuery {
+    path: String,
+}
+
+#[delete("/roots")]
+pub async fn remove_library_root(
+    query: web::Query<RemoveLibraryRootQuery>,
+    lifecycle: web::Data<LibraryLifecycle>,
+) -> HttpResponse {
+    let path = query.path.trim();
+    if path.is_empty() {
+        return bad_request("Library path cannot be empty.", "library_path_empty");
+    }
+    if path.len() > 4096 {
+        return bad_request("Library path is too long.", "library_path_too_long");
+    }
+    let configured = read_library_paths().await;
+    if !configured
+        .iter()
+        .any(|configured_path| configured_path == path)
+    {
+        return not_found("Library folder was not found.", "library_root_not_found");
+    }
+    let Some(_scan_lease) = lifecycle.try_begin_scan() else {
+        return conflict(
+            "A library scan is already running. Wait for it to finish before removing a folder.",
+            "library_scan_in_progress",
+        );
+    };
+
+    let database_path = path.to_string();
+    let removal = tokio::task::spawn_blocking(move || remove_indexed_root(&database_path)).await;
+    match removal {
+        Ok(Ok(false)) => {
+            return not_found("Library folder was not found.", "library_root_not_found");
+        }
+        Ok(Ok(true)) => {}
+        Ok(Err(error)) => {
+            return internal_server_error(error.to_string(), "library_root_remove_failed");
+        }
+        Err(error) => {
+            return internal_server_error(
+                format!("Library removal task stopped unexpectedly: {error}"),
+                "library_root_remove_failed",
+            );
+        }
+    }
+
+    if let Err(error) = crate::product::unregister_library_root(Path::new(path)) {
+        warn!(%error, %path, "Could not remove library root from Core registry");
+    }
+    let remaining = configured
+        .into_iter()
+        .filter(|configured_path| configured_path != path)
+        .collect::<Vec<_>>();
+    if let Err(error) = write_library_paths(&remaining) {
+        return internal_server_error(error.to_string(), "library_root_config_failed");
+    }
+
+    refresh_cache().await;
+    if remaining.is_empty() {
+        lifecycle.set_no_library().await;
+    } else {
+        match LibraryCache::new().await {
+            Ok(cache) => lifecycle.set_ready_and_persist(cache).await,
+            Err(error) => {
+                lifecycle.set_scan_failed(error.to_string()).await;
+                return internal_server_error(error.to_string(), "library_cache_build_failed");
+            }
+        }
+    }
+
+    HttpResponse::Ok().json(
+        remaining
+            .into_iter()
+            .map(|path| LibraryRootResponse { path })
+            .collect::<Vec<_>>(),
+    )
+}
+
+fn remove_indexed_root(path: &str) -> Result<bool, Box<dyn std::error::Error + Send + Sync>> {
+    let pool = crate::persistence::connection::connect()?;
+    let mut connection = pool.get()?;
+    connection.transaction::<_, Box<dyn std::error::Error + Send + Sync>, _>(|connection| {
+        let removed = diesel::sql_query("DELETE FROM library_root WHERE path = ?")
+            .bind::<Text, _>(path)
+            .execute(connection)?;
+        if removed == 0 {
+            return Ok(false);
+        }
+        connection.batch_execute(
+            "DELETE FROM track_entity
+             WHERE NOT EXISTS (SELECT 1 FROM track_file WHERE track_file.track_id = track_entity.id);
+             DELETE FROM album_inference_cache
+             WHERE NOT EXISTS (SELECT 1 FROM album_entity WHERE album_entity.id = album_inference_cache.album_id);
+             DELETE FROM album_entity
+             WHERE NOT EXISTS (SELECT 1 FROM track_entity WHERE track_entity.album_id = album_entity.id);
+             DELETE FROM recording_entity
+             WHERE NOT EXISTS (SELECT 1 FROM track_entity WHERE track_entity.recording_id = recording_entity.id);
+             DELETE FROM release_group_entity
+             WHERE NOT EXISTS (SELECT 1 FROM album_entity WHERE album_entity.release_group_id = release_group_entity.id);
+             DELETE FROM artist_entity
+             WHERE NOT EXISTS (SELECT 1 FROM album_artist WHERE album_artist.artist_id = artist_entity.id)
+               AND NOT EXISTS (SELECT 1 FROM track_artist WHERE track_artist.artist_id = artist_entity.id);
+             DELETE FROM genre_entity
+             WHERE NOT EXISTS (SELECT 1 FROM album_genre WHERE album_genre.genre_id = genre_entity.id)
+               AND NOT EXISTS (SELECT 1 FROM track_genre WHERE track_genre.genre_id = genre_entity.id);
+             DELETE FROM artwork
+             WHERE NOT EXISTS (SELECT 1 FROM album_entity WHERE album_entity.artwork_id = artwork.id)
+               AND NOT EXISTS (SELECT 1 FROM artist_entity WHERE artist_entity.artwork_id = artwork.id);
+             DELETE FROM library_search_document
+             WHERE (entity_type = 'song' AND NOT EXISTS (SELECT 1 FROM track_entity WHERE track_entity.id = library_search_document.entity_id))
+                OR (entity_type = 'album' AND NOT EXISTS (SELECT 1 FROM album_entity WHERE album_entity.id = library_search_document.entity_id))
+                OR (entity_type = 'artist' AND NOT EXISTS (SELECT 1 FROM artist_entity WHERE artist_entity.id = library_search_document.entity_id));
+             DELETE FROM metadata_task
+             WHERE (entity_type = 'track' AND NOT EXISTS (SELECT 1 FROM track_entity WHERE track_entity.id = metadata_task.entity_id))
+                OR (entity_type = 'album' AND NOT EXISTS (SELECT 1 FROM album_entity WHERE album_entity.id = metadata_task.entity_id))
+                OR (entity_type = 'artist' AND NOT EXISTS (SELECT 1 FROM artist_entity WHERE artist_entity.id = metadata_task.entity_id));",
+        )?;
+        Ok(true)
+    })
+}
+
+#[derive(Deserialize)]
 pub struct CatalogQuery {
     pub offset: Option<usize>,
     pub limit: Option<usize>,
@@ -1200,27 +1328,34 @@ async fn save_library_path(path: &str) -> Result<(), Box<dyn std::error::Error>>
 
     if !libraries.paths.iter().any(|existing| existing == path) {
         libraries.paths.push(path.to_string());
-        let json = serde_json::to_string_pretty(&libraries)?;
-        if let Some(parent) = libraries_file.parent() {
-            fs::create_dir_all(parent)?;
-        }
-        let temporary = libraries_file.with_extension("json.tmp");
-        fs::write(&temporary, json)?;
-        // Keep the previous contents until replacement succeeds.
-        let backup = libraries_file.with_extension("json.bak");
-        if libraries_file.exists() {
-            let _ = fs::remove_file(&backup);
-            fs::rename(&libraries_file, &backup)?;
-        }
-        if let Err(error) = fs::rename(&temporary, &libraries_file) {
-            if backup.exists() {
-                let _ = fs::rename(&backup, &libraries_file);
-            }
-            return Err(error.into());
-        }
-        let _ = fs::remove_file(backup);
+        write_library_paths(&libraries.paths)?;
     }
 
+    Ok(())
+}
+
+fn write_library_paths(paths: &[String]) -> Result<(), Box<dyn std::error::Error>> {
+    let libraries_file = get_libraries_config_path();
+    let json = serde_json::to_string_pretty(&Libraries {
+        paths: paths.to_vec(),
+    })?;
+    if let Some(parent) = libraries_file.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let temporary = libraries_file.with_extension("json.tmp");
+    fs::write(&temporary, json)?;
+    let backup = libraries_file.with_extension("json.bak");
+    if libraries_file.exists() {
+        let _ = fs::remove_file(&backup);
+        fs::rename(&libraries_file, &backup)?;
+    }
+    if let Err(error) = fs::rename(&temporary, &libraries_file) {
+        if backup.exists() {
+            let _ = fs::rename(&backup, &libraries_file);
+        }
+        return Err(error.into());
+    }
+    let _ = fs::remove_file(backup);
     Ok(())
 }
 

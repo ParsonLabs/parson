@@ -10,8 +10,13 @@ const { spawnSync } = require("node:child_process");
 
 const workspace = path.resolve(__dirname, "../../..");
 const binDirectory = path.join(workspace, "apps", "desktop", "electron", "bin");
-const windows = process.platform === "win32";
+const targetPlatform = process.env.PARSON_BUILD_PLATFORM || process.platform;
+const windows = targetPlatform === "win32";
 const executable = `parson-music-server${windows ? ".exe" : ""}`;
+const rustTarget = process.env.PARSON_RUST_TARGET;
+const cargoBuildSubcommands = (
+  process.env.PARSON_CARGO_BUILD_SUBCOMMAND || "build"
+).split(/\s+/);
 
 function run(command, args, cwd = workspace) {
   const result = spawnSync(command, args, { cwd, stdio: "inherit" });
@@ -22,14 +27,16 @@ function run(command, args, cwd = workspace) {
 }
 
 run("bun", ["run", "build"], path.join(workspace, "apps", "web"));
-run("cargo", [
-  "build",
+const cargoArgs = [
+  ...cargoBuildSubcommands,
   "--manifest-path",
   path.join(workspace, "Cargo.toml"),
   "-p",
   "parson-music",
   "--release",
-]);
+];
+if (rustTarget) cargoArgs.push("--target", rustTarget);
+run("cargo", cargoArgs);
 
 mkdirSync(binDirectory, { recursive: true });
 const otherExecutable = path.join(
@@ -37,11 +44,13 @@ const otherExecutable = path.join(
   windows ? "parson-music-server" : "parson-music-server.exe",
 );
 if (existsSync(otherExecutable)) unlinkSync(otherExecutable);
-const source = path.join(workspace, "target", "release", executable);
+const source = rustTarget
+  ? path.join(workspace, "target", rustTarget, "release", executable)
+  : path.join(workspace, "target", "release", executable);
 const destination = path.join(binDirectory, executable);
 copyFileSync(source, destination);
 if (!windows) chmodSync(destination, 0o755);
 
 console.log(
-  `Prepared the shared Electron shell with the ${process.platform} backend.`,
+  `Prepared the shared Electron shell with the ${rustTarget || targetPlatform} backend.`,
 );

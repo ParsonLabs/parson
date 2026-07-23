@@ -7,6 +7,20 @@ const outputDirectory = path.resolve(
   desktopDirectory,
   "../../target/release/bundle/electron",
 );
+const requestedArchitecture = process.env.PARSON_BUILD_ARCH || process.arch;
+const targetPlatform = process.env.PARSON_BUILD_PLATFORM || process.platform;
+const architecture =
+  requestedArchitecture === "x86_64" || requestedArchitecture === "amd64"
+    ? "x64"
+    : requestedArchitecture === "aarch64"
+      ? "arm64"
+      : requestedArchitecture;
+
+if (architecture !== "x64" && architecture !== "arm64") {
+  throw new Error(
+    `Desktop packaging does not support ${requestedArchitecture}.`,
+  );
+}
 
 function run(command, args) {
   const result = spawnSync(command, args, {
@@ -30,23 +44,32 @@ function cleanOutput(predicate) {
   }
 }
 
-if (process.platform === "linux") {
+if (targetPlatform === "linux") {
   cleanOutput(
     (name) =>
-      name === "linux-unpacked" ||
+      (name.startsWith("linux") && name.endsWith("-unpacked")) ||
       name.endsWith(".AppImage") ||
       name.endsWith(".deb"),
   );
   run("bash", [path.join(__dirname, "build-linux.sh")]);
-} else if (process.platform === "win32") {
-  cleanOutput((name) => name === "win-unpacked" || name.endsWith("-setup.exe"));
-  const args = [require.resolve("electron-builder/cli.js"), "--win", "nsis"];
+} else if (targetPlatform === "win32") {
+  cleanOutput(
+    (name) =>
+      (name.startsWith("win") && name.endsWith("-unpacked")) ||
+      name.endsWith("-setup.exe") ||
+      name.endsWith("-portable.exe"),
+  );
+  const args = [
+    require.resolve("electron-builder/cli.js"),
+    "--win",
+    "nsis",
+    "portable",
+    `--${architecture}`,
+  ];
   if (process.env.PARSON_REQUIRE_CODE_SIGNING === "true") {
     args.push("--config.forceCodeSigning=true");
   }
   run(process.execPath, args);
 } else {
-  throw new Error(
-    `Desktop packaging is not configured for ${process.platform}.`,
-  );
+  throw new Error(`Desktop packaging is not configured for ${targetPlatform}.`);
 }

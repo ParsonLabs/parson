@@ -20,6 +20,15 @@ Linux package check:
 bash ./apps/desktop/scripts/verify-linux-package.sh
 ```
 
+The AppImage uses a static runtime and does not require FUSE. When opened from
+a download location, it offers to install or update itself for the current
+user, creates the desktop integration, and relaunches from a stable path. The
+same flow can be requested non-interactively:
+
+```bash
+./Parson_VERSION_ARCH.AppImage --install
+```
+
 Windows release:
 
 ```powershell

@@ -40,3 +40,11 @@ export function libraryReadinessPollInterval(readiness?: LibraryReadiness) {
     ? LIBRARY_IDLE_READINESS_POLL_MS
     : LIBRARY_READINESS_POLL_MS;
 }
+
+export function homeFeedShouldShowSkeleton(
+  setupPending: boolean,
+  feedPending: boolean,
+  unavailableState?: LibraryReadiness["state"],
+) {
+  return setupPending || feedPending || unavailableState === "indexing";
+}

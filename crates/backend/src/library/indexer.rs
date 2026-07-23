@@ -44,7 +44,7 @@ use crate::persistence::connection::{DbPool, connect};
 
 const AUDIO_EXTENSIONS: &[&str] = &["mp3", "flac", "ogg", "m4a", "opus", "wav", "aiff", "alac"];
 const TAG_PARSER_VERSION: &str = "13";
-const COVER_RESOLVER_VERSION: &str = "4";
+const COVER_RESOLVER_VERSION: &str = "5";
 // Bump when release inference semantics change.
 const CLASSIFICATION_VERSION: &str = "7";
 const DATABASE_BATCH_SIZE: usize = 10_000;
@@ -146,6 +146,12 @@ enum CoverSuitability {
     NearSquare,
     Square,
     Preferred,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CoverCrop {
+    HorizontalRight,
+    VerticalTopClockwise,
 }
 
 #[derive(Debug, QueryableByName)]
@@ -2683,6 +2689,41 @@ fn cover_candidate_score(path: &Path, album_directory: &Path) -> Option<(i32, Co
     Some((score, suitability))
 }
 
+fn cover_spread_crop(path: &Path) -> Option<CoverCrop> {
+    let (width, height) = image::image_dimensions(path).ok()?;
+    let shortest = width.min(height);
+    if shortest < 400 {
+        return None;
+    }
+    let ratio = width.max(height) as f64 / shortest as f64;
+    if !(1.75..=2.25).contains(&ratio) {
+        return None;
+    }
+    if width > height {
+        Some(CoverCrop::HorizontalRight)
+    } else {
+        Some(CoverCrop::VerticalTopClockwise)
+    }
+}
+
+fn spread_crop_for_candidate(
+    candidate: &DiscoveredImage,
+    candidates: &[DiscoveredImage],
+    album_directory: &Path,
+) -> Option<CoverCrop> {
+    if filename_cover_score(&candidate.path, album_directory) < 0 {
+        return None;
+    }
+    let crop = cover_spread_crop(&candidate.path)?;
+    let has_back_companion = candidates.iter().any(|other| {
+        other.path != candidate.path
+            && other.path.parent() == candidate.path.parent()
+            && filename_cover_score(&other.path, album_directory) <= -1_000
+            && image::image_dimensions(&other.path).is_ok()
+    });
+    has_back_companion.then_some(crop)
+}
+
 fn inventory_candidates(
     inventory: &FilesystemInventory,
     album_directory: &Path,
@@ -2758,31 +2799,136 @@ fn hash_file(path: &Path) -> String {
     hex_digest(digest.finalize().as_slice())
 }
 
-fn resolve_inventory_cover(
+fn persist_cropped_cover(
+    source: &Path,
+    crop: CoverCrop,
+    cover_directory: &Path,
+) -> CoverResolution {
+    let source_hash = hash_file(source);
+    if source_hash.is_empty() {
+        return CoverResolution::default();
+    }
+    let mut digest = Sha256::new();
+    digest.update(b"parson-cropped-cover-v1\0");
+    digest.update(source_hash.as_bytes());
+    digest.update([match crop {
+        CoverCrop::HorizontalRight => 0,
+        CoverCrop::VerticalTopClockwise => 1,
+    }]);
+    let content_hash = hex_digest(digest.finalize().as_slice());
+    let cover_path = cover_directory.join(format!("{content_hash}.jpg"));
+    if cover_path
+        .metadata()
+        .is_ok_and(|metadata| metadata.len() > 0)
+    {
+        return CoverResolution {
+            path: normalize_path(&cover_path),
+            content_hash,
+            preferred: false,
+        };
+    }
+
+    let Ok(mut reader) = image::ImageReader::open(source) else {
+        return CoverResolution::default();
+    };
+    let mut limits = image::Limits::default();
+    limits.max_image_width = Some(16_384);
+    limits.max_image_height = Some(16_384);
+    limits.max_alloc = Some(256 * 1024 * 1024);
+    reader.limits(limits);
+    let Ok(image) = reader.decode() else {
+        return CoverResolution::default();
+    };
+    let (width, height) = (image.width(), image.height());
+    let cropped = match crop {
+        CoverCrop::HorizontalRight => {
+            let size = (width / 2).min(height);
+            let y = (height - size) / 2;
+            image.crop_imm(width - size, y, size, size)
+        }
+        CoverCrop::VerticalTopClockwise => {
+            let size = width.min(height / 2);
+            let x = (width - size) / 2;
+            image.crop_imm(x, 0, size, size).rotate90()
+        }
+    };
+    let temporary = cover_path.with_extension(format!("jpg.{}.tmp", Uuid::new_v4()));
+    let written = cropped
+        .save_with_format(&temporary, image::ImageFormat::Jpeg)
+        .map_err(std::io::Error::other);
+    match written.and_then(|()| std::fs::rename(&temporary, &cover_path)) {
+        Ok(()) => CoverResolution {
+            path: normalize_path(&cover_path),
+            content_hash,
+            preferred: false,
+        },
+        Err(_)
+            if cover_path
+                .metadata()
+                .is_ok_and(|metadata| metadata.len() > 0) =>
+        {
+            let _ = std::fs::remove_file(&temporary);
+            CoverResolution {
+                path: normalize_path(&cover_path),
+                content_hash,
+                preferred: false,
+            }
+        }
+        Err(error) => {
+            let _ = std::fs::remove_file(&temporary);
+            warn!(
+                source = %source.display(),
+                %error,
+                "failed to persist cropped cover artwork"
+            );
+            CoverResolution::default()
+        }
+    }
+}
+
+fn resolve_inventory_cover_with_storage(
     candidates: &[DiscoveredImage],
     album_directory: &Path,
+    cover_directory: Option<&Path>,
 ) -> CoverResolution {
     candidates
         .iter()
         .filter_map(|candidate| {
+            if let Some(crop) = spread_crop_for_candidate(candidate, candidates, album_directory) {
+                return Some((candidate, 450, CoverSuitability::NearSquare, Some(crop)));
+            }
             cover_candidate_score(&candidate.path, album_directory)
-                .map(|(score, suitability)| (candidate, score, suitability))
+                .map(|(score, suitability)| (candidate, score, suitability, None))
         })
-        .filter(|(_, score, _)| *score >= 200)
+        .filter(|(_, score, _, _)| *score >= 200)
         .max_by(
-            |(left, left_score, left_suitability), (right, right_score, right_suitability)| {
+            |(left, left_score, left_suitability, _),
+             (right, right_score, right_suitability, _)| {
                 left_suitability
                     .cmp(right_suitability)
                     .then_with(|| left_score.cmp(right_score))
                     .then_with(|| right.path.cmp(&left.path))
             },
         )
-        .map(|(candidate, _, suitability)| CoverResolution {
-            path: normalize_path(&candidate.path),
-            content_hash: hash_file(&candidate.path),
-            preferred: suitability == CoverSuitability::Preferred,
+        .map(|(candidate, _, suitability, crop)| {
+            if let (Some(crop), Some(cover_directory)) = (crop, cover_directory) {
+                return persist_cropped_cover(&candidate.path, crop, cover_directory);
+            }
+            CoverResolution {
+                path: normalize_path(&candidate.path),
+                content_hash: hash_file(&candidate.path),
+                preferred: suitability == CoverSuitability::Preferred,
+            }
         })
         .unwrap_or_default()
+}
+
+#[cfg(test)]
+fn resolve_inventory_cover(
+    candidates: &[DiscoveredImage],
+    album_directory: &Path,
+) -> CoverResolution {
+    resolve_inventory_cover_with_storage(candidates, album_directory, None)
 }
 
 #[cfg(test)]
@@ -4982,6 +5128,10 @@ fn resolve_local_covers(
     inventory: &FilesystemInventory,
     reuse_cached_resolution: bool,
 ) -> QueryResult<HashMap<PathBuf, CoverResolution>> {
+    let cover_directory = get_cover_art_path();
+    let managed_cover_directory = std::fs::create_dir_all(&cover_directory)
+        .is_ok()
+        .then_some(cover_directory);
     let cached = diesel::sql_query(
         "SELECT directory, inventory_signature, cover_path, content_hash
          FROM directory_cover_cache",
@@ -5013,7 +5163,13 @@ fn resolve_local_covers(
                     preferred: cover_candidate_score(Path::new(&row.cover_path), &directory)
                         .is_some_and(|(_, suitability)| suitability == CoverSuitability::Preferred),
                 })
-                .unwrap_or_else(|| resolve_inventory_cover(&candidates, &directory));
+                .unwrap_or_else(|| {
+                    resolve_inventory_cover_with_storage(
+                        &candidates,
+                        &directory,
+                        managed_cover_directory.as_deref(),
+                    )
+                });
             (directory, database_directory, signature, cover, cache_hit)
         })
         .collect::<Vec<_>>();
@@ -10160,6 +10316,87 @@ mod external_library_tests {
         assert!(preferred.preferred);
 
         std::fs::remove_dir_all(directory).expect("remove cover confidence fixture");
+    }
+
+    #[test]
+    fn paired_cover_spreads_extract_the_front_panel() {
+        let root =
+            std::env::temp_dir().join(format!("music-cover-spread-test-{}", uuid::Uuid::new_v4()));
+        let managed = root.join("managed");
+        std::fs::create_dir_all(&managed).expect("create managed cover fixture");
+
+        let landscape = root.join("landscape");
+        std::fs::create_dir_all(&landscape).expect("create landscape cover fixture");
+        image::RgbImage::new(500, 500)
+            .save(landscape.join("rear.jpg"))
+            .expect("write landscape back fixture");
+        image::RgbImage::from_fn(800, 400, |x, _| {
+            if x < 400 {
+                image::Rgb([220, 20, 20])
+            } else {
+                image::Rgb([20, 220, 20])
+            }
+        })
+        .save(landscape.join("scan.jpg"))
+        .expect("write landscape spread fixture");
+        let landscape_inventory = super::reconcile_files(&super::normalize_path(&landscape));
+        let landscape_cover = super::resolve_inventory_cover_with_storage(
+            &super::inventory_candidates(&landscape_inventory, &landscape),
+            &landscape,
+            Some(&managed),
+        );
+        let landscape_pixels = image::open(&landscape_cover.path)
+            .expect("decode extracted landscape cover")
+            .to_rgb8();
+        assert!(!landscape_cover.preferred);
+        assert_eq!(landscape_pixels.dimensions(), (400, 400));
+        let landscape_center = landscape_pixels.get_pixel(200, 200);
+        assert!(landscape_center[1] > 180 && landscape_center[0] < 60);
+
+        image::RgbImage::new(400, 360)
+            .save(landscape.join("front.jpg"))
+            .expect("write explicit front fixture");
+        let explicit_inventory = super::reconcile_files(&super::normalize_path(&landscape));
+        let explicit_cover = super::resolve_inventory_cover_with_storage(
+            &super::inventory_candidates(&explicit_inventory, &landscape),
+            &landscape,
+            Some(&managed),
+        );
+        assert!(explicit_cover.path.ends_with("front.jpg"));
+
+        let portrait = root.join("portrait");
+        std::fs::create_dir_all(&portrait).expect("create portrait cover fixture");
+        image::RgbImage::new(500, 500)
+            .save(portrait.join("back.jpg"))
+            .expect("write portrait back fixture");
+        image::RgbImage::from_fn(400, 800, |x, y| {
+            if y >= 400 {
+                image::Rgb([20, 220, 20])
+            } else if x < 200 {
+                image::Rgb([220, 20, 20])
+            } else {
+                image::Rgb([20, 20, 220])
+            }
+        })
+        .save(portrait.join("artwork.jpg"))
+        .expect("write portrait spread fixture");
+        let portrait_inventory = super::reconcile_files(&super::normalize_path(&portrait));
+        let portrait_cover = super::resolve_inventory_cover_with_storage(
+            &super::inventory_candidates(&portrait_inventory, &portrait),
+            &portrait,
+            Some(&managed),
+        );
+        let portrait_pixels = image::open(&portrait_cover.path)
+            .expect("decode extracted portrait cover")
+            .to_rgb8();
+        assert!(!portrait_cover.preferred);
+        assert_eq!(portrait_pixels.dimensions(), (400, 400));
+        let portrait_top = portrait_pixels.get_pixel(200, 80);
+        let portrait_bottom = portrait_pixels.get_pixel(200, 320);
+        assert!(portrait_top[0] > 180 && portrait_top[2] < 60);
+        assert!(portrait_bottom[2] > 180 && portrait_bottom[0] < 60);
+
+        std::fs::remove_dir_all(root).expect("remove cover spread fixture");
     }
 
     #[test]

@@ -16,22 +16,28 @@ import {
 import { Folder, Loader2 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useState, type FormEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type FormEvent,
+} from "react";
 import { toast } from "sonner";
 
 type View = SetupScreen | "loading" | "error";
 
 export default function SetupFlow() {
   const router = useRouter();
-  const { setSession } = useSession();
+  const { setLibrarySetupPending, setSession } = useSession();
   const [view, setView] = useState<View>("loading");
   const [status, setStatus] = useState<SetupStatus | null>(null);
   const [attempt, setAttempt] = useState(0);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [creatingAccount, setCreatingAccount] = useState(false);
-  const [addingDefaultLibrary, setAddingDefaultLibrary] = useState(false);
   const [showFolderBrowser, setShowFolderBrowser] = useState(false);
+  const startingLibrary = useRef(false);
 
   const applyStatus = useCallback(
     (nextStatus: SetupStatus, hasAdminSession: boolean) => {
@@ -125,18 +131,21 @@ export default function SetupFlow() {
   }
 
   async function useDefaultFolder() {
-    if (addingDefaultLibrary) return;
+    if (startingLibrary.current) return;
+    startingLibrary.current = true;
     const path = status?.suggested_library_path?.trim() || "/music";
-    setAddingDefaultLibrary(true);
+    setLibrarySetupPending(true);
+    router.replace("/");
     try {
       await indexSetupLibrary(path);
-      router.replace("/");
+      setLibrarySetupPending(false);
       router.refresh();
     } catch {
+      setLibrarySetupPending(false);
       toast(`Couldn’t add music from ${path}. Choose a different folder.`);
-      setShowFolderBrowser(true);
+      router.replace("/setup");
     } finally {
-      setAddingDefaultLibrary(false);
+      startingLibrary.current = false;
     }
   }
 
@@ -163,7 +172,10 @@ export default function SetupFlow() {
 
   if (view === "account") {
     return (
-      <SetupFrame title="Welcome to Parson">
+      <SetupFrame
+        description="Create the first account for this library."
+        title="Welcome to Parson"
+      >
         <form className="mt-8 grid gap-4" onSubmit={createAccount}>
           <Input
             aria-label="Username"
@@ -224,17 +236,12 @@ export default function SetupFlow() {
         </div>
         <Button
           className="mt-5 w-full bg-white text-black hover:bg-zinc-200"
-          disabled={addingDefaultLibrary}
           onClick={() => void useDefaultFolder()}
         >
-          {addingDefaultLibrary && (
-            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-          )}
-          {addingDefaultLibrary ? "Adding your music…" : "Use this folder"}
+          Use this folder
         </Button>
         <Button
           className="mt-2 w-full text-zinc-400 hover:text-white"
-          disabled={addingDefaultLibrary}
           onClick={() => setShowFolderBrowser((shown) => !shown)}
           variant="ghost"
         >
@@ -251,8 +258,17 @@ export default function SetupFlow() {
           <FileBrowser
             actionLabel="Use this folder"
             initialDirectory={status?.suggested_library_path || "/"}
-            onIndexed={async () => {
+            onIndexFailed={() => {
+              setLibrarySetupPending(false);
+              toast("Couldn’t add music from this folder. Choose another.");
+              router.replace("/setup");
+            }}
+            onIndexStarted={() => {
+              setLibrarySetupPending(true);
               router.replace("/");
+            }}
+            onIndexed={() => {
+              setLibrarySetupPending(false);
               router.refresh();
             }}
             setupMode

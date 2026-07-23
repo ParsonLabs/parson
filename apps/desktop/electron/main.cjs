@@ -9,6 +9,13 @@ const {
 const { spawn } = require("node:child_process");
 const fs = require("node:fs");
 const path = require("node:path");
+const {
+  APPLICATION_ID,
+  compareVersions,
+  getInstallState,
+  installAppImage,
+  integrateInstallation,
+} = require("./linux-installer.cjs");
 
 const PORT = 1993;
 const ORIGIN = `http://127.0.0.1:${PORT}`;
@@ -35,6 +42,113 @@ function backendExecutable() {
   const executable = `parson-music-server${process.platform === "win32" ? ".exe" : ""}`;
   if (app.isPackaged) return path.join(process.resourcesPath, executable);
   return path.join(__dirname, "bin", executable);
+}
+
+function refreshDesktopIntegration(applicationsDirectory) {
+  for (const [command, args] of [
+    ["update-desktop-database", [applicationsDirectory]],
+    [
+      "xdg-mime",
+      ["default", `${APPLICATION_ID}.desktop`, "x-scheme-handler/parson"],
+    ],
+  ]) {
+    const child = spawn(command, args, {
+      detached: true,
+      stdio: "ignore",
+    });
+    child.on("error", () => {});
+    child.unref();
+  }
+}
+
+async function offerLinuxInstallation() {
+  if (process.platform !== "linux" || !app.isPackaged) return false;
+  const state = getInstallState();
+  if (!state.available) return false;
+
+  const iconSource = path.join(process.resourcesPath, "parson.png");
+  const version = app.getVersion();
+  if (state.isCanonical) {
+    try {
+      await integrateInstallation({ iconSource, version });
+    } catch (error) {
+      console.error("Could not refresh Linux desktop integration", error);
+    }
+    return false;
+  }
+
+  const comparison = state.installedVersion
+    ? compareVersions(state.installedVersion, version)
+    : null;
+  const alreadyCurrent = state.installed && comparison === 0;
+  const installedIsNewer = state.installed && comparison === 1;
+  const action =
+    alreadyCurrent || installedIsNewer
+      ? "Open installed"
+      : state.installed
+        ? "Update"
+        : "Install";
+  const versionDetail = installedIsNewer
+    ? `A newer version (${state.installedVersion}) is already installed.`
+    : alreadyCurrent
+      ? `Version ${version} is already installed.`
+      : state.installedVersion
+        ? `Version ${state.installedVersion} is installed.`
+        : state.installed
+          ? "An existing installation was found."
+          : "Install Parson for your user account.";
+  const choice = process.argv.includes("--install")
+    ? 0
+    : dialog.showMessageBoxSync({
+        type: "info",
+        title: `${action} Parson`,
+        message:
+          alreadyCurrent || installedIsNewer
+            ? versionDetail
+            : `${action} Parson ${version}?`,
+        detail:
+          alreadyCurrent || installedIsNewer
+            ? "You can open the installed copy or run this file once."
+            : `${versionDetail}\n\nNo administrator password is required. Parson will add itself to your applications and restart.`,
+        buttons: [action, "Run once"],
+        defaultId: 0,
+        cancelId: 1,
+      });
+  if (choice !== 0) return false;
+
+  try {
+    const paths =
+      alreadyCurrent || installedIsNewer
+        ? await integrateInstallation({
+            iconSource,
+            version: state.installedVersion,
+          })
+        : await installAppImage({
+            iconSource,
+            sourcePath: state.source,
+            version,
+          });
+    refreshDesktopIntegration(path.dirname(paths.desktopEntry));
+    const child = spawn(paths.application, [], {
+      detached: true,
+      stdio: "ignore",
+    });
+    child.unref();
+    app.exit(0);
+    return true;
+  } catch (error) {
+    dialog.showMessageBoxSync({
+      type: "error",
+      title: `${action} failed`,
+      message:
+        alreadyCurrent || installedIsNewer
+          ? "Parson could not open the installed copy."
+          : `Parson could not ${action.toLowerCase()} itself.`,
+      detail: error instanceof Error ? error.message : String(error),
+      buttons: ["Continue"],
+    });
+    return false;
+  }
 }
 
 function rotateBackendLog(logPath) {
@@ -207,6 +321,7 @@ if (primary) {
   app.whenReady().then(async () => {
     app.setName("Parson");
     Menu.setApplicationMenu(null);
+    if (await offerLinuxInstallation()) return;
     app.setAsDefaultProtocolClient("parson");
     installDesktopBridge();
     await createWindow();

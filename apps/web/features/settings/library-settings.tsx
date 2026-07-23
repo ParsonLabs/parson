@@ -10,7 +10,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
 import { hasDesktopBridge, selectMusicFolder } from "@/lib/desktop/bridge";
 import {
   getLibraryCatalog,
@@ -18,18 +17,20 @@ import {
   getLibraryRoots,
   indexLibrary,
   refreshCurrentLibrary,
+  removeLibraryRoot,
 } from "@parson/music-sdk";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Folder, Loader2 } from "lucide-react";
+import { Folder, Loader2, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
+import { LibraryFolderBrowser } from "./library-folder-browser";
 
 export default function LibrarySettings() {
   const queryClient = useQueryClient();
   const [desktop, setDesktop] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
-  const [path, setPath] = useState("");
-  const [busy, setBusy] = useState<"add" | "refresh" | null>(null);
+  const [removePath, setRemovePath] = useState<string | null>(null);
+  const [busy, setBusy] = useState<"add" | "refresh" | "remove" | null>(null);
   const roots = useQuery({
     queryKey: ["library-roots"],
     queryFn: getLibraryRoots,
@@ -51,7 +52,6 @@ export default function LibrarySettings() {
     setBusy("add");
     try {
       await indexLibrary(selected);
-      setPath("");
       setAddOpen(false);
       await Promise.all([
         roots.refetch(),
@@ -67,12 +67,32 @@ export default function LibrarySettings() {
   }
 
   async function changeFolder() {
-    if (desktop) {
+    if (hasDesktopBridge()) {
       const selected = await selectMusicFolder();
       if (selected) await addLibrary(selected);
       return;
     }
     setAddOpen(true);
+  }
+
+  async function removeFolder() {
+    if (!removePath || busy) return;
+    setBusy("remove");
+    try {
+      await removeLibraryRoot(removePath);
+      setRemovePath(null);
+      await Promise.all([
+        roots.refetch(),
+        readiness.refetch(),
+        catalog.refetch(),
+      ]);
+      await invalidateCatalogRevisionQueries(queryClient);
+      toast.success("Music folder removed.");
+    } catch {
+      toast("Could not remove that folder right now.");
+    } finally {
+      setBusy(null);
+    }
   }
 
   async function refresh() {
@@ -112,11 +132,7 @@ export default function LibrarySettings() {
             </p>
           </div>
           <Button onClick={() => void changeFolder()}>
-            {paths.length
-              ? desktop
-                ? "Change folder"
-                : "Add another library"
-              : "Add library"}
+            {paths.length ? "Add folder" : "Add music folder"}
           </Button>
         </div>
         <div className="mt-5 overflow-hidden rounded-lg border border-white/10">
@@ -140,6 +156,16 @@ export default function LibrarySettings() {
                 >
                   {root.path}
                 </p>
+                <Button
+                  aria-label={`Remove ${root.path}`}
+                  className="h-8 px-2 text-zinc-400 hover:text-red-300"
+                  disabled={Boolean(busy)}
+                  onClick={() => setRemovePath(root.path)}
+                  variant="ghost"
+                >
+                  <Trash2 className="h-4 w-4" />
+                  <span className="hidden sm:inline">Remove</span>
+                </Button>
               </div>
             ))
           ) : (
@@ -177,30 +203,55 @@ export default function LibrarySettings() {
       <Dialog open={addOpen} onOpenChange={setAddOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Add a music library</DialogTitle>
+            <DialogTitle>Add a music folder</DialogTitle>
             <DialogDescription>
-              Enter a folder path mounted inside the Parson container, such as
-              /music.
+              Browse folders available on this server, then choose the folder
+              that contains your music.
             </DialogDescription>
           </DialogHeader>
-          <label className="grid gap-2 text-sm text-zinc-300">
-            Mounted folder path
-            <Input
-              autoFocus
-              onChange={(event) => setPath(event.target.value)}
-              placeholder="/music"
-              value={path}
-            />
-          </label>
+          <LibraryFolderBrowser
+            busy={busy === "add"}
+            initialDirectory="/"
+            onCancel={() => setAddOpen(false)}
+            onSelect={(selected) => void addLibrary(selected)}
+          />
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={Boolean(removePath)}
+        onOpenChange={(open) => {
+          if (!open && busy !== "remove") setRemovePath(null);
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Remove this music folder?</DialogTitle>
+            <DialogDescription>
+              Parson will remove its indexed tracks from the library. Files on
+              disk will not be changed.
+            </DialogDescription>
+          </DialogHeader>
+          <p
+            className="truncate rounded-md bg-white/[0.04] px-3 py-2 font-mono text-xs text-zinc-300"
+            title={removePath ?? undefined}
+          >
+            {removePath}
+          </p>
           <DialogFooter className="gap-2">
-            <Button onClick={() => setAddOpen(false)} variant="outline">
+            <Button
+              disabled={busy === "remove"}
+              onClick={() => setRemovePath(null)}
+              variant="outline"
+            >
               Cancel
             </Button>
             <Button
-              disabled={!path.trim() || Boolean(busy)}
-              onClick={() => void addLibrary(path)}
+              className="bg-red-600 text-white hover:bg-red-500"
+              disabled={busy === "remove"}
+              onClick={() => void removeFolder()}
             >
-              {busy === "add" ? "Adding…" : "Use this folder"}
+              {busy === "remove" ? "Removing…" : "Remove folder"}
             </Button>
           </DialogFooter>
         </DialogContent>

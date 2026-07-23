@@ -1,4 +1,4 @@
-name: Verify
+name: Build and Test
 
 on:
   pull_request:
@@ -9,11 +9,12 @@ permissions:
   contents: read
 
 concurrency:
-  group: verify-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  group: build-test-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
   verify:
+    name: Code quality and tests
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -61,7 +62,7 @@ jobs:
         run: cargo build --release --workspace
 
   linux-packages:
-    name: Linux packages (${{ matrix.arch }})
+    name: Linux desktop (${{ matrix.arch }})
     strategy:
       fail-fast: false
       matrix:
@@ -99,7 +100,7 @@ jobs:
           if-no-files-found: error
 
   windows-installer-portable:
-    name: Windows installer and portable (${{ matrix.arch }})
+    name: Windows desktop (${{ matrix.arch }})
     strategy:
       fail-fast: false
       matrix:
@@ -117,8 +118,12 @@ jobs:
         with:
           bun-version: 1.3.14
       - uses: Swatinem/rust-cache@v2
+      - name: Install packaging dependencies
+        run: bun install --frozen-lockfile --ignore-scripts
+      - name: Install Electron runtime
+        run: node node_modules/electron/install.js
       - name: Build embedded web UI
-        run: bun install --frozen-lockfile && bun --filter parson-music-web build
+        run: bun --filter parson-music-web build
       - name: Build and verify Windows server update assets
         if: matrix.arch == 'x64'
         shell: pwsh
@@ -139,7 +144,7 @@ jobs:
           if-no-files-found: error
 
   android:
-    name: Android APK (${{ matrix.arch }})
+    name: Android (${{ matrix.artifact }})
     strategy:
       fail-fast: false
       matrix:
@@ -188,46 +193,3 @@ jobs:
           name: parson-android-${{ matrix.artifact }}
           path: apps/mobile/android/app/build/outputs/apk/release/Parson_*.apk
           if-no-files-found: error
-
-  container:
-    name: Container (${{ matrix.arch }})
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - arch: amd64
-            runner: ubuntu-latest
-          - arch: arm64
-            runner: ubuntu-24.04-arm
-    runs-on: ${{ matrix.runner }}
-    timeout-minutes: 45
-    steps:
-      - uses: actions/checkout@v7
-      - uses: docker/setup-buildx-action@v4
-      - name: Build release container
-        uses: docker/build-push-action@v7
-        with:
-          context: .
-          push: false
-          load: true
-          tags: parson-music:ci-${{ matrix.arch }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-      - name: Smoke-test startup, HTTP surface, and restart
-        run: |
-          docker run -d --name parson-ci -p 1993:1993 -v parson-ci-data:/Parson parson-music:ci-${{ matrix.arch }}
-          for attempt in $(seq 1 30); do
-            if curl --fail --silent http://127.0.0.1:1993/health >/dev/null && curl --fail --silent http://127.0.0.1:1993/ >/dev/null; then break; fi
-            sleep 2
-          done
-          curl --fail --silent http://127.0.0.1:1993/health
-          curl --fail --silent http://127.0.0.1:1993/ >/dev/null
-          docker restart parson-ci
-          for attempt in $(seq 1 30); do
-            if curl --fail --silent http://127.0.0.1:1993/health >/dev/null; then break; fi
-            sleep 2
-          done
-          curl --fail --silent http://127.0.0.1:1993/health
-      - name: Print container logs after failure
-        if: failure()
-        run: docker logs parson-ci

@@ -13,7 +13,7 @@
   "scripts": {
     "desktop:dev": "node scripts/prepare-sidecar.cjs && electron .",
     "desktop:build": "node scripts/prepare-sidecar.cjs && node scripts/build.cjs",
-    "desktop:test": "node --test electron/linux-installer.test.cjs"
+    "desktop:test": "node --test electron/*.test.cjs"
   },
   "devDependencies": {
     "electron": "43.1.1",
@@ -36,6 +36,7 @@
     "files": [
       "electron/main.cjs",
       "electron/linux-installer.cjs",
+      "electron/linux-relaunch.cjs",
       "electron/preload.cjs",
       "electron/startup.html",
       "electron/startup-error.html",

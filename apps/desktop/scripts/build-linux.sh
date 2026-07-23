@@ -3,10 +3,18 @@ set -euo pipefail
 
 workspace="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 cd "$workspace/apps/desktop"
-bunx electron-builder --linux AppImage
 
-if ldconfig -p 2>/dev/null | grep -q 'libcrypt\.so\.1'; then
-  bunx electron-builder --linux deb
-else
-  echo "Skipping optional .deb: this host does not provide libcrypt.so.1 for electron-builder's fpm." >&2
-fi
+case "${PARSON_BUILD_ARCH:-$(uname -m)}" in
+  x64 | x86_64 | amd64)
+    arch_flag="--x64"
+    ;;
+  arm64 | aarch64)
+    arch_flag="--arm64"
+    ;;
+  *)
+    echo "Unsupported Linux package architecture: ${PARSON_BUILD_ARCH:-$(uname -m)}" >&2
+    exit 1
+    ;;
+esac
+
+bunx electron-builder --linux AppImage deb "$arch_flag"

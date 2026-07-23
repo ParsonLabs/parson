@@ -23,6 +23,10 @@ pub fn register_library_root(path: &Path) -> Result<LibraryRegistration, AppErro
     Ok(registration)
 }
 
+pub fn unregister_library_root(path: &Path) -> Result<bool, AppError> {
+    Ok(core_registry()?.unregister(path, &capability())?)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

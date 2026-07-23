@@ -10,7 +10,7 @@ const variants: Record<ButtonVariant, string> = {
   default: "bg-zinc-800 text-zinc-100 hover:bg-zinc-700",
   destructive: "bg-red-600 text-white hover:bg-red-500",
   outline:
-    "border border-zinc-800 bg-black text-zinc-300 hover:bg-zinc-900 hover:text-white",
+    "border border-zinc-700 bg-zinc-800 text-zinc-100 hover:bg-zinc-700 hover:text-white",
   secondary: "bg-zinc-800 text-zinc-100 hover:bg-zinc-700",
   ghost: "text-zinc-400 hover:bg-white/[0.06] hover:text-white",
   link: "text-zinc-300 underline-offset-4 hover:text-white hover:underline",

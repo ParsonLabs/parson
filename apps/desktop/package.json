@@ -12,7 +12,8 @@
   "main": "electron/main.cjs",
   "scripts": {
     "desktop:dev": "node scripts/prepare-sidecar.cjs && electron .",
-    "desktop:build": "node scripts/prepare-sidecar.cjs && node scripts/build.cjs"
+    "desktop:build": "node scripts/prepare-sidecar.cjs && node scripts/build.cjs",
+    "desktop:test": "node --test electron/linux-installer.test.cjs"
   },
   "devDependencies": {
     "electron": "43.1.1",
@@ -22,11 +23,19 @@
     "appId": "com.parsonlabs.parson",
     "productName": "Parson",
     "asar": true,
+    "compression": "maximum",
+    "electronLanguages": [
+      "en-US"
+    ],
     "directories": {
       "output": "../../target/release/bundle/electron"
     },
+    "toolsets": {
+      "appimage": "1.0.3"
+    },
     "files": [
       "electron/main.cjs",
+      "electron/linux-installer.cjs",
       "electron/preload.cjs",
       "electron/startup.html",
       "electron/startup-error.html",
@@ -60,11 +69,11 @@
     },
     "win": {
       "target": [
-        "nsis"
+        "nsis",
+        "portable"
       ],
       "icon": "../../crates/windows-server/parson.ico",
       "executableName": "Parson",
-      "artifactName": "Parson_${version}_${arch}-setup.${ext}",
       "signExts": [
         ".dll",
         ".node"
@@ -75,7 +84,11 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "Parson"
+      "shortcutName": "Parson",
+      "artifactName": "Parson_${version}_${arch}-setup.${ext}"
+    },
+    "portable": {
+      "artifactName": "Parson_${version}_${arch}-portable.${ext}"
     }
   }
 }

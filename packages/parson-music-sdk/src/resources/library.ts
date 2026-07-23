@@ -158,6 +158,13 @@ export async function getLibraryRoots(): Promise<LibraryRoot[]> {
   return Array.isArray(response.data) ? response.data : [];
 }
 
+export async function removeLibraryRoot(path: string): Promise<LibraryRoot[]> {
+  const response = await api.delete<LibraryRoot[]>("/library/roots", {
+    params: { path },
+  });
+  return Array.isArray(response.data) ? response.data : [];
+}
+
 export async function getSetupStatus(baseURL?: string): Promise<SetupStatus> {
   const response = await api.get<SetupStatus>("/setup/status", {
     baseURL,

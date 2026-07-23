@@ -27,6 +27,8 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v7
 
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v4
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
 
@@ -55,12 +57,21 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          platforms: linux/amd64
+          platforms: linux/amd64,linux/arm64
 
   publish_windows:
+    name: Publish Windows (${{ matrix.arch }})
     if: startsWith(github.ref, 'refs/tags/v')
     needs: verify
-    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            runner: windows-latest
+          - arch: arm64
+            runner: windows-11-arm
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 45
     permissions:
       contents: write
@@ -82,23 +93,35 @@ jobs:
         run: |
           $version = "${{ github.ref_name }}".TrimStart("v")
           .\apps\desktop\scripts\package-windows.ps1 -Version $version
-          .\crates\windows-server\package.ps1 -Version $version -SkipWebBuild
-          .\crates\windows-server\verify-update-assets.ps1 -Version $version
+          if ("${{ matrix.arch }}" -eq "x64") {
+            .\crates\windows-server\package.ps1 -Version $version -SkipWebBuild
+            .\crates\windows-server\verify-update-assets.ps1 -Version $version
+          }
       - name: Publish Windows release assets
         uses: softprops/action-gh-release@v2
         with:
           generate_release_notes: true
           files: |
             artifacts/windows/Parson_*-setup.exe
+            artifacts/windows/Parson_*-portable.exe
             artifacts/windows-server/ParsonMusicServer-*-win-x64.zip
             artifacts/windows-server/ParsonMusicServer.exe
             artifacts/windows-server/ParsonMusicServer.exe.sha256
             artifacts/windows-server/windows-server-update.json
 
   publish_linux:
+    name: Publish Linux (${{ matrix.arch }})
     if: startsWith(github.ref, 'refs/tags/v')
     needs: verify
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            runner: ubuntu-latest
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 45
     permissions:
       contents: write

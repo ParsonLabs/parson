@@ -16,6 +16,7 @@ const {
   installAppImage,
   integrateInstallation,
 } = require("./linux-installer.cjs");
+const { relaunchInstalledApp } = require("./linux-relaunch.cjs");
 
 const PORT = 1993;
 const ORIGIN = `http://127.0.0.1:${PORT}`;
@@ -129,12 +130,10 @@ async function offerLinuxInstallation() {
             version,
           });
     refreshDesktopIntegration(path.dirname(paths.desktopEntry));
-    const child = spawn(paths.application, [], {
-      detached: true,
-      stdio: "ignore",
+    relaunchInstalledApp({
+      application: paths.application,
+      electronApp: app,
     });
-    child.unref();
-    app.exit(0);
     return true;
   } catch (error) {
     dialog.showMessageBoxSync({

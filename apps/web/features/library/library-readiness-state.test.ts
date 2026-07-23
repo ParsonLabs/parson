@@ -3,6 +3,7 @@ import { QueryClient } from "@tanstack/react-query";
 import {
   LIBRARY_IDLE_READINESS_POLL_MS,
   catalogRevisionAffectsQuery,
+  homeFeedShouldShowSkeleton,
   invalidateCatalogRevisionQueries,
   libraryReadinessPollInterval,
   libraryReadinessShouldRefetch,
@@ -47,6 +48,14 @@ test("library readiness checks again on mount, reconnect, and focus", () => {
     }),
   ).toBe(true);
   expect(libraryReadinessShouldRefetch(complete)).toBe(true);
+});
+
+test("home keeps skeletons visible throughout first-library indexing", () => {
+  expect(homeFeedShouldShowSkeleton(true, false)).toBe(true);
+  expect(homeFeedShouldShowSkeleton(false, true)).toBe(true);
+  expect(homeFeedShouldShowSkeleton(false, false, "indexing")).toBe(true);
+  expect(homeFeedShouldShowSkeleton(false, false, "ready")).toBe(false);
+  expect(homeFeedShouldShowSkeleton(false, false, "failed")).toBe(false);
 });
 
 test("catalog revisions invalidate every catalog-derived query but not readiness", () => {

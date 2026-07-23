@@ -8,6 +8,7 @@ debug = true
 incremental = true
 
 [profile.release]
+opt-level = "z"
 lto = "fat"
 codegen-units = 1
 panic = "abort"

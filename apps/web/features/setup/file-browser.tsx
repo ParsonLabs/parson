@@ -20,6 +20,8 @@ export default function FileBrowser({
   beforeIndex,
   disabled = false,
   initialDirectory = "/",
+  onIndexFailed,
+  onIndexStarted,
   onIndexed,
   setupMode = false,
 }: {
@@ -27,6 +29,8 @@ export default function FileBrowser({
   beforeIndex?: () => boolean | Promise<boolean>;
   disabled?: boolean;
   initialDirectory?: string;
+  onIndexFailed?: (error: unknown) => void | Promise<void>;
+  onIndexStarted?: (path: string) => void | Promise<void>;
   onIndexed?: (report: LibraryIndexReport) => void | Promise<void>;
   setupMode?: boolean;
 }) {
@@ -99,18 +103,20 @@ export default function FileBrowser({
 
       try {
         if (beforeIndex && !(await beforeIndex())) return;
+        await onIndexStarted?.(selectedDirectory);
         const response = await (setupMode
           ? indexSetupLibrary(selectedDirectory)
           : indexLibrary(selectedDirectory));
+        await onIndexed?.(response.report);
         if (!mounted.current) return;
         setIndexReport(response.report);
         setIndexMessage(
           setupMode ? "Your music is ready." : "Library updated.",
         );
-        await onIndexed?.(response.report);
         if (mounted.current && setupMode && !onIndexed)
           router.replace("/login");
       } catch (error) {
+        await onIndexFailed?.(error);
         if (!mounted.current) return;
         const unavailable = getLibraryUnavailable(error);
         if (unavailable?.state === "indexing") {

@@ -6,7 +6,9 @@ import { createContext, useContext, useState, type ReactNode } from "react";
 type Session = NonNullable<SessionResponse["claims"]>;
 
 interface SessionContextValue {
+  librarySetupPending: boolean;
   session: Session | null;
+  setLibrarySetupPending: (pending: boolean) => void;
   setSession: (session: Session | null) => void;
 }
 
@@ -14,9 +16,17 @@ const SessionContext = createContext<SessionContextValue | null>(null);
 
 export default function SessionProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
+  const [librarySetupPending, setLibrarySetupPending] = useState(false);
 
   return (
-    <SessionContext.Provider value={{ session, setSession }}>
+    <SessionContext.Provider
+      value={{
+        librarySetupPending,
+        session,
+        setLibrarySetupPending,
+        setSession,
+      }}
+    >
       {children}
     </SessionContext.Provider>
   );

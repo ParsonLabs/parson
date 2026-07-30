@@ -162,14 +162,13 @@ export default function AlbumDetails({ devAlbum }: AlbumDetailsProps = {}) {
 
   const playTrack = (track: LibraryAlbum["songs"][number]) => {
     if (!album || !artist) return;
+    const index = album.songs.findIndex((song) => song.id === track.id);
+    setQueue(album.songs.map((song) => ({ song, album, artist })));
+    setCurrentSongIndex(Math.max(index, 0));
     if (currentSong?.id === track.id) {
       togglePlayPause();
       return;
     }
-
-    const index = album.songs.findIndex((song) => song.id === track.id);
-    setQueue(album.songs.map((song) => ({ song, album, artist })));
-    setCurrentSongIndex(Math.max(index, 0));
     setSongCallback(track, artist, album);
     playAudioSource();
   };
@@ -284,10 +283,12 @@ export default function AlbumDetails({ devAlbum }: AlbumDetailsProps = {}) {
                 <ListEnd className="h-4 w-4" />
                 Add to queue
               </DropdownMenuItem>
-              <DropdownMenuItem onSelect={saveAlbum}>
-                <Download className="h-4 w-4" />
-                Download album
-              </DropdownMenuItem>
+              {session?.role === "user" && (
+                <DropdownMenuItem onSelect={saveAlbum}>
+                  <Download className="h-4 w-4" />
+                  Download album
+                </DropdownMenuItem>
+              )}
               <DropdownMenuItem asChild>
                 <Link href={`/artist?id=${artist.id}`}>
                   <UserRound className="h-4 w-4" />
@@ -351,6 +352,7 @@ export default function AlbumDetails({ devAlbum }: AlbumDetailsProps = {}) {
           activeSongId={currentSong?.id}
           album={album}
           artistName={artist.name}
+          isPlaying={isPlaying}
           onPlay={playTrack}
         />
       </div>

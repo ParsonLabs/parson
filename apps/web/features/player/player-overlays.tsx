@@ -37,6 +37,7 @@ const renderTitle = (title: string) =>
 export function FullscreenPlayer({
   activeLine,
   activeLineRef,
+  albumId,
   albumName,
   artistId,
   artistName,
@@ -47,6 +48,7 @@ export function FullscreenPlayer({
   looping,
   lyricsOpen,
   lyricsFallback,
+  lyricsFailed,
   lyricsInstrumental,
   lyricsLoading,
   lyricsScrollRef,
@@ -57,6 +59,8 @@ export function FullscreenPlayer({
   onOpenQueue,
   onBackToPlayer,
   onPrevious,
+  onRetryLyrics,
+  onReorderQueue,
   onSelectQueueItem,
   onSeek,
   onToggleLoop,
@@ -75,6 +79,7 @@ export function FullscreenPlayer({
 }: {
   activeLine: number;
   activeLineRef: RefObject<HTMLElement | null>;
+  albumId: string;
   albumName: string;
   artistId: string;
   artistName: string;
@@ -85,6 +90,7 @@ export function FullscreenPlayer({
   looping: boolean;
   lyricsOpen: boolean;
   lyricsFallback?: string | null;
+  lyricsFailed: boolean;
   lyricsInstrumental: boolean;
   lyricsLoading: boolean;
   lyricsScrollRef: RefObject<HTMLDivElement | null>;
@@ -95,6 +101,8 @@ export function FullscreenPlayer({
   onOpenQueue: () => void;
   onBackToPlayer: () => void;
   onPrevious: () => void;
+  onRetryLyrics: () => void;
+  onReorderQueue: (from: number, to: number) => void;
   onSelectQueueItem: (index: number) => void;
   onSeek: (value: number) => void;
   onToggleLoop: () => void;
@@ -168,7 +176,7 @@ export function FullscreenPlayer({
       >
         <button
           aria-label={
-            showingMobileSubView ? "Back to now playing" : "Close now playing"
+            showingMobileSubView ? "Return to now playing" : "Close now playing"
           }
           className="grid h-11 w-11 place-items-center rounded-full active:bg-white/10"
           onClick={showingMobileSubView ? onBackToPlayer : onClose}
@@ -198,13 +206,15 @@ export function FullscreenPlayer({
         <Minimize2 className="h-5 w-5" />
       </button>
       {lyricsOpen && (
-        <div className="relative z-10 min-h-0 flex-1 overflow-hidden md:hidden">
+        <div className="relative z-10 mx-auto min-h-0 w-full max-w-[820px] flex-1 overflow-hidden md:px-8 md:pb-24 md:pt-12">
           <LyricsContent
             activeLine={activeLine}
             activeLineRef={activeLineRef}
             fallback={lyricsFallback}
+            failed={lyricsFailed}
             instrumental={lyricsInstrumental}
             loading={lyricsLoading}
+            onRetry={onRetryLyrics}
             onSeek={onSeek}
             scrollRef={lyricsScrollRef}
             timed={timedLyrics}
@@ -217,6 +227,7 @@ export function FullscreenPlayer({
             <PlayerQueueList
               className="h-full pb-8"
               currentSongId={songId}
+              onReorder={onReorderQueue}
               onSelect={onSelectQueueItem}
               queue={queue}
             />
@@ -233,7 +244,7 @@ export function FullscreenPlayer({
         </div>
       )}
       <div
-        className={`${showingMobileSubView ? "hidden md:grid" : "flex"} relative mx-auto w-full max-w-6xl flex-1 flex-col justify-center gap-6 overflow-y-auto px-6 pb-[max(24px,env(safe-area-inset-bottom))] pt-2 md:grid md:items-center md:gap-10 md:py-10 md:pb-28 lg:grid-cols-[minmax(280px,460px)_minmax(0,1fr)] lg:px-10`}
+        className={`${showingMobileSubView ? "hidden" : "flex md:grid"} relative mx-auto w-full max-w-6xl flex-1 flex-col justify-center gap-6 overflow-y-auto px-6 pb-[max(24px,env(safe-area-inset-bottom))] pt-2 md:items-center md:gap-10 md:py-10 md:pb-28 lg:grid-cols-[minmax(280px,460px)_minmax(0,1fr)] lg:px-10`}
       >
         <div
           className="relative mx-auto aspect-square w-full max-w-[min(72vw,390px)] overflow-hidden rounded-[18px] border border-white/10 bg-[#111] shadow-2xl shadow-black md:max-w-[460px] md:rounded-lg"
@@ -248,9 +259,13 @@ export function FullscreenPlayer({
           />
         </div>
         <div className="mx-auto w-full max-w-xl min-w-0">
-          <p className="hidden text-xs font-semibold uppercase tracking-widest text-zinc-500 md:block">
+          <Link
+            className="hidden w-fit text-xs font-semibold uppercase tracking-widest text-zinc-500 hover:text-white hover:underline md:block"
+            href={`/album?id=${albumId}`}
+            onClick={onClose}
+          >
             {albumName}
-          </p>
+          </Link>
           <div className="flex min-w-0 items-center gap-4 md:block">
             <div className="min-w-0 flex-1">
               <h1 className="truncate text-xl font-bold leading-tight md:mt-3 md:whitespace-normal md:text-4xl md:font-black lg:text-6xl">
@@ -268,15 +283,15 @@ export function FullscreenPlayer({
               <FavoriteButton songId={songId} songName={title} />
             </div>
           </div>
-          <div className="mt-5 md:mt-10 md:border-y md:border-white/10 md:py-6">
+          <div className="mt-5 md:mt-9 md:border-y md:border-white/10 md:py-4">
             <Timeline
-              className="mb-5 flex w-full md:mb-0 md:mt-7"
+              className="mb-5 flex w-full md:mb-0"
               currentTime={currentTime}
               duration={duration}
               onChange={onSeek}
               playbackRate={playbackRate}
             />
-            <div className="flex justify-center py-2 md:scale-125 md:py-0">
+            <div className="flex justify-center py-2 md:mt-3 md:scale-125 md:py-0">
               <PlaybackControls
                 isPlaying={isPlaying}
                 onNext={onNext}
@@ -350,8 +365,10 @@ export function LyricsPanel({
   cover,
   onSeek,
   fallback,
+  failed,
   instrumental,
   loading,
+  onRetry,
   scrollRef,
   timed,
 }: {
@@ -360,8 +377,10 @@ export function LyricsPanel({
   onSeek: (value: number) => void;
   cover: string;
   fallback?: string | null;
+  failed: boolean;
   instrumental: boolean;
   loading: boolean;
+  onRetry: () => void;
   scrollRef: RefObject<HTMLDivElement | null>;
   timed: TimedLyric[];
 }) {
@@ -384,8 +403,10 @@ export function LyricsPanel({
           activeLine={activeLine}
           activeLineRef={activeLineRef}
           fallback={fallback}
+          failed={failed}
           instrumental={instrumental}
           loading={loading}
+          onRetry={onRetry}
           onSeek={onSeek}
           scrollRef={scrollRef}
           timed={timed}
@@ -399,8 +420,10 @@ function LyricsContent({
   activeLine,
   activeLineRef,
   fallback,
+  failed,
   instrumental,
   loading,
+  onRetry,
   onSeek,
   scrollRef,
   timed,
@@ -408,8 +431,10 @@ function LyricsContent({
   activeLine: number;
   activeLineRef: RefObject<HTMLElement | null>;
   fallback?: string | null;
+  failed: boolean;
   instrumental: boolean;
   loading: boolean;
+  onRetry: () => void;
   onSeek: (value: number) => void;
   scrollRef: RefObject<HTMLDivElement | null>;
   timed: TimedLyric[];
@@ -422,6 +447,21 @@ function LyricsContent({
       {loading ? (
         <div className="grid h-full place-items-center">
           <div className="h-2 w-2 animate-pulse rounded-full bg-white/70" />
+        </div>
+      ) : failed ? (
+        <div className="grid h-full place-items-center">
+          <div className="max-w-sm">
+            <p className="text-2xl font-semibold text-white">
+              Lyrics are temporarily unavailable
+            </p>
+            <button
+              className="mt-5 rounded-full bg-white px-5 py-2.5 text-sm font-semibold text-black hover:bg-zinc-200"
+              onClick={onRetry}
+              type="button"
+            >
+              Try again
+            </button>
+          </div>
         </div>
       ) : timed.length ? (
         <div className="space-y-5 pb-[50vh] pt-1">

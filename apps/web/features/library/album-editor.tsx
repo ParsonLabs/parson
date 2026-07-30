@@ -189,6 +189,7 @@ export default function AlbumEditor({
               </div>
             ) : (
               <MetadataFields
+                coverFile={coverFile}
                 mode="album"
                 onCoverSelect={setCoverFile}
                 patch={patch}

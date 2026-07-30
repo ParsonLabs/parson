@@ -29,6 +29,7 @@ export interface LibraryCatalogArtist {
   name: string;
   artworkPath: string;
   albumCount: number;
+  appearanceCount: number;
   songCount: number;
 }
 
@@ -68,7 +69,26 @@ export interface LibraryIndexReport {
   scanned_files: number;
   indexed_files: number;
   skipped_files: number;
+  warning_count: number;
   warnings: LibraryIndexWarning[];
+}
+
+export interface LibraryClassificationDiagnostic {
+  album_id: string;
+  title: string;
+  primary_type: string;
+  explanation: {
+    title_analysis?: unknown;
+    classification?: {
+      primary_type?: string;
+      confidence?: number;
+      scores?: unknown[];
+      evidence?: string[];
+      [key: string]: unknown;
+    };
+    diagnostic_error?: string;
+    [key: string]: unknown;
+  };
 }
 
 export interface LibraryIndexResponse<TLibrary = unknown> {
@@ -155,6 +175,17 @@ export async function getLibraryReadiness(): Promise<LibraryReadiness> {
 
 export async function getLibraryRoots(): Promise<LibraryRoot[]> {
   const response = await api.get<LibraryRoot[]>("/library/roots");
+  return Array.isArray(response.data) ? response.data : [];
+}
+
+export async function getLibraryClassificationDiagnostics(
+  offset = 0,
+  limit = 100,
+): Promise<LibraryClassificationDiagnostic[]> {
+  const response = await api.get<LibraryClassificationDiagnostic[]>(
+    "/library/diagnostics/classifications",
+    { params: { offset, limit } },
+  );
   return Array.isArray(response.data) ? response.data : [];
 }
 

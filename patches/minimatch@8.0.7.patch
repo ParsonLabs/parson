@@ -1,0 +1,35 @@
+diff --git a/dist/cjs/index.js b/dist/cjs/index.js
+index 27d8d5be3afb6306c91bd6a1e7c6f6dd0c972f10..b9877ebde49804e52871538c307baf6d584c197b 100644
+--- a/dist/cjs/index.js
++++ b/dist/cjs/index.js
+@@ -1,10 +1,7 @@
+ "use strict";
+-var __importDefault = (this && this.__importDefault) || function (mod) {
+-    return (mod && mod.__esModule) ? mod : { "default": mod };
+-};
+ Object.defineProperty(exports, "__esModule", { value: true });
+ exports.unescape = exports.escape = exports.AST = exports.Minimatch = exports.match = exports.makeRe = exports.braceExpand = exports.defaults = exports.filter = exports.GLOBSTAR = exports.sep = exports.minimatch = void 0;
+-const brace_expansion_1 = __importDefault(require("brace-expansion"));
++const brace_expansion_1 = require("brace-expansion");
+ const assert_valid_pattern_js_1 = require("./assert-valid-pattern.js");
+ const ast_js_1 = require("./ast.js");
+ const escape_js_1 = require("./escape.js");
+@@ -158,7 +155,7 @@ const braceExpand = (pattern, options = {}) => {
+         // shortcut. no need to expand.
+         return [pattern];
+     }
+-    return (0, brace_expansion_1.default)(pattern);
++    return (0, brace_expansion_1.expand)(pattern);
+ };
+ exports.braceExpand = braceExpand;
+ exports.minimatch.braceExpand = exports.braceExpand;
+diff --git a/dist/mjs/index.js b/dist/mjs/index.js
+index 80e8fde9412eed60e827c361c082c74c83718544..5e8aa8d5fef2e1c1fa05af6c43df502347773b38 100644
+--- a/dist/mjs/index.js
++++ b/dist/mjs/index.js
+@@ -1,4 +1,4 @@
+-import expand from 'brace-expansion';
++import { expand } from 'brace-expansion';
+ import { assertValidPattern } from './assert-valid-pattern.js';
+ import { AST } from './ast.js';
+ import { escape } from './escape.js';

@@ -11,6 +11,7 @@ import {
   ListPlus,
   Play,
   Pencil,
+  Shuffle,
   UserRound,
   X,
 } from "lucide-react-native";
@@ -66,7 +67,9 @@ export function AlbumActions({
   const [editorSaving, setEditorSaving] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [downloadProgress, setDownloadProgress] = useState({
-    done: 0,
+    downloaded: 0,
+    failed: 0,
+    processed: 0,
     total: 0,
   });
   const [editName, setEditName] = useState("");
@@ -87,6 +90,8 @@ export function AlbumActions({
   const albumDownloaded =
     !!album?.songs.length &&
     album.songs.every((song) => isSongDownloaded(song.id));
+  const downloadedCount =
+    album?.songs.filter((song) => isSongDownloaded(song.id)).length ?? 0;
   const load = () =>
     loaded
       ? Promise.resolve(loaded)
@@ -165,6 +170,19 @@ export function AlbumActions({
           }}
         />
         <DrawerAction
+          icon={Shuffle}
+          label="Shuffle"
+          onPress={() => {
+            setOperationError("");
+            void load()
+              .then((album) => {
+                player.playShuffled(album.songs);
+                onClose();
+              })
+              .catch(() => setOperationError("Could not load this album."));
+          }}
+        />
+        <DrawerAction
           icon={ListEnd}
           label="Add to queue"
           onPress={() => {
@@ -194,8 +212,10 @@ export function AlbumActions({
               albumDownloaded
                 ? "Delete album from device"
                 : downloading
-                  ? `Downloading album${downloadProgress.total ? ` · ${downloadProgress.done}/${downloadProgress.total}` : "…"}`
-                  : "Download album"
+                  ? `Downloading · ${downloadProgress.downloaded} of ${downloadProgress.total} songs`
+                  : album
+                    ? `Download album · ${downloadedCount} of ${album.songs.length} songs downloaded`
+                    : "Download album"
             }
             onPress={() => {
               if (downloading) return;
@@ -210,18 +230,32 @@ export function AlbumActions({
               }
               setOperationError("");
               setDownloading(true);
-              setDownloadProgress({ done: 0, total: 0 });
+              setDownloadProgress({
+                downloaded: downloadedCount,
+                failed: 0,
+                processed: downloadedCount,
+                total: album?.songs.length ?? 0,
+              });
               void (async () => {
                 const album = await load();
-                setDownloadProgress({ done: 0, total: album.songs.length });
-                await downloadAlbum(album.name, album.songs, (done) =>
-                  setDownloadProgress({ done, total: album.songs.length }),
+                const result = await downloadAlbum(
+                  album.name,
+                  album.songs,
+                  setDownloadProgress,
                 );
                 setDownloading(false);
-                onClose();
+                if (result.failed) {
+                  setOperationError(
+                    `${result.downloaded} of ${result.total} songs downloaded. Tap again to retry the missing songs.`,
+                  );
+                } else {
+                  onClose();
+                }
               })().catch(() => {
                 setDownloading(false);
-                setOperationError("Could not download this album.");
+                setOperationError(
+                  `${downloadedCount} of ${album?.songs.length ?? 0} songs downloaded. Could not prepare storage. Please try again.`,
+                );
               });
             }}
           />

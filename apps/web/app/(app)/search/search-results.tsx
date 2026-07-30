@@ -19,9 +19,13 @@ import AlbumMenu from "@/features/library/album-menu";
 import ArtistMenu from "@/features/library/artist-menu";
 import SongMenu from "@/features/library/song-menu";
 import { toast } from "sonner";
+import {
+  searchResultIsPlayable,
+  searchResultSubtitle,
+} from "@/features/library/search-result-subtitle";
 
 const isPlayable = (item: CombinedItem) =>
-  item.item_type === "song" || item.item_type === "album";
+  searchResultIsPlayable(item.item_type);
 
 const hrefFor = (item: CombinedItem) =>
   item.item_type === "song"
@@ -224,6 +228,7 @@ export default function SearchResults() {
       <div>
         {uniqueResults.map((item) => {
           const playable = isPlayable(item);
+          const subtitle = searchResultSubtitle(item);
           const playsOnRowClick = item.item_type === "song";
           const opensOnRowClick = item.item_type === "album";
           const key = `${item.item_type}-${item.id}`;
@@ -264,24 +269,25 @@ export default function SearchResults() {
                       {item.name}
                     </Link>
                   )}
-                  <p className="mt-0.5 truncate text-sm capitalize text-zinc-500">
-                    {item.item_type}
-                    {item.artist_object?.name && (
+                  <p className="mt-0.5 truncate text-sm text-zinc-500">
+                    {subtitle.label}
+                    {subtitle.label && subtitle.artist && " · "}
+                    {subtitle.artist && (
                       <>
-                        {" · "}
                         {playable ? (
-                          <span className="normal-case">
-                            {item.artist_object.name}
-                          </span>
+                          <span>{subtitle.artist}</span>
                         ) : (
                           <Link
-                            className="normal-case hover:text-zinc-300 hover:underline"
-                            href={`/artist?id=${item.artist_object.id}`}
+                            className="hover:text-zinc-300 hover:underline"
+                            href={`/artist?id=${item.artist_object?.id ?? ""}`}
                           >
-                            {item.artist_object.name}
+                            {subtitle.artist}
                           </Link>
                         )}
                       </>
+                    )}
+                    {!subtitle.label && !subtitle.artist && (
+                      <>{item.item_type}</>
                     )}
                   </p>
                 </div>

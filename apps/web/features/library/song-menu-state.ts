@@ -8,6 +8,16 @@ export type SongMenuQueueMetadata = {
   albumCover?: string;
 };
 
+export type SongMenuContext =
+  "default" | "home" | "album" | "artist" | "player";
+
+export function songMenuEntityLinkVisibility(context: SongMenuContext) {
+  return {
+    album: context !== "album",
+    artist: context !== "album" && context !== "artist",
+  };
+}
+
 export function songMenuQueueItem(metadata: SongMenuQueueMetadata) {
   return {
     song: {

@@ -6,6 +6,8 @@ import SongCard from "@/features/library/song-card";
 import { useSession } from "@/features/account/session-provider";
 import { Button } from "@/components/ui/button";
 import { homeFeedShouldShowSkeleton } from "@/features/library/library-readiness-state";
+import { presentRecentItems } from "@/features/library/home-recent-items";
+import { trackArtistCredit } from "@/features/library/track-artist-credit";
 import {
   emptyLibraryFeed,
   useLibraryFeed,
@@ -173,7 +175,7 @@ function SongRow({ songs }: { songs: LibrarySong[] }) {
             song_id={song.id}
             path={song.path}
             artist_id={song.artist_object?.id}
-            artist_name={song.artist_object?.name ?? song.artist}
+            artist_name={songCardArtist(song)}
             album_id={song.album_object?.id}
             album_name={song.album_object?.name}
             album_cover={song.album_object?.cover_url}
@@ -185,22 +187,18 @@ function SongRow({ songs }: { songs: LibrarySong[] }) {
 }
 
 function RecentRow({ songs }: { songs: LibrarySong[] }) {
-  const counts = new Map<string, number>();
-  for (const song of songs) {
-    const albumId = song.album_object.id;
-    counts.set(albumId, (counts.get(albumId) ?? 0) + 1);
-  }
-  const emittedAlbums = new Set<string>();
+  const items = presentRecentItems(songs);
 
   return (
     <>
-      {songs.map((song, index) => {
+      {items.map(({ historyIndex, kind, source: song }) => {
         const album = song.album_object;
-        if ((counts.get(album.id) ?? 0) > 3) {
-          if (emittedAlbums.has(album.id)) return null;
-          emittedAlbums.add(album.id);
+        if (kind === "album") {
           return (
-            <div key={`album-${album.id}`} className="min-w-0 snap-start">
+            <div
+              key={`album-${song.id}-${historyIndex}`}
+              className="min-w-0 snap-start"
+            >
               <AlbumCard
                 album_cover={album.cover_url}
                 album_id={album.id}
@@ -208,26 +206,44 @@ function RecentRow({ songs }: { songs: LibrarySong[] }) {
                 artist_id={song.artist_object.id}
                 artist_name={song.artist_object.name}
                 first_release_date={album.first_release_date}
+                typeLabel="Album"
               />
             </div>
           );
         }
         return (
-          <div key={`${song.id}-${index}`} className="min-w-0 snap-start">
+          <div
+            key={`${song.id}-${historyIndex}`}
+            className="min-w-0 snap-start"
+          >
             <SongCard
               album_cover={song.album_object?.cover_url}
               album_id={song.album_object?.id}
               album_name={song.album_object?.name}
               artist_id={song.artist_object?.id}
-              artist_name={song.artist_object?.name ?? song.artist}
+              artist_name={songCardArtist(song)}
               path={song.path}
               song_id={song.id}
               song_name={song.name}
+              typeLabel="Song"
             />
           </div>
         );
       })}
     </>
+  );
+}
+
+function songCardArtist(song: LibrarySong) {
+  return (
+    trackArtistCredit({
+      albumArtist: song.artist_object?.name ?? "",
+      albumType: song.album_object?.primary_type ?? "",
+      contributingArtists: song.contributing_artists,
+      trackArtist: song.artist,
+    }) ??
+    song.artist_object?.name ??
+    song.artist
   );
 }
 

@@ -33,7 +33,7 @@ jobs:
       - name: Generate third-party notices
         run: node tools/generate-third-party-notices.cjs
       - name: Download release packages
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@v8
         with:
           pattern: parson-*
           path: artifacts

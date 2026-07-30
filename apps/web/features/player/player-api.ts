@@ -35,6 +35,7 @@ export type Player = {
   playNextSong: () => void;
   playPreviousSong: () => void;
   playQueueItem: (index: number) => void;
+  reorderQueue: (from: number, to: number) => void;
   handleTimeChange: (value: number | string) => void;
   setAudioVolume: (value: number | string) => void;
   toggleMute: () => void;

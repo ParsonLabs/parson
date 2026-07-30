@@ -28,7 +28,9 @@ use tracing::{info, warn};
 use uuid::Uuid;
 
 use crate::domain::{Album, Artist, Song};
-use crate::library::artist_names::format_contributing_artists;
+use crate::library::artist_names::{
+    artist_credit_names, featured_artists_from_title, format_contributing_artists,
+};
 use crate::library::identity::{
     hash_album, hash_artist, hash_normalized_album, hash_normalized_artist, hash_normalized_song,
     hash_song, normalize_album_identity, normalize_artist_identity, normalize_song_identity,
@@ -43,10 +45,10 @@ use crate::library::storage::get_cover_art_path;
 use crate::persistence::connection::{DbPool, connect};
 
 const AUDIO_EXTENSIONS: &[&str] = &["mp3", "flac", "ogg", "m4a", "opus", "wav", "aiff", "alac"];
-const TAG_PARSER_VERSION: &str = "13";
+const TAG_PARSER_VERSION: &str = "16";
 const COVER_RESOLVER_VERSION: &str = "5";
 // Bump when release inference semantics change.
-const CLASSIFICATION_VERSION: &str = "7";
+const CLASSIFICATION_VERSION: &str = "8";
 const DATABASE_BATCH_SIZE: usize = 10_000;
 const MAX_WARNING_DETAILS: usize = 100;
 type MetadataOverrides = HashMap<String, HashMap<String, HashMap<String, String>>>;
@@ -131,6 +133,7 @@ struct DiscoveredImage {
 struct FilesystemInventory {
     audio_files: Vec<DiscoveredFile>,
     images_by_directory: HashMap<PathBuf, Vec<DiscoveredImage>>,
+    complete: bool,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -319,6 +322,14 @@ struct ReleasePresentation {
 struct AlbumGroupingKey {
     normalized_album: Arc<str>,
     release_directory: Arc<str>,
+}
+
+#[derive(Debug, Clone)]
+struct ReleaseDuplicateSlot {
+    disc_number: u16,
+    track_number: u16,
+    title: String,
+    duration_seconds: f64,
 }
 
 #[derive(Debug, Clone)]
@@ -888,6 +899,8 @@ struct TrackRow {
     duration_seconds: f64,
     #[diesel(sql_type = Nullable<Text>)]
     path: Option<String>,
+    #[diesel(sql_type = Text)]
+    track_artists_json: String,
 }
 
 fn normalize_path(path: &Path) -> String {
@@ -962,6 +975,7 @@ fn adapt_discovered_files(
                 )
             })
             .collect(),
+        complete: discovered.complete,
     }
 }
 
@@ -980,9 +994,28 @@ fn adapt_discovered_file(file: crate::library::discovery::DiscoveredFile) -> Dis
     }
 }
 
+fn validate_discovered_inventory(
+    discovered_files: usize,
+    previous_files: usize,
+) -> std::io::Result<()> {
+    if discovered_files > 0 {
+        return Ok(());
+    }
+    if previous_files > 0 {
+        return Err(std::io::Error::other(
+            "The library folder is unavailable or returned no audio files; preserving the previous catalog",
+        ));
+    }
+    Err(std::io::Error::other(
+        "The selected folder contains no supported audio files",
+    ))
+}
+
 fn fallback_title(path: &Path) -> String {
     path.file_stem()
         .and_then(|value| value.to_str())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
         .unwrap_or("Unknown Title")
         .to_string()
 }
@@ -991,8 +1024,36 @@ fn fallback_album(path: &Path) -> String {
     path.parent()
         .and_then(|parent| parent.file_name())
         .and_then(|value| value.to_str())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
         .unwrap_or("Unknown Album")
         .to_string()
+}
+
+fn metadata_text_or_fallback(value: Option<String>, fallback: impl FnOnce() -> String) -> String {
+    value
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(fallback)
+}
+
+fn merge_title_featured_artists(title: &str, track_artists: &mut Vec<String>) {
+    let featured = featured_artists_from_title(title);
+    if featured.is_empty() {
+        return;
+    }
+    if track_artists.is_empty() {
+        track_artists.push("Unknown Artist".to_string());
+    }
+    let mut existing = artist_credit_names(track_artists)
+        .into_iter()
+        .map(|artist| artist.to_lowercase())
+        .collect::<HashSet<_>>();
+    for artist in featured {
+        if existing.insert(artist.to_lowercase()) {
+            track_artists.push(artist);
+        }
+    }
 }
 
 #[derive(Debug, Default)]
@@ -4339,9 +4400,10 @@ fn parsed_file_from_result(
         Err(error) => (RawAudioMetadata::default(), Some(error)),
     };
 
-    let title = metadata.title.unwrap_or_else(|| fallback_title(path));
-    let album = metadata.album.unwrap_or_else(|| fallback_album(path));
-    let track_artists = metadata.track_artists;
+    let title = metadata_text_or_fallback(metadata.title, || fallback_title(path));
+    let album = metadata_text_or_fallback(metadata.album, || fallback_album(path));
+    let mut track_artists = metadata.track_artists;
+    merge_title_featured_artists(&title, &mut track_artists);
     let album_artists = metadata.album_artists;
     // Retain decoded tags to avoid a second media read.
     let genres = split_genres(&metadata.genre);
@@ -4414,14 +4476,12 @@ fn normalize_genre_key(value: &str) -> String {
 fn snapshot_to_parsed(snapshot: &ExistingFileSnapshot) -> ParsedFile {
     ParsedFile {
         path: Arc::from(snapshot.path.as_str()),
-        title: snapshot
-            .title
-            .clone()
-            .unwrap_or_else(|| fallback_title(Path::new(&snapshot.path))),
-        album: snapshot
-            .album
-            .clone()
-            .unwrap_or_else(|| fallback_album(Path::new(&snapshot.path))),
+        title: metadata_text_or_fallback(snapshot.title.clone(), || {
+            fallback_title(Path::new(&snapshot.path))
+        }),
+        album: metadata_text_or_fallback(snapshot.album.clone(), || {
+            fallback_album(Path::new(&snapshot.path))
+        }),
         track_artists: serde_json::from_str(&snapshot.track_artists_json).unwrap_or_default(),
         album_artists: serde_json::from_str(&snapshot.album_artists_json).unwrap_or_default(),
         genres: serde_json::from_str(&snapshot.genres_json).unwrap_or_default(),
@@ -4939,16 +4999,95 @@ fn slash_decorated_variant(value: &str, artist: &str) -> bool {
     })
 }
 
+fn releases_are_duplicate_copies(
+    left: &[ReleaseDuplicateSlot],
+    right: &[ReleaseDuplicateSlot],
+) -> bool {
+    if left.is_empty() || right.is_empty() {
+        return false;
+    }
+    let (smaller, larger) = if left.len() <= right.len() {
+        (left, right)
+    } else {
+        (right, left)
+    };
+    let slots_agree = smaller.iter().all(|candidate| {
+        larger.iter().any(|reference| {
+            candidate.disc_number == reference.disc_number
+                && candidate.track_number == reference.track_number
+                && candidate.title == reference.title
+                && (candidate.duration_seconds - reference.duration_seconds).abs() <= 2.0
+        })
+    });
+    if !slots_agree {
+        return false;
+    }
+
+    // Exact release copies always collapse. A nearly complete copy may omit
+    // bonus tracks, but requiring five matching tracks and 80% coverage keeps
+    // same-titled singles and short EPs from being folded into an album.
+    smaller.len() == larger.len()
+        || (smaller.len() >= 5 && smaller.len().saturating_mul(5) >= larger.len().saturating_mul(4))
+}
+
+fn canonical_release_directories(
+    slots_by_release: &HashMap<AlbumGroupingKey, Vec<ReleaseDuplicateSlot>>,
+    artist_by_release: &HashMap<AlbumGroupingKey, String>,
+) -> HashMap<AlbumGroupingKey, String> {
+    let mut releases_by_identity = HashMap::<(String, String), Vec<AlbumGroupingKey>>::new();
+    for key in slots_by_release.keys() {
+        releases_by_identity
+            .entry((
+                key.normalized_album.to_string(),
+                artist_by_release
+                    .get(key)
+                    .map(String::as_str)
+                    .unwrap_or("")
+                    .to_string(),
+            ))
+            .or_default()
+            .push(key.clone());
+    }
+
+    let mut canonical = HashMap::with_capacity(slots_by_release.len());
+    for mut releases in releases_by_identity.into_values() {
+        // Prefer the richest track list as the stable album identity. Ties use
+        // the path so input order cannot change IDs.
+        releases.sort_by(|left, right| {
+            slots_by_release[right]
+                .len()
+                .cmp(&slots_by_release[left].len())
+                .then_with(|| left.release_directory.cmp(&right.release_directory))
+        });
+        let mut representatives = Vec::<AlbumGroupingKey>::new();
+        for release in releases {
+            let representative = representatives.iter().find(|representative| {
+                releases_are_duplicate_copies(
+                    &slots_by_release[representative],
+                    &slots_by_release[&release],
+                )
+            });
+            if let Some(representative) = representative {
+                canonical.insert(release, representative.release_directory.to_string());
+            } else {
+                canonical.insert(release.clone(), release.release_directory.to_string());
+                representatives.push(release);
+            }
+        }
+    }
+    canonical
+}
+
 fn prepare_tracks<'a>(
     seeds: Vec<PreparedTrackSeed<'a>>,
     aliases: &HashMap<String, String>,
     inferred_album_artists: &HashMap<AlbumGroupingKey, String>,
     interner: &mut StringInterner,
 ) -> Vec<PreparedTrack<'a>> {
-    // Collapse byte-quality copies only when their complete release slots agree.
-    // Different track lists remain distinct even when title and artist tags are
-    // identical (for example, an album and a same-titled single).
-    let mut slots_by_release = HashMap::<AlbumGroupingKey, Vec<String>>::new();
+    // Collapse byte-quality copies when their release slots agree. A copy that
+    // only omits a small number of bonus tracks can share the richer release;
+    // materially different track lists remain separate.
+    let mut slots_by_release = HashMap::<AlbumGroupingKey, Vec<ReleaseDuplicateSlot>>::new();
     let mut artist_by_release = HashMap::<AlbumGroupingKey, String>::new();
     for seed in &seeds {
         let resolved_artist = inferred_album_artists
@@ -4965,40 +5104,15 @@ fn prepare_tracks<'a>(
         slots_by_release
             .entry(seed.album_grouping_key.clone())
             .or_default()
-            .push(format!(
-                "{}\u{1f}{}\u{1f}{}\u{1f}{}",
-                seed.parsed.disc_number,
-                seed.parsed.track_number,
-                recording_duplicate_identity(&seed.parsed.title),
-                seed.parsed.duration_seconds.round() as i64,
-            ));
+            .push(ReleaseDuplicateSlot {
+                disc_number: seed.parsed.disc_number,
+                track_number: seed.parsed.track_number,
+                title: recording_duplicate_identity(&seed.parsed.title),
+                duration_seconds: seed.parsed.duration_seconds,
+            });
     }
-    for slots in slots_by_release.values_mut() {
-        slots.sort_unstable();
-    }
-    let mut duplicate_groups = HashMap::<String, Vec<AlbumGroupingKey>>::new();
-    for (key, slots) in &slots_by_release {
-        duplicate_groups
-            .entry(format!(
-                "{}\u{1f}{}\u{1f}{}",
-                key.normalized_album,
-                artist_by_release.get(key).map(String::as_str).unwrap_or(""),
-                slots.join("\u{1e}")
-            ))
-            .or_default()
-            .push(key.clone());
-    }
-    let canonical_release_directory = duplicate_groups
-        .into_values()
-        .flat_map(|keys| {
-            let canonical = keys
-                .iter()
-                .map(|key| key.release_directory.to_string())
-                .min()
-                .unwrap_or_default();
-            keys.into_iter().map(move |key| (key, canonical.clone()))
-        })
-        .collect::<HashMap<_, _>>();
+    let canonical_release_directory =
+        canonical_release_directories(&slots_by_release, &artist_by_release);
 
     let mut prepared = Vec::with_capacity(seeds.len());
     for seed in seeds {
@@ -5031,8 +5145,8 @@ fn prepare_tracks<'a>(
             interner.intern(hash_normalized_artist(&normalized_track_artist))
         };
         // A title and artist identify a release group, not necessarily one
-        // physical release. Keep distinct directories separate so an album and
-        // a same-titled single/EP cannot be merged into a synthetic track list.
+        // physical release. Only directories proven to be duplicate copies
+        // above share an album identity.
         let release_identity = format!(
             "{}\u{1f}{}",
             seed.normalized_album,
@@ -5816,6 +5930,7 @@ fn sync_core_file_references(
     library: &LibraryRegistration,
     scan_job_id: i32,
     files: &[DiscoveredFile],
+    allow_removals: bool,
 ) -> QueryResult<()> {
     conn.batch_execute(
         "DROP TABLE IF EXISTS temp.core_reference_stage;
@@ -5861,14 +5976,16 @@ fn sync_core_file_references(
     .bind::<Text, _>(library.id.as_str())
     .bind::<Integer, _>(scan_job_id)
     .execute(conn)?;
-    diesel::sql_query(
-        "DELETE FROM music_file_reference
-         WHERE core_library_id = ?
-           AND NOT EXISTS (SELECT 1 FROM core_reference_stage stage
-                           WHERE stage.core_file_id = music_file_reference.core_file_id)",
-    )
-    .bind::<Text, _>(library.id.as_str())
-    .execute(conn)?;
+    if allow_removals {
+        diesel::sql_query(
+            "DELETE FROM music_file_reference
+             WHERE core_library_id = ?
+               AND NOT EXISTS (SELECT 1 FROM core_reference_stage stage
+                               WHERE stage.core_file_id = music_file_reference.core_file_id)",
+        )
+        .bind::<Text, _>(library.id.as_str())
+        .execute(conn)?;
+    }
     conn.batch_execute("DROP TABLE temp.core_reference_stage;")?;
     Ok(())
 }
@@ -6436,6 +6553,7 @@ struct LibraryRebuildStageRow {
     track_artist_name: String,
     track_artist_normalized: String,
     artwork_id: Option<String>,
+    artwork_hash: Option<String>,
     artwork_uri: String,
     album_id: String,
     album_title: String,
@@ -6469,6 +6587,15 @@ struct LibraryGenreStageRow {
     album_id: String,
     name: String,
     normalized_name: String,
+}
+
+struct LibraryTrackArtistStageRow {
+    track_id: String,
+    artist_id: String,
+    name: String,
+    normalized_name: String,
+    position: i32,
+    role: &'static str,
 }
 
 struct StagePreparedTracksInputs<'borrow, 'data> {
@@ -6546,6 +6673,7 @@ fn stage_prepared_tracks(
     for batch in prepared_tracks.chunks(DATABASE_BATCH_SIZE) {
         let mut stage_rows = Vec::with_capacity(batch.len());
         let mut genre_rows = Vec::new();
+        let mut track_artist_rows = Vec::new();
         for prepared in batch.iter().filter(|prepared| {
             mode == IndexMode::Repair || affected_album_ids.contains(prepared.album_id.as_ref())
         }) {
@@ -6563,12 +6691,16 @@ fn stage_prepared_tracks(
                 .get(album_id)
                 .map(String::as_str)
                 .unwrap_or_default();
-            let artwork_id = (!cover.is_empty()).then(|| {
+            // Artwork identity is tied to its stable URI. The content hash is
+            // mutable metadata: using it as the primary key made a cover
+            // replacement at the same path collide with UNIQUE(uri, source).
+            let artwork_id = (!cover.is_empty()).then(|| hash_album(cover, "artwork"));
+            let artwork_hash = artwork_id.as_ref().map(|_| {
                 artwork_hashes
                     .get(cover)
                     .filter(|hash| !hash.is_empty())
                     .cloned()
-                    .unwrap_or_else(|| hash_album(cover, "artwork"))
+                    .unwrap_or_else(|| hash_album(cover, "artwork-content"))
             });
             let track_presentation = track_presentations.get(parsed.path.as_ref());
             let track_id = track_presentation
@@ -6634,6 +6766,7 @@ fn stage_prepared_tracks(
                 track_artist_name: track_artist_name.to_string(),
                 track_artist_normalized: track_artist_normalized.to_string(),
                 artwork_id,
+                artwork_hash,
                 artwork_uri: cover.to_string(),
                 album_id: album_id.to_string(),
                 album_title: album_title.to_string(),
@@ -6660,6 +6793,41 @@ fn stage_prepared_tracks(
                 song_search_text: search.song,
                 album_search_text: search.album,
             });
+            let mut credited_artists = artist_credit_names(&parsed.track_artists);
+            if credited_artists.is_empty() {
+                credited_artists.push(track_artist_name.to_string());
+            }
+            let primary_artist_key = normalize_artist_identity(track_artist_name);
+            let raw_primary_artist_key = prepared.normalized_primary_track_artist.as_ref();
+            let mut seen_artist_ids = HashSet::from([track_artist_id.to_string()]);
+            track_artist_rows.push(LibraryTrackArtistStageRow {
+                track_id: track_id.to_string(),
+                artist_id: track_artist_id.to_string(),
+                name: track_artist_name.to_string(),
+                normalized_name: prepared.normalized_track_artist.to_string(),
+                position: 0,
+                role: "primary",
+            });
+            for (position, credited_artist) in credited_artists.into_iter().enumerate() {
+                let normalized_name = normalize_artist_identity(&credited_artist);
+                if normalized_name.is_empty()
+                    || normalized_name == primary_artist_key
+                    || normalized_name == raw_primary_artist_key
+                {
+                    continue;
+                }
+                let artist_id = hash_normalized_artist(&normalized_name);
+                if seen_artist_ids.insert(artist_id.clone()) {
+                    track_artist_rows.push(LibraryTrackArtistStageRow {
+                        track_id: track_id.to_string(),
+                        artist_id,
+                        name: credited_artist,
+                        normalized_name,
+                        position: position.saturating_add(1) as i32,
+                        role: "featured",
+                    });
+                }
+            }
             for genre in &prepared.genres {
                 genre_rows.push(LibraryGenreStageRow {
                     track_id: track_id.to_string(),
@@ -6672,7 +6840,7 @@ fn stage_prepared_tracks(
         for row in stage_rows {
             diesel::sql_query(
                     "INSERT INTO library_rebuild_stage VALUES
-                     (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                     (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 )
                 .bind::<Text, _>(row.album_artist_id)
                 .bind::<Text, _>(row.album_artist_name)
@@ -6681,6 +6849,7 @@ fn stage_prepared_tracks(
                 .bind::<Text, _>(row.track_artist_name)
                 .bind::<Text, _>(row.track_artist_normalized)
                 .bind::<Nullable<Text>, _>(row.artwork_id)
+                .bind::<Nullable<Text>, _>(row.artwork_hash)
                 .bind::<Text, _>(row.artwork_uri)
                 .bind::<Text, _>(row.album_id)
                 .bind::<Text, _>(row.album_title)
@@ -6719,6 +6888,20 @@ fn stage_prepared_tracks(
             .bind::<Text, _>(row.normalized_name)
             .execute(conn)?;
         }
+        for row in track_artist_rows {
+            diesel::sql_query(
+                "INSERT OR IGNORE INTO library_track_artist_stage
+                     (track_id, artist_id, name, normalized_name, position, role)
+                 VALUES (?, ?, ?, ?, ?, ?)",
+            )
+            .bind::<Text, _>(row.track_id)
+            .bind::<Text, _>(row.artist_id)
+            .bind::<Text, _>(row.name)
+            .bind::<Text, _>(row.normalized_name)
+            .bind::<Integer, _>(row.position)
+            .bind::<Text, _>(row.role)
+            .execute(conn)?;
+        }
     }
     Ok(())
 }
@@ -6739,13 +6922,14 @@ fn reconcile_normalized_tables(
     conn.batch_execute(
         "DROP TABLE IF EXISTS temp.library_rebuild_stage;
          DROP TABLE IF EXISTS temp.library_genre_stage;
+         DROP TABLE IF EXISTS temp.library_track_artist_stage;
          DROP TABLE IF EXISTS temp.affected_album;
          DROP TABLE IF EXISTS temp.affected_track;
          DROP TABLE IF EXISTS temp.affected_artist;
          CREATE TEMP TABLE library_rebuild_stage (
              album_artist_id TEXT NOT NULL, album_artist_name TEXT NOT NULL, album_artist_normalized TEXT NOT NULL,
              track_artist_id TEXT NOT NULL, track_artist_name TEXT NOT NULL, track_artist_normalized TEXT NOT NULL,
-             artwork_id TEXT, artwork_uri TEXT NOT NULL,
+             artwork_id TEXT, artwork_hash TEXT, artwork_uri TEXT NOT NULL,
              album_id TEXT NOT NULL, album_title TEXT NOT NULL, album_normalized TEXT NOT NULL, album_primary_type TEXT NOT NULL,
              release_group_id TEXT NOT NULL, release_group_title TEXT NOT NULL, release_group_normalized TEXT NOT NULL,
              release_group_type TEXT NOT NULL, release_metadata TEXT NOT NULL, first_release_date TEXT NOT NULL,
@@ -6758,6 +6942,11 @@ fn reconcile_normalized_tables(
          CREATE TEMP TABLE library_genre_stage (
              track_id TEXT NOT NULL, album_id TEXT NOT NULL, name TEXT NOT NULL, normalized_name TEXT NOT NULL,
              PRIMARY KEY (track_id, album_id, normalized_name)
+         ) WITHOUT ROWID;
+         CREATE TEMP TABLE library_track_artist_stage (
+             track_id TEXT NOT NULL, artist_id TEXT NOT NULL, name TEXT NOT NULL,
+             normalized_name TEXT NOT NULL, position INTEGER NOT NULL, role TEXT NOT NULL,
+             PRIMARY KEY (track_id, artist_id, role)
          ) WITHOUT ROWID;
          CREATE TEMP TABLE affected_album (id TEXT PRIMARY KEY) WITHOUT ROWID;
          CREATE TEMP TABLE affected_track (id TEXT PRIMARY KEY) WITHOUT ROWID;
@@ -7066,6 +7255,37 @@ fn reconcile_normalized_tables(
     Ok(())
 }
 
+fn reconcile_staged_artwork(conn: &mut SqliteConnection) -> QueryResult<()> {
+    conn.batch_execute(
+        "UPDATE library_rebuild_stage
+         SET artwork_id = (
+             SELECT existing.id
+             FROM artwork existing
+             WHERE existing.source = 'local'
+               AND existing.uri = library_rebuild_stage.artwork_uri
+         )
+         WHERE artwork_id IS NOT NULL
+           AND EXISTS (
+             SELECT 1
+             FROM artwork existing
+             WHERE existing.source = 'local'
+               AND existing.uri = library_rebuild_stage.artwork_uri
+           );
+         INSERT INTO artwork (id, source, uri, hash)
+         SELECT artwork_id, 'local', MIN(artwork_uri), MIN(artwork_hash)
+         FROM library_rebuild_stage
+         WHERE artwork_id IS NOT NULL
+         GROUP BY artwork_id
+         ON CONFLICT(id) DO UPDATE SET
+             source = excluded.source,
+             uri = excluded.uri,
+             hash = excluded.hash
+         WHERE artwork.source IS NOT excluded.source
+            OR artwork.uri IS NOT excluded.uri
+            OR artwork.hash IS NOT excluded.hash;",
+    )
+}
+
 fn apply_normalized_stage(
     conn: &mut SqliteConnection,
     mode: IndexMode,
@@ -7089,6 +7309,7 @@ fn apply_normalized_stage(
                  SELECT artist_id FROM track_artist WHERE track_id IN (SELECT id FROM affected_track);
                  INSERT OR IGNORE INTO affected_artist SELECT album_artist_id FROM library_rebuild_stage;
                  INSERT OR IGNORE INTO affected_artist SELECT track_artist_id FROM library_rebuild_stage;
+                 INSERT OR IGNORE INTO affected_artist SELECT artist_id FROM library_track_artist_stage;
                  DELETE FROM library_search_document
                  WHERE (entity_type = 'album' AND entity_id IN (SELECT id FROM affected_album))
                     OR (entity_type = 'song' AND entity_id IN (SELECT id FROM affected_track))
@@ -7100,18 +7321,15 @@ fn apply_normalized_stage(
                  DELETE FROM track_file WHERE track_id IN (SELECT id FROM affected_track);",
             )?;
         }
+        reconcile_staged_artwork(conn)?;
         conn.batch_execute(
             "PRAGMA defer_foreign_keys = ON;
              INSERT INTO artist_entity (id, name, normalized_name)
              SELECT album_artist_id, MIN(album_artist_name), MIN(album_artist_normalized) FROM library_rebuild_stage GROUP BY album_artist_id
              UNION SELECT track_artist_id, MIN(track_artist_name), MIN(track_artist_normalized) FROM library_rebuild_stage GROUP BY track_artist_id
+             UNION SELECT artist_id, MIN(name), MIN(normalized_name) FROM library_track_artist_stage GROUP BY artist_id
              ON CONFLICT(id) DO UPDATE SET name = excluded.name, normalized_name = excluded.normalized_name, updated_at = CURRENT_TIMESTAMP
              WHERE artist_entity.name IS NOT excluded.name OR artist_entity.normalized_name IS NOT excluded.normalized_name;
-             INSERT INTO artwork (id, source, uri, hash)
-             SELECT artwork_id, 'local', MIN(artwork_uri), artwork_id
-             FROM library_rebuild_stage WHERE artwork_id IS NOT NULL GROUP BY artwork_id
-             ON CONFLICT(id) DO UPDATE SET source = excluded.source, uri = excluded.uri, hash = excluded.hash
-             WHERE artwork.source IS NOT excluded.source OR artwork.uri IS NOT excluded.uri OR artwork.hash IS NOT excluded.hash;
              INSERT INTO release_group_entity (id, title, normalized_title, primary_type, first_release_date, musicbrainz_id)
              SELECT release_group_id, MIN(release_group_title), MIN(release_group_normalized), MIN(release_group_type),
                     MIN(first_release_date), MIN(album_musicbrainz_id) FROM library_rebuild_stage GROUP BY release_group_id
@@ -7156,7 +7374,8 @@ fn apply_normalized_stage(
              INSERT INTO song (id) SELECT DISTINCT track_id FROM library_rebuild_stage WHERE true ON CONFLICT(id) DO NOTHING;
              INSERT INTO album_artist (album_id, artist_id, position, role) SELECT DISTINCT album_id, album_artist_id, 0, 'primary' FROM library_rebuild_stage WHERE true
              ON CONFLICT(album_id, artist_id, role) DO UPDATE SET position = excluded.position;
-             INSERT INTO track_artist (track_id, artist_id, position, role) SELECT DISTINCT track_id, track_artist_id, 0, 'primary' FROM library_rebuild_stage WHERE true
+             INSERT INTO track_artist (track_id, artist_id, position, role)
+             SELECT track_id, artist_id, position, role FROM library_track_artist_stage WHERE true
              ON CONFLICT(track_id, artist_id, role) DO UPDATE SET position = excluded.position;
              INSERT INTO track_file (track_id, file_id, quality_rank, is_primary)
              SELECT track_id, file_id, MAX(quality_rank), true FROM library_rebuild_stage WHERE file_id IS NOT NULL GROUP BY track_id, file_id
@@ -7170,6 +7389,7 @@ fn apply_normalized_stage(
              INSERT INTO library_search_document (entity_type, entity_id, title, subtitle, artwork_uri, normalized_text, keywords)
              SELECT 'artist', album_artist_id, MIN(album_artist_name), 'Artist', '', MIN(album_artist_normalized), MIN(album_artist_normalized) FROM library_rebuild_stage GROUP BY album_artist_id
              UNION SELECT 'artist', track_artist_id, MIN(track_artist_name), 'Artist', '', MIN(track_artist_normalized), MIN(track_artist_normalized) FROM library_rebuild_stage GROUP BY track_artist_id
+             UNION SELECT 'artist', artist_id, MIN(name), 'Artist', '', MIN(normalized_name), MIN(normalized_name) FROM library_track_artist_stage GROUP BY artist_id
              UNION SELECT 'album', album_id, MIN(album_title), MIN(album_artist_name), MIN(artwork_uri), MIN(album_search_text), MIN(album_search_text) FROM library_rebuild_stage GROUP BY album_id
              UNION SELECT 'song', track_id, MIN(track_title), MIN(song_subtitle), MIN(artwork_uri), MIN(song_search_text), MIN(song_search_text) FROM library_rebuild_stage GROUP BY track_id
              ON CONFLICT(entity_type, entity_id) DO UPDATE SET title = excluded.title, subtitle = excluded.subtitle,
@@ -7183,7 +7403,11 @@ fn apply_normalized_stage(
                  DELETE FROM album_inference_cache WHERE album_id NOT IN (SELECT album_id FROM library_rebuild_stage);
                  DELETE FROM album_entity WHERE id NOT IN (SELECT album_id FROM library_rebuild_stage);
                  DELETE FROM release_group_entity WHERE id NOT IN (SELECT release_group_id FROM library_rebuild_stage);
-                 DELETE FROM artist_entity WHERE id NOT IN (SELECT album_artist_id FROM library_rebuild_stage UNION SELECT track_artist_id FROM library_rebuild_stage);
+                 DELETE FROM artist_entity WHERE id NOT IN (
+                     SELECT album_artist_id FROM library_rebuild_stage
+                     UNION SELECT track_artist_id FROM library_rebuild_stage
+                     UNION SELECT artist_id FROM library_track_artist_stage
+                 );
                  DELETE FROM artwork WHERE id NOT IN (SELECT artwork_id FROM library_rebuild_stage WHERE artwork_id IS NOT NULL);",
             )?;
         } else {
@@ -7222,6 +7446,7 @@ fn apply_normalized_stage(
                 "INSERT INTO metadata_task (provider, entity_type, entity_id)
                  SELECT 'musicbrainz', 'artist', album_artist_id FROM library_rebuild_stage
                  UNION SELECT 'musicbrainz', 'artist', track_artist_id FROM library_rebuild_stage
+                 UNION SELECT 'musicbrainz', 'artist', artist_id FROM library_track_artist_stage
                  UNION SELECT 'musicbrainz', 'album', album_id FROM library_rebuild_stage
                  UNION SELECT 'musicbrainz', 'track', track_id FROM library_rebuild_stage WHERE true
                  ON CONFLICT(provider, entity_type, entity_id) DO NOTHING;"
@@ -7579,6 +7804,7 @@ struct CatalogImportInputs<'a> {
     artwork_hashes: &'a HashMap<String, String>,
     phase: LibraryIndexPhase,
     mode: IndexMode,
+    inventory_complete: bool,
 }
 
 struct CatalogImportTiming {
@@ -7610,6 +7836,7 @@ fn stage_catalog_import(
         artwork_hashes,
         phase,
         mode,
+        inventory_complete,
     } = inputs;
     let staging_started = Instant::now();
     let mut database_staging_us = initial_database_staging_us;
@@ -7663,7 +7890,14 @@ fn stage_catalog_import(
     }
     diesel::sql_query("PRAGMA defer_foreign_keys = ON").execute(conn)?;
     info!(files = discovered.len(), "staging core file references");
-    sync_core_file_references(conn, core_library, scan_job_id, discovered).map_err(|error| {
+    sync_core_file_references(
+        conn,
+        core_library,
+        scan_job_id,
+        discovered,
+        inventory_complete,
+    )
+    .map_err(|error| {
         warn!(%error, "core file reference staging failed");
         error
     })?;
@@ -7714,13 +7948,15 @@ fn stage_catalog_import(
         warn!(%error, "directory state staging failed");
         error
     })?;
-    diesel::sql_query(
-        "UPDATE file_entry SET availability = 'missing', updated_at = CURRENT_TIMESTAMP
-         WHERE root_id = ? AND availability IS NOT 'missing'
-           AND NOT EXISTS (SELECT 1 FROM current_scan_path WHERE path = file_entry.path)",
-    )
-    .bind::<Integer, _>(root_id)
-    .execute(conn)?;
+    if inventory_complete {
+        diesel::sql_query(
+            "UPDATE file_entry SET availability = 'missing', updated_at = CURRENT_TIMESTAMP
+             WHERE root_id = ? AND availability IS NOT 'missing'
+               AND NOT EXISTS (SELECT 1 FROM current_scan_path WHERE path = file_entry.path)",
+        )
+        .bind::<Integer, _>(root_id)
+        .execute(conn)?;
+    }
 
     if !projection_unchanged {
         // Rebuild from every root in a multi-root library.
@@ -7904,11 +8140,13 @@ fn index_library_to_database_phase(
     }
     let discovered = inventory.audio_files.as_slice();
     let genuine_large_first_import = discovered.len() >= 5_000 && prior_available_files == 0;
-    if discovered.is_empty() && snapshots.is_empty() {
+    if let Err(error) = validate_discovered_inventory(discovered.len(), snapshots.len()) {
+        // An empty result for a previously indexed root is indistinguishable
+        // from an unmounted drive, an unavailable network share, or a walk
+        // that could not read the root. Preserve the durable catalog and
+        // require explicit root removal for destructive cleanup.
         let _ = SqliteTransactionManager::rollback_transaction(&mut conn);
-        return Err(
-            std::io::Error::other("The selected folder contains no supported audio files").into(),
-        );
+        return Err(error.into());
     }
     // Register only validated roots with Core.
     let core_library = crate::product::register_library_root(Path::new(path_to_library))?;
@@ -8240,6 +8478,7 @@ fn index_library_to_database_phase(
             artwork_hashes: &artwork_hashes,
             phase,
             mode,
+            inventory_complete: inventory.complete,
         },
         cold_database_staging_us,
     );
@@ -8919,13 +9158,12 @@ pub fn export_library_from_database(
                 artist.followers, COALESCE(artist.description, '') AS description
          FROM artist_entity artist
          LEFT JOIN artwork art ON art.id = artist.artwork_id
-         WHERE EXISTS (
-             SELECT 1 FROM album_artist albums
-             WHERE albums.artist_id = artist.id AND albums.role = 'primary'
-         )
+         WHERE EXISTS (SELECT 1 FROM album_artist albums WHERE albums.artist_id = artist.id)
+            OR EXISTS (SELECT 1 FROM track_artist tracks WHERE tracks.artist_id = artist.id)
          ORDER BY artist.name COLLATE NOCASE",
     )
     .load::<ArtistViewRow>(&mut conn)?;
+    let mut featured_albums_by_artist = load_appearance_albums_by_artist(&mut conn)?;
     // Load the release graph with two set-based queries.
     let mut albums_by_artist = export_albums_by_artist(&mut conn, &overrides)?;
     let query_us = elapsed_us(export_started.elapsed());
@@ -8957,7 +9195,9 @@ pub fn export_library_from_database(
                 "artist",
                 &artist_id,
                 "featured_on_album_ids",
-                Vec::new(),
+                featured_albums_by_artist
+                    .remove(&artist_id)
+                    .unwrap_or_default(),
             ),
             description: value_override(
                 &overrides,
@@ -8995,17 +9235,141 @@ mod external_library_tests {
         StringInterner, TAG_PARSER_VERSION, all_available_snapshots,
         artist_identity_is_one_edit_apart, consensus_release_date, discover_files,
         embedded_cover_representative, embedded_cover_with_lofty, embedded_flac_cover,
-        embedded_mp4_cover, encode_syncsafe_u32, hydrate_progressive_catalog_artwork,
-        index_library_to_database, infer_album_artists, infer_artist_aliases,
-        infer_artist_aliases_for, inherit_original_release_covers, inventory_candidates,
-        load_album_inference_cache, local_cover_for, mp3_duration, normalize_genre_key,
-        normalized_release_date, parse_aiff_fast, parse_flac_fast, parse_mp3, parse_mp4_fast,
-        parse_ogg_fast, parse_wav_fast, parse_with_lofty, prepare_track_seeds, prepare_tracks,
-        raw_metadata_reusable, reconcile_normalized_tables, resolve_duplicate_tracks,
-        resolve_inventory_cover, resolve_release_presentations, resolve_release_presentations_for,
-        slash_decorated_variant, snapshot_to_parsed, split_genres,
-        stage_superseded_file_identities, sync_core_file_references,
+        embedded_mp4_cover, encode_syncsafe_u32, fallback_album, fallback_title,
+        hydrate_progressive_catalog_artwork, index_library_to_database, infer_album_artists,
+        infer_artist_aliases, infer_artist_aliases_for, inherit_original_release_covers,
+        inventory_candidates, load_album_inference_cache, load_appearance_albums_by_artist,
+        local_cover_for, merge_title_featured_artists, metadata_text_or_fallback, mp3_duration,
+        normalize_genre_key, normalized_release_date, parse_aiff_fast, parse_flac_fast, parse_mp3,
+        parse_mp4_fast, parse_ogg_fast, parse_wav_fast, parse_with_lofty, prepare_track_seeds,
+        prepare_tracks, raw_metadata_reusable, reconcile_normalized_tables,
+        reconcile_staged_artwork, resolve_duplicate_tracks, resolve_inventory_cover,
+        resolve_release_presentations, resolve_release_presentations_for, slash_decorated_variant,
+        snapshot_to_parsed, split_genres, stage_superseded_file_identities,
+        sync_core_file_references,
     };
+
+    #[test]
+    fn missing_and_blank_metadata_have_stable_path_fallbacks() {
+        let path = Path::new("/library/Artist/Album/Track Name.flac");
+        assert_eq!(fallback_title(path), "Track Name");
+        assert_eq!(fallback_album(path), "Album");
+        assert_eq!(
+            metadata_text_or_fallback(Some(" \t ".to_string()), || fallback_title(path)),
+            "Track Name"
+        );
+        assert_eq!(fallback_title(Path::new("/")), "Unknown Title");
+        assert_eq!(fallback_album(Path::new("/track.mp3")), "Unknown Album");
+    }
+
+    #[test]
+    fn title_feature_credits_survive_missing_artist_metadata() {
+        let mut artists = Vec::new();
+        merge_title_featured_artists("Track Name (feat. Guest & Second Guest)", &mut artists);
+        assert_eq!(artists, ["Unknown Artist", "Guest", "Second Guest"]);
+
+        merge_title_featured_artists("Track Name (feat. Guest)", &mut artists);
+        assert_eq!(artists, ["Unknown Artist", "Guest", "Second Guest"]);
+    }
+
+    #[test]
+    fn featured_credits_create_artist_entities_and_appears_on_relationships() {
+        let mut connection =
+            SqliteConnection::establish(":memory:").expect("in-memory featured artist database");
+        connection
+            .batch_execute(include_str!(
+                "../../migrations/2026-07-19-000000_v1_0_0_baseline/up.sql"
+            ))
+            .expect("install baseline catalog schema");
+        let mut track = parsed_track(
+            "/music/Primary Artist/Fixture Release/01 Fixture Track.flac",
+            "Fixture Track (feat. Featured Artist)",
+            1,
+            195.0,
+        );
+        track.album = "Fixture Release".into();
+        track.album_artists = vec!["Primary Artist".into()];
+        track.track_artists = vec!["Primary Artist".into(), "Featured Artist".into()];
+        let parsed = vec![track];
+        let changed_paths = HashSet::from([parsed[0].path.as_ref()]);
+
+        reconcile_normalized_tables(
+            &mut connection,
+            ReconcileInputs {
+                root_id: 0,
+                parsed_files: &parsed,
+                file_ids: &HashMap::new(),
+                discovered_files: &HashMap::new(),
+                artwork_hashes: &HashMap::new(),
+                phase: LibraryIndexPhase::Enriched,
+                mode: IndexMode::Repair,
+                changed_paths: &changed_paths,
+            },
+        )
+        .expect("normalize featured artist fixture");
+
+        let guest_id = crate::library::identity::hash_artist("Featured Artist");
+        let guest_count = diesel::sql_query(
+            "SELECT COUNT(*) AS count
+             FROM artist_entity artist
+             JOIN track_artist credit ON credit.artist_id = artist.id
+             WHERE artist.id = ? AND artist.name = 'Featured Artist' AND credit.role = 'featured'",
+        )
+        .bind::<diesel::sql_types::Text, _>(&guest_id)
+        .get_result::<super::CountRow>(&mut connection)
+        .expect("featured artist entity")
+        .count;
+        assert_eq!(guest_count, 1);
+
+        let appearances =
+            load_appearance_albums_by_artist(&mut connection).expect("featured album projection");
+        assert_eq!(appearances[&guest_id].len(), 1);
+    }
+
+    #[test]
+    fn primary_track_artists_appear_on_albums_owned_by_another_artist() {
+        let mut connection =
+            SqliteConnection::establish(":memory:").expect("in-memory appearance database");
+        connection
+            .batch_execute(include_str!(
+                "../../migrations/2026-07-19-000000_v1_0_0_baseline/up.sql"
+            ))
+            .expect("install baseline catalog schema");
+        let mut track = parsed_track(
+            "/music/Album Owner/Synthetic Release/01 Invented Recording.flac",
+            "Invented Recording",
+            1,
+            195.0,
+        );
+        track.album = "Synthetic Release".into();
+        track.album_artists = vec!["Album Owner".into()];
+        track.track_artists = vec!["Track Owner".into()];
+        let parsed = vec![track];
+        let changed_paths = HashSet::from([parsed[0].path.as_ref()]);
+
+        reconcile_normalized_tables(
+            &mut connection,
+            ReconcileInputs {
+                root_id: 0,
+                parsed_files: &parsed,
+                file_ids: &HashMap::new(),
+                discovered_files: &HashMap::new(),
+                artwork_hashes: &HashMap::new(),
+                phase: LibraryIndexPhase::Enriched,
+                mode: IndexMode::Repair,
+                changed_paths: &changed_paths,
+            },
+        )
+        .expect("normalize appearance fixture");
+
+        let track_owner_id = crate::library::identity::hash_artist("Track Owner");
+        let album_owner_id = crate::library::identity::hash_artist("Album Owner");
+        let appearances =
+            load_appearance_albums_by_artist(&mut connection).expect("appearance projection");
+
+        assert_eq!(appearances[&track_owner_id].len(), 1);
+        assert!(!appearances.contains_key(&album_owner_id));
+    }
 
     fn parsed_track(
         path: &str,
@@ -9044,6 +9408,95 @@ mod external_library_tests {
         }
     }
 
+    #[test]
+    fn artwork_refresh_reuses_the_uri_identity_when_content_changes() {
+        let mut connection =
+            SqliteConnection::establish(":memory:").expect("in-memory artwork database");
+        connection
+            .batch_execute(
+                "PRAGMA foreign_keys = ON;
+                 CREATE TABLE artwork (
+                     id TEXT NOT NULL PRIMARY KEY,
+                     source TEXT NOT NULL,
+                     uri TEXT NOT NULL,
+                     hash TEXT,
+                     UNIQUE(uri, source)
+                 );
+                 CREATE TEMP TABLE library_rebuild_stage (
+                     artwork_id TEXT,
+                     artwork_hash TEXT,
+                     artwork_uri TEXT NOT NULL
+                 );
+                 INSERT INTO artwork (id, source, uri, hash)
+                 VALUES ('legacy-content-id', 'local', '/music/Album/cover.jpg', 'old-hash');
+                 INSERT INTO library_rebuild_stage (artwork_id, artwork_hash, artwork_uri)
+                 VALUES ('new-uri-id', 'new-hash', '/music/Album/cover.jpg');",
+            )
+            .expect("artwork refresh fixture");
+
+        reconcile_staged_artwork(&mut connection).expect("reconcile changed artwork");
+
+        let artwork = diesel::sql_query(
+            "SELECT id FROM artwork WHERE uri = '/music/Album/cover.jpg' AND source = 'local'",
+        )
+        .get_result::<super::TextIdRow>(&mut connection)
+        .expect("reconciled artwork");
+        let hash = diesel::sql_query(
+            "SELECT hash AS id FROM artwork WHERE uri = '/music/Album/cover.jpg' AND source = 'local'",
+        )
+        .get_result::<super::TextIdRow>(&mut connection)
+        .expect("updated artwork hash");
+        let staged = diesel::sql_query("SELECT artwork_id AS id FROM library_rebuild_stage")
+            .get_result::<super::TextIdRow>(&mut connection)
+            .expect("remapped staged identity");
+
+        assert_eq!(artwork.id, "legacy-content-id");
+        assert_eq!(hash.id, "new-hash");
+        assert_eq!(staged.id, artwork.id);
+    }
+
+    #[test]
+    fn exported_tracks_restore_distinct_guest_credits_from_file_metadata() {
+        let mut connection =
+            SqliteConnection::establish(":memory:").expect("in-memory track database");
+        connection
+            .batch_execute(
+                "CREATE TABLE track_entity (
+                     id TEXT PRIMARY KEY, title TEXT NOT NULL, album_id TEXT NOT NULL,
+                     normalized_title TEXT NOT NULL, track_number INTEGER NOT NULL,
+                     disc_number INTEGER NOT NULL, duration_seconds REAL NOT NULL
+                 );
+                 CREATE TABLE artist_entity (id TEXT PRIMARY KEY, name TEXT NOT NULL);
+                 CREATE TABLE track_artist (
+                     track_id TEXT NOT NULL, artist_id TEXT NOT NULL, role TEXT NOT NULL
+                 );
+                 CREATE TABLE file_entry (id INTEGER PRIMARY KEY, path TEXT NOT NULL);
+                 CREATE TABLE track_file (
+                     track_id TEXT NOT NULL, file_id INTEGER NOT NULL, is_primary BOOLEAN NOT NULL
+                 );
+                 CREATE TABLE raw_file_metadata (
+                     file_id INTEGER PRIMARY KEY, track_artists_json TEXT NOT NULL
+                 );
+                 INSERT INTO artist_entity VALUES ('primary', 'Primary Artist');
+                 INSERT INTO track_entity VALUES
+                     ('track', 'Featured Recording', 'release', 'featured recording', 2, 1, 245);
+                 INSERT INTO track_artist VALUES ('track', 'primary', 'primary');
+                 INSERT INTO file_entry VALUES (1, '/music/release/02.flac');
+                 INSERT INTO track_file VALUES ('track', 1, true);
+                 INSERT INTO raw_file_metadata VALUES
+                     (1, '[\"Primary Artist feat. Guest Artist\", \"Primary Artist\"]');",
+            )
+            .expect("track credit fixture");
+
+        let tracks =
+            super::export_all_tracks(&mut connection, &HashMap::new()).expect("exported tracks");
+        let track = &tracks["release"][0];
+
+        assert_eq!(track.artist, "Primary Artist");
+        assert_eq!(track.contributing_artists, ["Guest Artist"]);
+        assert_eq!(track.contributing_artist_ids.len(), 1);
+    }
+
     fn discovered_file(path: &str, extension: &str, size_bytes: i64) -> DiscoveredFile {
         let native_path = PathBuf::from(path);
         DiscoveredFile {
@@ -9058,6 +9511,28 @@ mod external_library_tests {
             stable_identity: None,
             tag_fingerprint: None,
         }
+    }
+
+    fn require_isolated_external_test_data() {
+        let data_directory = std::env::var_os("PARSON_DATA_DIR")
+            .map(PathBuf::from)
+            .expect("external indexing tests require an explicit PARSON_DATA_DIR");
+        assert!(
+            data_directory.join(".parson-test-data").is_file(),
+            "refusing to run an external indexing test against a normal Parson data directory; \
+             create .parson-test-data inside an isolated PARSON_DATA_DIR"
+        );
+    }
+
+    fn require_isolated_database_file(path: &Path) {
+        let marker = path
+            .parent()
+            .unwrap_or_else(|| Path::new(""))
+            .join(".parson-test-data");
+        assert!(
+            marker.is_file(),
+            "refusing to mutate an external database without .parson-test-data beside it"
+        );
     }
 
     #[cfg(target_os = "linux")]
@@ -9172,6 +9647,41 @@ mod external_library_tests {
         let (count, details) = super::collect_scan_warnings(&parsed);
         assert_eq!(count, super::MAX_WARNING_DETAILS + 17);
         assert_eq!(details.len(), super::MAX_WARNING_DETAILS);
+    }
+
+    #[test]
+    fn empty_inventory_preserves_a_previously_indexed_root() {
+        assert!(super::validate_discovered_inventory(1, 1).is_ok());
+        let initial = super::validate_discovered_inventory(0, 0).unwrap_err();
+        assert!(initial.to_string().contains("no supported audio files"));
+        let missing = super::validate_discovered_inventory(0, 12).unwrap_err();
+        assert!(
+            missing
+                .to_string()
+                .contains("preserving the previous catalog")
+        );
+    }
+
+    #[test]
+    fn malformed_media_isolated_to_one_warning_and_left_unchanged() {
+        let directory =
+            std::env::temp_dir().join(format!("parson-malformed-test-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&directory).expect("create malformed fixture");
+        let path = directory.join("broken.mp3");
+        let original = b"this is not an MPEG audio file";
+        std::fs::write(&path, original).expect("write malformed fixture");
+        let file = discovered_file(&path.to_string_lossy(), "mp3", original.len() as i64);
+
+        let parsed = super::parse_file_batch(&[&file], &HashMap::new(), 1)
+            .expect("one malformed file must not abort its scan batch");
+
+        assert_eq!(parsed.len(), 1);
+        assert!(parsed[0].error.is_some());
+        assert_eq!(
+            std::fs::read(&path).expect("read source after scan"),
+            original
+        );
+        std::fs::remove_dir_all(directory).expect("remove malformed fixture");
     }
 
     #[test]
@@ -9825,6 +10335,42 @@ mod external_library_tests {
     }
 
     #[test]
+    fn accent_variants_converge_before_artist_entities_are_staged() {
+        let mut accented = parsed_track(
+            "/library/accented/release/01.flac",
+            "Invented Signal",
+            1,
+            180.0,
+        );
+        accented.track_artists = vec!["Lúmina Vale".into()];
+        accented.album_artists = accented.track_artists.clone();
+
+        let mut plain = parsed_track(
+            "/library/plain/release/01.flac",
+            "Synthetic Horizon",
+            1,
+            180.0,
+        );
+        plain.track_artists = vec!["Lumina Vale".into()];
+        plain.album_artists = plain.track_artists.clone();
+
+        let parsed = vec![accented, plain];
+        let mut interner = StringInterner::with_capacity(parsed.len() * 8);
+        let seeds = prepare_track_seeds(&parsed, &mut interner);
+        assert_eq!(
+            seeds[0].normalized_primary_track_artist,
+            seeds[1].normalized_primary_track_artist
+        );
+
+        let aliases = infer_artist_aliases(&seeds);
+        let album_artists = infer_album_artists(&seeds, &aliases);
+        let prepared = prepare_tracks(seeds, &aliases, &album_artists, &mut interner);
+
+        assert_eq!(prepared[0].artist_id, prepared[1].artist_id);
+        assert_eq!(prepared[0].track_artist_id, prepared[1].track_artist_id);
+    }
+
+    #[test]
     fn release_years_use_valid_metadata_consensus_or_an_unambiguous_folder_year() {
         assert_eq!(
             normalized_release_date("2000-02-29").as_deref(),
@@ -9928,6 +10474,33 @@ mod external_library_tests {
         );
         assert!(!resolved.contains_key("C:/one/03.mp3"));
         assert!(!resolved.contains_key("C:/one/04.mp3"));
+
+        let mut reversed = parsed.clone();
+        reversed.reverse();
+        let mut reversed_interner = StringInterner::with_capacity(reversed.len() * 8);
+        let reversed_seeds = prepare_track_seeds(&reversed, &mut reversed_interner);
+        let reversed_aliases = infer_artist_aliases(&reversed_seeds);
+        let reversed_album_artists = infer_album_artists(&reversed_seeds, &reversed_aliases);
+        let reversed_prepared = prepare_tracks(
+            reversed_seeds,
+            &reversed_aliases,
+            &reversed_album_artists,
+            &mut reversed_interner,
+        );
+        let reversed_resolved = resolve_duplicate_tracks(&reversed_prepared, &discovered_by_path);
+        assert_eq!(resolved.len(), reversed_resolved.len());
+        for (path, original) in resolved {
+            let reordered = &reversed_resolved[&path];
+            assert_eq!(original.id, reordered.id);
+            assert_eq!(original.recording_id, reordered.recording_id);
+            assert_eq!(original.title, reordered.title);
+            assert_eq!(original.normalized_title, reordered.normalized_title);
+            assert_eq!(original.duration_seconds, reordered.duration_seconds);
+            assert_eq!(
+                original.musicbrainz_recording_id,
+                reordered.musicbrainz_recording_id
+            );
+        }
     }
 
     #[test]
@@ -10560,7 +11133,7 @@ mod external_library_tests {
             stable_identity: None,
             tag_fingerprint: None,
         };
-        sync_core_file_references(&mut connection, &library, 2, &[file])
+        sync_core_file_references(&mut connection, &library, 2, &[file], true)
             .expect("identity transition is idempotent");
 
         let rows =
@@ -10570,6 +11143,99 @@ mod external_library_tests {
                 .expect("refreshed reference");
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].id, FileId::within(&library.id, path).as_str());
+    }
+
+    #[test]
+    fn incomplete_inventory_does_not_remove_unseen_core_references() {
+        let mut connection = SqliteConnection::establish(":memory:")
+            .expect("in-memory incomplete inventory database");
+        connection
+            .batch_execute(
+                "CREATE TABLE library_scan_job (id INTEGER PRIMARY KEY);
+                 INSERT INTO library_scan_job VALUES (1), (2);
+                 CREATE TABLE music_file_reference (
+                     core_file_id TEXT NOT NULL PRIMARY KEY,
+                     core_library_id TEXT NOT NULL,
+                     path TEXT NOT NULL,
+                     last_seen_scan_id INTEGER NOT NULL,
+                     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                     UNIQUE(core_library_id, path)
+                 );",
+            )
+            .expect("core reference schema");
+        let library = LibraryRegistration::new(
+            "/music",
+            ProductCapability::new("music").expect("music capability"),
+        );
+        for path in ["/music/present.flac", "/music/unreadable/missing.flac"] {
+            let id = FileId::within(&library.id, path);
+            diesel::sql_query(
+                "INSERT INTO music_file_reference
+                    (core_file_id, core_library_id, path, last_seen_scan_id)
+                 VALUES (?, ?, ?, 1)",
+            )
+            .bind::<diesel::sql_types::Text, _>(id.as_str())
+            .bind::<diesel::sql_types::Text, _>(library.id.as_str())
+            .bind::<diesel::sql_types::Text, _>(path)
+            .execute(&mut connection)
+            .expect("seed reference");
+        }
+        let present = discovered_file("/music/present.flac", "flac", 42);
+
+        sync_core_file_references(&mut connection, &library, 2, &[present], false)
+            .expect("incomplete refresh");
+
+        let count = diesel::sql_query("SELECT COUNT(*) AS count FROM music_file_reference")
+            .get_result::<super::CountRow>(&mut connection)
+            .expect("count preserved references")
+            .count;
+        assert_eq!(count, 2);
+    }
+
+    #[test]
+    fn file_moves_update_the_path_without_replacing_the_file_identity() {
+        let mut connection =
+            SqliteConnection::establish(":memory:").expect("in-memory move database");
+        connection
+            .batch_execute(
+                "CREATE TABLE file_entry (
+                     id INTEGER PRIMARY KEY, root_id INTEGER NOT NULL, path TEXT NOT NULL UNIQUE,
+                     directory TEXT NOT NULL, file_name TEXT NOT NULL, extension TEXT NOT NULL,
+                     size_bytes INTEGER NOT NULL, modified_at_ns INTEGER NOT NULL,
+                     stable_identity TEXT, tag_fingerprint TEXT, updated_at DATETIME
+                 );
+                 CREATE TABLE track_file (track_id TEXT NOT NULL, file_id INTEGER NOT NULL);
+                 CREATE TEMP TABLE current_scan_path (path TEXT PRIMARY KEY) WITHOUT ROWID;
+                 CREATE TEMP TABLE file_metadata_stage (
+                     path TEXT PRIMARY KEY, directory TEXT NOT NULL, file_name TEXT NOT NULL,
+                     extension TEXT NOT NULL, size_bytes INTEGER NOT NULL,
+                     modified_at_ns INTEGER NOT NULL, stable_identity TEXT, tag_fingerprint TEXT
+                 ) WITHOUT ROWID;
+                 INSERT INTO file_entry VALUES
+                    (7, 1, '/music/old/track.flac', '/music/old', 'track.flac', 'flac',
+                     42, 100, 'unix:1:99', NULL, CURRENT_TIMESTAMP);
+                 INSERT INTO track_file VALUES ('liked-track', 7);
+                 INSERT INTO current_scan_path VALUES ('/music/new/track.flac');
+                 INSERT INTO file_metadata_stage VALUES
+                    ('/music/new/track.flac', '/music/new', 'track.flac', 'flac',
+                     42, 100, 'unix:1:99', NULL);",
+            )
+            .expect("move fixture");
+
+        super::reconcile_file_renames(&mut connection, 1).expect("reconcile move");
+
+        let preserved = diesel::sql_query(
+            "SELECT COUNT(*) AS count
+             FROM file_entry file
+             JOIN track_file link ON link.file_id = file.id
+             WHERE file.id = 7 AND file.path = '/music/new/track.flac'
+               AND link.track_id = 'liked-track'",
+        )
+        .get_result::<super::CountRow>(&mut connection)
+        .expect("preserved move identity")
+        .count;
+        assert_eq!(preserved, 1);
     }
 
     #[test]
@@ -10640,6 +11306,89 @@ mod external_library_tests {
 
         assert_ne!(prepared[0].album_id, prepared[1].album_id);
         assert_ne!(prepared[0].track_id, prepared[1].track_id);
+    }
+
+    #[test]
+    fn identical_releases_in_distinct_directories_share_one_album_identity() {
+        let mut parsed = Vec::new();
+        for (directory, duration_offset) in [("lossless", 0.0), ("portable", 0.35)] {
+            for (track_number, title, duration) in [
+                (1, "Opening Signal", 295.0),
+                (2, "Keep the Light", 284.0),
+                (3, "Turn the Dial", 271.0),
+            ] {
+                let mut track = parsed_track(
+                    &format!("/music/example/{directory}/{track_number:02}.flac"),
+                    title,
+                    track_number,
+                    duration + duration_offset,
+                );
+                track.album = "Fixture Album".into();
+                track.album_artists = vec!["Example Artist".into()];
+                track.track_artists = vec!["Example Artist".into()];
+                parsed.push(track);
+            }
+        }
+        let mut interner = StringInterner::with_capacity(64);
+        let seeds = prepare_track_seeds(&parsed, &mut interner);
+        let album_artists = infer_album_artists(&seeds, &HashMap::new());
+        let prepared = prepare_tracks(seeds, &HashMap::new(), &album_artists, &mut interner);
+
+        assert_eq!(
+            prepared
+                .iter()
+                .map(|track| track.album_id.as_ref())
+                .collect::<HashSet<_>>()
+                .len(),
+            1
+        );
+    }
+
+    #[test]
+    fn near_complete_release_copy_shares_the_richer_album_identity() {
+        let titles = [
+            "Opening Signal",
+            "Keep the Light",
+            "Turn the Dial",
+            "Parallel Lines",
+            "Quiet Current",
+            "Closing Signal",
+            "Bonus Signal",
+        ];
+        let mut parsed = Vec::new();
+        for (directory, track_count, extension, duration_offset) in [
+            ("portable-deluxe", 7, "mp3", 0.0),
+            ("lossless-standard", 6, "flac", 0.25),
+        ] {
+            for (index, title) in titles.iter().take(track_count).enumerate() {
+                let track_number = index as u16 + 1;
+                let mut track = parsed_track(
+                    &format!("/music/example/{directory}/{track_number:02}.{extension}"),
+                    title,
+                    track_number,
+                    240.0 + track_number as f64 * 3.0 + duration_offset,
+                );
+                track.album = "Fixture Album".into();
+                track.album_artists = vec!["Example Artist".into()];
+                track.track_artists = vec!["Example Artist".into()];
+                parsed.push(track);
+            }
+        }
+
+        let mut interner = StringInterner::with_capacity(128);
+        let seeds = prepare_track_seeds(&parsed, &mut interner);
+        let album_artists = infer_album_artists(&seeds, &HashMap::new());
+        let prepared = prepare_tracks(seeds, &HashMap::new(), &album_artists, &mut interner);
+
+        assert_eq!(
+            prepared
+                .iter()
+                .map(|track| track.album_id.as_ref())
+                .collect::<HashSet<_>>()
+                .len(),
+            1,
+            "a near-complete higher-quality copy should not create a second album"
+        );
     }
 
     #[test]
@@ -10795,6 +11544,7 @@ mod external_library_tests {
     #[test]
     #[ignore = "requires PARSON_TEST_LIBRARY and performs a full external library scan"]
     fn indexes_and_categorizes_external_library() {
+        require_isolated_external_test_data();
         let _ = tracing_subscriber::fmt()
             .with_env_filter(tracing_subscriber::EnvFilter::new("info"))
             .try_init();
@@ -10847,6 +11597,7 @@ mod external_library_tests {
     #[test]
     #[ignore = "requires PARSON_TEST_LIBRARY and benchmarks two complete external scans"]
     fn benchmarks_external_library_warm_refresh() {
+        require_isolated_external_test_data();
         let path = std::env::var("PARSON_TEST_LIBRARY")
             .expect("PARSON_TEST_LIBRARY must point to the benchmark library");
         let canonical = std::fs::canonicalize(&path).expect("benchmark root must exist");
@@ -10897,6 +11648,7 @@ mod external_library_tests {
     #[test]
     #[ignore = "requires PARSON_TEST_LIBRARY and writes its device's offline index profile"]
     fn benchmarks_and_caches_offline_device_profile() {
+        require_isolated_external_test_data();
         let path = std::env::var("PARSON_TEST_LIBRARY")
             .expect("PARSON_TEST_LIBRARY must point to the intended music directory");
         super::benchmark_and_cache_indexer_device_profile(Path::new(&path))
@@ -10988,6 +11740,7 @@ mod external_library_tests {
     #[test]
     #[ignore = "requires PARSON_TEST_LIBRARY and benchmarks the production two-phase import"]
     fn benchmarks_external_library_available_then_enriched() {
+        require_isolated_external_test_data();
         let path = std::env::var("PARSON_TEST_LIBRARY")
             .expect("PARSON_TEST_LIBRARY must point to the benchmark library");
         let (_, available) = super::index_available_library_to_database(&path)
@@ -11020,6 +11773,7 @@ mod external_library_tests {
     #[test]
     #[ignore = "requires PARSON_TEST_LIBRARY and an enriched benchmark database"]
     fn benchmarks_external_enriched_auto_refresh() {
+        require_isolated_external_test_data();
         let path = std::env::var("PARSON_TEST_LIBRARY")
             .expect("PARSON_TEST_LIBRARY must point to the benchmark library");
         let started = std::time::Instant::now();
@@ -11071,6 +11825,7 @@ mod external_library_tests {
     #[test]
     #[ignore = "requires PARSON_TEST_LIBRARY and benchmarks progressive publication overhead"]
     fn benchmarks_external_progressive_library_scan() {
+        require_isolated_external_test_data();
         let path = std::env::var("PARSON_TEST_LIBRARY")
             .expect("PARSON_TEST_LIBRARY must point to the benchmark library");
         let (sender, mut receiver) = tokio::sync::mpsc::channel::<Vec<crate::domain::Artist>>(1);
@@ -11383,6 +12138,7 @@ mod external_library_tests {
     fn rebuilds_external_catalog_from_persisted_metadata() {
         let path = std::env::var("PARSON_REBUILD_CATALOG_DB")
             .expect("PARSON_REBUILD_CATALOG_DB must point to an isolated catalog copy");
+        require_isolated_database_file(Path::new(&path));
         let mut connection = SqliteConnection::establish(&path).expect("open isolated catalog");
         connection
             .batch_execute("PRAGMA foreign_keys = ON;")
@@ -11548,6 +12304,41 @@ struct ArtistViewRow {
     description: Option<String>,
 }
 
+#[derive(Debug, QueryableByName)]
+struct ArtistAlbumRow {
+    #[diesel(sql_type = Text)]
+    artist_id: String,
+    #[diesel(sql_type = Text)]
+    album_id: String,
+}
+
+fn load_appearance_albums_by_artist(
+    conn: &mut SqliteConnection,
+) -> QueryResult<HashMap<String, Vec<String>>> {
+    let rows = diesel::sql_query(
+        "SELECT DISTINCT credit.artist_id, track.album_id
+         FROM track_artist credit
+         JOIN track_entity track ON track.id = credit.track_id
+         LEFT JOIN album_artist owner
+           ON owner.album_id = track.album_id
+          AND owner.artist_id = credit.artist_id
+          AND owner.role = 'primary'
+         WHERE credit.role IN ('primary', 'featured')
+           AND track.album_id IS NOT NULL
+           AND owner.artist_id IS NULL
+         ORDER BY credit.artist_id, track.album_id",
+    )
+    .load::<ArtistAlbumRow>(conn)?;
+    let mut albums_by_artist = HashMap::<String, Vec<String>>::new();
+    for row in rows {
+        albums_by_artist
+            .entry(row.artist_id)
+            .or_default()
+            .push(row.album_id);
+    }
+    Ok(albums_by_artist)
+}
+
 fn export_albums_by_artist(
     conn: &mut SqliteConnection,
     overrides: &MetadataOverrides,
@@ -11664,12 +12455,14 @@ fn export_all_tracks(
     let query_started = Instant::now();
     let rows = diesel::sql_query(
         "SELECT t.album_id, t.id, t.title, COALESCE(ar.name, 'Unknown Artist') AS artist,
-                t.track_number, t.duration_seconds, fe.path
+                t.track_number, t.duration_seconds, fe.path,
+                COALESCE(rfm.track_artists_json, '[]') AS track_artists_json
          FROM track_entity t
          LEFT JOIN track_artist ta ON ta.track_id = t.id AND ta.role = 'primary'
          LEFT JOIN artist_entity ar ON ar.id = ta.artist_id
          LEFT JOIN track_file tf ON tf.track_id = t.id AND tf.is_primary = true
          LEFT JOIN file_entry fe ON fe.id = tf.file_id
+         LEFT JOIN raw_file_metadata rfm ON rfm.file_id = fe.id
          ORDER BY t.album_id, t.disc_number, t.track_number, t.normalized_title",
     )
     .load::<TrackRow>(conn)?;
@@ -11677,6 +12470,18 @@ fn export_all_tracks(
 
     let mut tracks_by_album = HashMap::with_capacity(rows.len().saturating_div(8).max(1));
     for row in rows {
+        let credited_artists = serde_json::from_str::<Vec<String>>(&row.track_artists_json)
+            .map(|artists| artist_credit_names(&artists))
+            .unwrap_or_default();
+        let primary_artist_key = normalize_artist_identity(&row.artist);
+        let contributing_artists = credited_artists
+            .into_iter()
+            .filter(|artist| normalize_artist_identity(artist) != primary_artist_key)
+            .collect::<Vec<_>>();
+        let contributing_artist_ids = contributing_artists
+            .iter()
+            .map(|artist| hash_artist(artist))
+            .collect::<Vec<_>>();
         let song = Song {
             id: row.id.clone(),
             name: value_override(overrides, "track", &row.id, "name", row.title),
@@ -11686,14 +12491,14 @@ fn export_all_tracks(
                 "track",
                 &row.id,
                 "contributing_artists",
-                Vec::new(),
+                contributing_artists,
             ),
             contributing_artist_ids: typed_override(
                 overrides,
                 "track",
                 &row.id,
                 "contributing_artist_ids",
-                Vec::new(),
+                contributing_artist_ids,
             ),
             track_number: typed_override(
                 overrides,

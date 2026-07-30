@@ -14,6 +14,7 @@ use crate::library::normalize::is_edition_primary_type;
 const MAX_PREFIX_TERMS: usize = 4_096;
 const MAX_FUZZY_TERMS: usize = 256;
 const MAX_CANDIDATES: usize = 1_500;
+const MAX_ACRONYM_VARIANTS: usize = 64;
 
 /// Compact in-memory metadata search index.
 #[derive(Serialize, Deserialize)]
@@ -31,6 +32,7 @@ struct SearchDocument {
     artist: Box<str>,
     album: Box<str>,
     acronym: Box<str>,
+    acronym_aliases: Box<[Box<str>]>,
     compact_title: Box<str>,
     compact_title_without_article: Option<Box<str>>,
     release_boost: f32,
@@ -140,6 +142,7 @@ impl SearchIndex {
                 .chain(document.artist.split_whitespace())
                 .chain(document.album.split_whitespace())
                 .chain(std::iter::once(document.acronym.as_ref()))
+                .chain(document.acronym_aliases.iter().map(AsRef::as_ref))
                 .chain(std::iter::once(document.compact_title.as_ref()))
                 .chain(document.compact_title_without_article.as_deref())
                 .filter(|token| !token.is_empty())
@@ -306,13 +309,17 @@ impl SearchDocument {
         let articleless = compact(title_without_leading_article(&normalized_title));
         let compact_title_without_article =
             (articleless != compact_title).then(|| articleless.into_boxed_str());
+        let mut acronym_variants = acronym_variants(title).into_iter();
+        let acronym = acronym_variants.next().unwrap_or_default();
+        let acronym_aliases = acronym_variants.map(String::into_boxed_str).collect();
         Self {
             entity_type: SearchEntityType::from_name(entity_type),
             entity_id: entity_id.into(),
             title: normalized_title.into(),
             artist: normalize(artist).into(),
             album: normalize(album).into(),
-            acronym: acronym(title).into(),
+            acronym: acronym.into(),
+            acronym_aliases,
             compact_title: compact_title.into(),
             compact_title_without_article,
             release_boost,
@@ -374,11 +381,24 @@ fn score(
         return Some((1000.0 + context_boost, "exact_title"));
     }
     if document.acronym.as_ref() == query {
-        return Some((900.0 + context_boost, "acronym"));
+        return Some((875.0 + context_boost, "acronym"));
     }
-    if query.chars().count() >= 2 && !query.contains(' ') && document.acronym.starts_with(query) {
-        let coverage = query.chars().count() as f32 / document.acronym.chars().count() as f32;
-        return Some((850.0 + coverage * 25.0 + context_boost, "acronym_prefix"));
+    if document
+        .acronym_aliases
+        .iter()
+        .any(|alias| alias.as_ref() == query)
+    {
+        return Some((875.0 + context_boost, "acronym"));
+    }
+    let acronym_prefix = std::iter::once(document.acronym.as_ref())
+        .chain(document.acronym_aliases.iter().map(AsRef::as_ref))
+        .find(|acronym| acronym.starts_with(query));
+    if query.chars().count() >= 2
+        && !query.contains(' ')
+        && let Some(acronym) = acronym_prefix
+    {
+        let coverage = query.chars().count() as f32 / acronym.chars().count() as f32;
+        return Some((840.0 + coverage * 25.0 + context_boost, "acronym_prefix"));
     }
 
     let searchable_title = title_without_leading_article(&document.title);
@@ -395,7 +415,7 @@ fn score(
         let title_terms = searchable_title.split_whitespace().count().max(1) as f32;
         let coverage = query_tokens.len() as f32 / title_terms;
         return Some((
-            800.0 + coverage.min(1.0) * 25.0 + context_boost,
+            900.0 + coverage.min(1.0) * 25.0 + context_boost,
             "title_prefix",
         ));
     }
@@ -431,6 +451,7 @@ fn score(
             .chain(document.artist.split_whitespace())
             .chain(document.album.split_whitespace())
             .chain(std::iter::once(document.acronym.as_ref()))
+            .chain(document.acronym_aliases.iter().map(AsRef::as_ref))
             .chain(std::iter::once(document.compact_title.as_ref()))
             .chain(document.compact_title_without_article.as_deref())
     };
@@ -607,6 +628,7 @@ fn document_matches_token(document: &SearchDocument, query_token: &str) -> bool 
         .chain(document.artist.split_whitespace())
         .chain(document.album.split_whitespace())
         .chain(std::iter::once(document.acronym.as_ref()))
+        .chain(document.acronym_aliases.iter().map(AsRef::as_ref))
         .chain(std::iter::once(document.compact_title.as_ref()))
         .chain(document.compact_title_without_article.as_deref())
         .any(|token| {
@@ -618,23 +640,85 @@ fn document_matches_token(document: &SearchDocument, query_token: &str) -> bool 
 }
 
 pub(crate) fn acronym(value: &str) -> String {
+    acronym_variants(value)
+        .into_iter()
+        .next()
+        .unwrap_or_default()
+}
+
+fn acronym_variants(value: &str) -> Vec<String> {
     let normalized = normalize(value);
     let words = normalized.split_whitespace().collect::<Vec<_>>();
     if words.len() < 2 {
-        return String::new();
+        return Vec::new();
     }
-    let value = words
-        .iter()
+
+    let mut variants = vec![String::new()];
+    for word in words {
+        let Some(initial) = word
+            .chars()
+            .next()
+            .filter(|character| character.is_alphabetic())
+        else {
+            continue;
+        };
+        let shorthand = letter_name_shorthand(word).filter(|letter| *letter != initial);
+        let mut expanded = Vec::with_capacity(
+            variants
+                .len()
+                .saturating_mul(usize::from(shorthand.is_some()) + 1)
+                .min(MAX_ACRONYM_VARIANTS),
+        );
+        for variant in &variants {
+            if expanded.len() >= MAX_ACRONYM_VARIANTS {
+                break;
+            }
+            let mut canonical = variant.clone();
+            canonical.push(initial);
+            expanded.push(canonical);
+            if let Some(letter) = shorthand
+                && expanded.len() < MAX_ACRONYM_VARIANTS
+            {
+                let mut alias = variant.clone();
+                alias.push(letter);
+                expanded.push(alias);
+            }
+        }
+        variants = expanded;
+    }
+
+    variants.retain(|variant| variant.chars().count() >= 2);
+    variants.sort();
+    variants.dedup();
+
+    let canonical = words_acronym(&normalized);
+    if let Some(position) = variants.iter().position(|variant| variant == &canonical) {
+        variants.swap(0, position);
+    }
+    variants
+}
+
+fn words_acronym(normalized: &str) -> String {
+    normalized
+        .split_whitespace()
         .filter_map(|word| {
             word.chars()
                 .next()
                 .filter(|character| character.is_alphabetic())
         })
-        .collect::<String>();
-    if value.chars().count() >= 2 {
-        value
-    } else {
-        String::new()
+        .collect()
+}
+
+fn letter_name_shorthand(word: &str) -> Option<char> {
+    match word {
+        "are" => Some('r'),
+        "cue" | "queue" => Some('q'),
+        "ex" => Some('x'),
+        "eye" => Some('i'),
+        "sea" | "see" => Some('c'),
+        "why" => Some('y'),
+        "ewe" | "yew" | "you" => Some('u'),
+        _ => None,
     }
 }
 
@@ -826,6 +910,133 @@ mod tests {
     fn supports_partial_initials() {
         let hits = index().search("mi", 10).unwrap();
         assert_eq!(hits[0].entity_id, "song-make-it-clear");
+    }
+
+    #[test]
+    fn supports_letter_name_shorthand_in_acronyms_and_their_prefixes() {
+        let index = SearchIndex::build(&[Artist {
+            id: "artist-synthetic".into(),
+            name: "Synthetic Person".into(),
+            albums: vec![Album {
+                id: "album-synthetic".into(),
+                name: "Fabricated Set".into(),
+                songs: vec![
+                    Song {
+                        id: "song-synthetic".into(),
+                        name: "You Build Maps".into(),
+                        artist: "Synthetic Person".into(),
+                        ..Default::default()
+                    },
+                    Song {
+                        id: "song-distractor".into(),
+                        name: "Yellow Copper Maps".into(),
+                        artist: "Synthetic Person".into(),
+                        ..Default::default()
+                    },
+                ],
+                ..Default::default()
+            }],
+            ..Default::default()
+        }])
+        .unwrap();
+
+        for query in ["ybm", "ubm", "ub"] {
+            let hit = &index.search(query, 10).unwrap()[0];
+            assert_eq!(hit.entity_id, "song-synthetic", "query {query}");
+            assert!(
+                matches!(hit.match_reason, "acronym" | "acronym_prefix"),
+                "query {query}"
+            );
+        }
+        assert!(
+            index
+                .search("ucm", 10)
+                .unwrap()
+                .iter()
+                .all(|hit| hit.entity_id != "song-distractor")
+        );
+    }
+
+    #[test]
+    fn recognizes_common_spoken_letter_words_generically() {
+        for (word, letter) in [
+            ("are", 'r'),
+            ("cue", 'q'),
+            ("queue", 'q'),
+            ("ex", 'x'),
+            ("eye", 'i'),
+            ("sea", 'c'),
+            ("see", 'c'),
+            ("why", 'y'),
+            ("ewe", 'u'),
+            ("yew", 'u'),
+            ("you", 'u'),
+        ] {
+            assert_eq!(letter_name_shorthand(word), Some(letter), "word {word}");
+        }
+        assert_eq!(letter_name_shorthand("ordinary"), None);
+    }
+
+    #[test]
+    fn direct_short_title_prefixes_beat_initials_hidden_in_longer_titles() {
+        let album = |id: &str, artist: &str, songs: &[(&str, &str)]| Album {
+            id: id.into(),
+            name: format!("{artist} album"),
+            songs: songs
+                .iter()
+                .map(|(song_id, name)| Song {
+                    id: (*song_id).into(),
+                    name: (*name).into(),
+                    artist: artist.into(),
+                    ..Default::default()
+                })
+                .collect(),
+            ..Default::default()
+        };
+        let index = SearchIndex::build(&[
+            Artist {
+                id: "example-artist-a".into(),
+                name: "Example Artist A".into(),
+                albums: vec![album(
+                    "example-album-a",
+                    "Example Artist A",
+                    &[("keep-it-bright", "Keep It Bright")],
+                )],
+                ..Default::default()
+            },
+            Artist {
+                id: "example-artist-b".into(),
+                name: "Example Artist B".into(),
+                albums: vec![album(
+                    "example-album-b",
+                    "Example Artist B",
+                    &[("kite", "Kite")],
+                )],
+                ..Default::default()
+            },
+            Artist {
+                id: "example-artist-c".into(),
+                name: "Example Artist C".into(),
+                albums: vec![album(
+                    "example-album-c",
+                    "Example Artist C",
+                    &[("kindred-orbit", "Kindred Orbit")],
+                )],
+                ..Default::default()
+            },
+        ])
+        .unwrap();
+
+        let hits = index.search("ki", 10).unwrap();
+        assert_eq!(
+            hits.iter()
+                .filter(|hit| hit.entity_type == "song")
+                .map(|hit| hit.entity_id.as_str())
+                .collect::<Vec<_>>(),
+            ["kite", "kindred-orbit", "keep-it-bright"]
+        );
+        assert_eq!(hits[0].match_reason, "title_prefix");
+        assert_eq!(hits[2].match_reason, "acronym_prefix");
     }
 
     #[test]

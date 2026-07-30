@@ -84,7 +84,7 @@ export default function CreatePlaylistDialog({
             />
           </Field>
           <Button
-            className="w-full bg-white text-black hover:bg-zinc-200"
+            className="w-full"
             disabled={!name.trim() || create.isPending}
             type="submit"
           >

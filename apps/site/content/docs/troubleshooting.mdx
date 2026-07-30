@@ -59,13 +59,13 @@ description: Find the symptom, try the quick fix, then inspect only what matters
 
 **Deeper diagnostics →** Check host access to `lrclib.net` and server logs for `lyrics_not_found`, `lyrics_provider_unavailable`, or capacity errors. Inspect `Cache\Lyrics\lyrics.db` only with Parson stopped.
 
-## Android cannot find Parson
+## Another device cannot open Parson
 
-**Cause →** Devices are on different networks, Nearby permission is denied, multicast discovery is blocked, or Parson is loopback-only.
+**Cause →** Devices are on different networks, the hostname does not resolve, client isolation is enabled, or a firewall blocks port `1993`.
 
-**Quick fix →** Put both devices on the same Wi-Fi, allow Nearby devices, restart discovery, or enter the server origin manually.
+**Quick fix →** Put both devices on the same trusted network and open `http://HOST:1993`, replacing `HOST` with the server's local IP address.
 
-**Deeper diagnostics →** Open `http://HOST:1993/.well-known/parson` from the phone, check Windows Firewall and AP isolation, and verify `_parson._tcp.local.` advertising in logs.
+**Deeper diagnostics →** Open `http://HOST:1993/health` from the other device, check Windows Firewall and AP isolation, and confirm the server listens on the LAN interface.
 
 ## Remote access stopped working
 

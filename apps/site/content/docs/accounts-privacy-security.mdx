@@ -11,17 +11,17 @@ The first account is an **administrator**. Administrators can create additional 
 
 Passwords are salted and hashed with Argon2. Parson never stores the original password. A signed-in user can change their password by providing the current one; doing so revokes existing sessions.
 
-There is no email-based or built-in forgotten-password reset in Parson 1.0.x because there is no Parson cloud identity. An administrator should create a replacement account, or an operator can recover the database using documented administrative tooling when available. Do not edit password hashes by hand.
+There is no email-based or built-in forgotten-password reset because there is no Parson cloud identity. An administrator should create a replacement account, or an operator can recover the database using documented administrative tooling when available. Do not edit password hashes by hand.
 
 ## Sessions and devices
 
-Access and refresh tokens are signed with the private key in `Secrets\session.key`. Logout and password changes increment the account's token generation, invalidating older credentials. Clients should store credentials in platform-protected storage; Android app data is excluded from cloud/device-transfer backup. The first account created on a new server becomes its administrator, so complete setup on a trusted network before exposing the server remotely.
+Access and refresh tokens are signed with the private key in `Secrets\session.key`. Browser sessions use protected cookies, logout revokes the active session, and password changes increment the account's token generation and invalidate older credentials. The first account created on a new server becomes its administrator, so complete setup on a trusted network before exposing the server remotely.
 
 ## Privacy
 
 ### What stays local
 
-Music files, file paths, tags, artwork, accounts, passwords hashes, sessions, playlists, likes, history, recommendations, queues, search indexes, and diagnostics stay on the Parson host or on connected devices. Offline downloads stay on the Android device.
+Music files, file paths, tags, artwork, accounts, password hashes, sessions, playlists, likes, history, recommendations, queues, search indexes, and diagnostics stay on the Parson host or in the connected browser's local state.
 
 ### External requests Parson may make
 
@@ -29,7 +29,7 @@ Music files, file paths, tags, artwork, accounts, passwords hashes, sessions, pl
 - Choosing **Check and install updates** contacts the official GitHub release endpoint, unless an operator configured a custom update manifest.
 - Google Cast uses Google's Cast infrastructure when you choose a Cast target.
 
-Parson 1.0.x has **no usage analytics, telemetry upload, or automatic crash-reporting service**. The term “playback telemetry” in source code means local listening events used for your history and recommendations; those events are not sent to ParsonLabs.
+Parson has **no usage analytics, telemetry upload, or automatic crash-reporting service**. The term “playback telemetry” in source code means local listening events used for your history and recommendations; those events are not sent to ParsonLabs.
 
 ### What ParsonLabs can see
 
@@ -37,4 +37,4 @@ ParsonLabs cannot browse your library, accounts, history, or logs through a buil
 
 ## Security updates and vulnerabilities
 
-Security fixes are provided for the latest Parson 1.0.x release. Report vulnerabilities privately through the repository's **GitHub Security Advisories**; do not open a public exploit report. Include the version, reproduction steps, impact, and any proposed mitigation. The project aims to acknowledge reports within seven days.
+Security fixes are provided for the latest release. Report vulnerabilities privately through the repository's **GitHub Security Advisories**; do not open a public exploit report. Include the version, reproduction steps, impact, and any proposed mitigation. The project aims to acknowledge reports within seven days.

@@ -10,12 +10,11 @@ use crate::domain::Artist;
 use crate::library::search::{SearchHit, acronym as search_acronym, normalize, sort_hits};
 use crate::library::state::{LibraryLifecycle, library_unavailable_response};
 use crate::persistence::connection::DbPool;
-use crate::recommendation::RankedCandidate;
+use crate::recommendation::SearchAffinity;
 
 const MAX_RESULTS: usize = 50;
 const MAX_RERANK_CANDIDATES: usize = MAX_RESULTS * 4;
-const MAX_RECOMMENDATIONS: usize = 100;
-const MAX_RECOMMENDATION_BOOST: f32 = 12.0;
+const MAX_PERSONALIZATION_BOOST: f32 = 10.0;
 const MAX_QUERY_CHARACTERS: usize = 256;
 
 #[derive(Deserialize)]
@@ -67,6 +66,7 @@ struct AlbumSummary {
     name: String,
     cover_url: String,
     first_release_date: String,
+    primary_type: String,
     description: String,
 }
 
@@ -74,6 +74,8 @@ struct AlbumSummary {
 struct SongSummary {
     id: String,
     name: String,
+    artist: String,
+    contributing_artists: Vec<String>,
     duration: f64,
 }
 
@@ -91,17 +93,15 @@ fn response_acronym(name: &str) -> String {
     search_acronym(name).to_uppercase()
 }
 
-fn apply_recommendation_boosts(hits: &mut [SearchHit], recommendations: &[RankedCandidate]) {
-    if recommendations.is_empty() {
+fn apply_personalization_boosts(hits: &mut [SearchHit], affinities: &[SearchAffinity]) {
+    if affinities.is_empty() {
         return;
     }
-    let count = recommendations.len() as f32;
-    let mut boosts = HashMap::<&str, f32>::new();
-    for (rank, candidate) in recommendations.iter().enumerate() {
-        let rank_weight = 1.0 - rank as f32 / count;
-        let boost = MAX_RECOMMENDATION_BOOST * rank_weight;
+    let mut boosts = HashMap::<&str, f32>::with_capacity(affinities.len());
+    for affinity in affinities {
+        let boost = affinity.score.min(MAX_PERSONALIZATION_BOOST);
         boosts
-            .entry(candidate.song_id.as_str())
+            .entry(affinity.song_id.as_str())
             .and_modify(|existing| *existing = existing.max(boost))
             .or_insert(boost);
     }
@@ -193,21 +193,14 @@ async fn search(
         }
     };
     if let Ok(user_id) = authenticated_user_id(&request) {
-        let recommendation_cache = cache.clone();
         let recommendation_pool = pool.get_ref().clone();
         match tokio::task::spawn_blocking(move || {
-            crate::recommendation::recommend(
-                user_id,
-                None,
-                recommendation_cache.as_ref(),
-                &recommendation_pool,
-                MAX_RECOMMENDATIONS,
-            )
-            .map_err(|error| error.to_string())
+            crate::recommendation::search_affinities(user_id, &recommendation_pool)
+                .map_err(|error| error.to_string())
         })
         .await
         {
-            Ok(Ok(recommendations)) => apply_recommendation_boosts(&mut hits, &recommendations),
+            Ok(Ok(affinities)) => apply_personalization_boosts(&mut hits, &affinities),
             Ok(Err(error)) => tracing::warn!(%error, "search personalization unavailable"),
             Err(error) => tracing::warn!(%error, "search personalization task failed"),
         }
@@ -244,6 +237,7 @@ async fn search(
                         name: album.name.clone(),
                         cover_url: album.cover_url.clone(),
                         first_release_date: album.first_release_date.clone(),
+                        primary_type: album.primary_type.clone(),
                         description: album.description.clone(),
                     }),
                     song_object: None,
@@ -269,11 +263,14 @@ async fn search(
                         name: album.name.clone(),
                         cover_url: album.cover_url.clone(),
                         first_release_date: album.first_release_date.clone(),
+                        primary_type: album.primary_type.clone(),
                         description: album.description.clone(),
                     }),
                     song_object: Some(SongSummary {
                         id: song.id.clone(),
                         name: song.name.clone(),
+                        artist: song.artist.clone(),
+                        contributing_artists: song.contributing_artists.clone(),
                         duration: song.duration,
                     }),
                     relevance_score: hit.score,
@@ -294,12 +291,12 @@ pub fn configure(config: &mut web::ServiceConfig) {
 #[cfg(test)]
 mod tests {
     use super::{
-        ArtistSummary, MAX_QUERY_CHARACTERS, SearchResult, apply_recommendation_boosts,
+        ArtistSummary, MAX_QUERY_CHARACTERS, SearchResult, apply_personalization_boosts,
         deduplicate_results, merge_lyrics_hits, normalize_query, response_acronym,
     };
     use crate::api::lyrics::LyricsSearchHit;
     use crate::library::search::SearchHit;
-    use crate::recommendation::RankedCandidate;
+    use crate::recommendation::SearchAffinity;
 
     #[test]
     fn search_queries_are_trimmed_and_bounded_by_characters() {
@@ -325,7 +322,7 @@ mod tests {
     }
 
     #[test]
-    fn recommendations_break_close_ties_without_overpowering_relevance() {
+    fn personalization_breaks_close_ties_without_overpowering_relevance() {
         let mut hits = vec![
             SearchHit {
                 entity_type: "song".into(),
@@ -346,21 +343,20 @@ mod tests {
                 match_reason: "all_terms",
             },
         ];
-        let recommendations = vec![RankedCandidate {
+        let affinities = vec![SearchAffinity {
             song_id: "recommended-generic".into(),
-            score: 10_000.0,
-            reason: "test".into(),
+            score: 10.0,
         }];
 
-        apply_recommendation_boosts(&mut hits, &recommendations);
+        apply_personalization_boosts(&mut hits, &affinities);
 
         assert_eq!(hits[0].entity_id, "exact");
         assert_eq!(hits[1].entity_id, "recommended-generic");
-        assert!(hits[1].score - 501.0 <= super::MAX_RECOMMENDATION_BOOST);
+        assert!(hits[1].score - 501.0 <= super::MAX_PERSONALIZATION_BOOST);
     }
 
     #[test]
-    fn duplicate_recommendations_keep_the_strongest_bounded_boost() {
+    fn duplicate_affinities_keep_the_strongest_bounded_boost() {
         let mut hits = vec![
             SearchHit {
                 entity_type: "song".into(),
@@ -375,26 +371,65 @@ mod tests {
                 match_reason: "all_terms",
             },
         ];
-        let recommendation = |id: &str| RankedCandidate {
+        let affinity = |id: &str, score: f32| SearchAffinity {
             song_id: id.into(),
-            score: 1.0,
-            reason: "test".into(),
+            score,
         };
 
-        apply_recommendation_boosts(
+        apply_personalization_boosts(
             &mut hits,
             &[
-                recommendation("song"),
-                recommendation("other"),
-                recommendation("song"),
-                recommendation("album"),
+                affinity("song", 3.0),
+                affinity("other", 9.0),
+                affinity("song", 20.0),
+                affinity("album", 10.0),
             ],
         );
 
         let song = hits.iter().find(|hit| hit.entity_id == "song").unwrap();
         let album = hits.iter().find(|hit| hit.entity_id == "album").unwrap();
-        assert_eq!(song.score, 500.0 + super::MAX_RECOMMENDATION_BOOST);
+        assert_eq!(song.score, 500.0 + super::MAX_PERSONALIZATION_BOOST);
         assert_eq!(album.score, 500.0);
+    }
+
+    #[test]
+    fn maximum_affinity_cannot_make_initials_beat_a_closer_title_prefix() {
+        let mut hits = vec![
+            SearchHit {
+                entity_type: "song".into(),
+                entity_id: "kite".into(),
+                score: 926.0,
+                match_reason: "title_prefix",
+            },
+            SearchHit {
+                entity_type: "song".into(),
+                entity_id: "kindred-orbit".into(),
+                score: 909.0,
+                match_reason: "title_prefix",
+            },
+            SearchHit {
+                entity_type: "song".into(),
+                entity_id: "keep-it-bright".into(),
+                score: 858.0,
+                match_reason: "acronym_prefix",
+            },
+        ];
+
+        apply_personalization_boosts(
+            &mut hits,
+            &[SearchAffinity {
+                song_id: "keep-it-bright".into(),
+                score: 10.0,
+            }],
+        );
+
+        assert_eq!(
+            hits.iter()
+                .map(|hit| hit.entity_id.as_str())
+                .collect::<Vec<_>>(),
+            ["kite", "kindred-orbit", "keep-it-bright"]
+        );
+        assert_eq!(hits[2].score, 868.0);
     }
 
     #[test]

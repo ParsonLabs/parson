@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { StyleSheet, View, type ViewStyle } from "react-native";
 
 import { palette } from "@/constants/colors";
-import { imageUrl } from "@/lib/runtime";
+import { imageRequestHeaders, imageUrl } from "@/lib/runtime";
 import { useSession } from "@/providers/session-provider";
 
 export function Artwork({
@@ -20,9 +20,17 @@ export function Artwork({
 }) {
   const session = useSession();
   const uri = imageUrl(path);
-  const sourceKey = uri ? `${session.phase}:${uri}` : null;
+  const sourceKey = uri
+    ? `${session.instanceId ?? "unknown"}:${session.phase}:${uri}`
+    : null;
+  const cacheKey = uri
+    ? `${session.instanceId ?? "unknown"}:${uri}`
+    : undefined;
   const [failedSource, setFailedSource] = useState<string | null>(null);
   const failures = useRef(new Map<string, number>());
+  useEffect(() => {
+    failures.current.clear();
+  }, [session.instanceId, session.origin]);
   useEffect(() => {
     if (!failedSource) return;
     const attempts = failures.current.get(failedSource) ?? 0;
@@ -46,13 +54,24 @@ export function Artwork({
     >
       {uri && failedSource !== sourceKey ? (
         <Image
-          source={{ uri }}
+          source={{
+            uri,
+            cacheKey,
+            headers: imageRequestHeaders(uri),
+          }}
           style={StyleSheet.absoluteFill}
           contentFit="cover"
           cachePolicy="memory-disk"
           recyclingKey={uri}
           onError={() => {
             if (!sourceKey) return;
+            if (
+              !failures.current.has(sourceKey) &&
+              failures.current.size >= 32
+            ) {
+              const oldest = failures.current.keys().next().value;
+              if (oldest) failures.current.delete(oldest);
+            }
             failures.current.set(
               sourceKey,
               (failures.current.get(sourceKey) ?? 0) + 1,

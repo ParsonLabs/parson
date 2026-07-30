@@ -60,12 +60,67 @@ struct AddTracks {
     song_ids: Vec<String>,
 }
 
+#[derive(Deserialize)]
+struct ReorderTracks {
+    song_ids: Vec<String>,
+}
+
 #[derive(Debug, PartialEq)]
 enum AddTrackResult {
     Added,
     PlaylistMissing,
     SongMissing,
     CapacityReached,
+}
+
+#[derive(Debug, PartialEq)]
+enum ReorderTracksResult {
+    Reordered,
+    PlaylistMissing,
+    TrackSetMismatch,
+}
+
+fn reorder_tracks_transactionally(
+    connection: &mut diesel::sqlite::SqliteConnection,
+    playlist_id: i32,
+    owner_id: i32,
+    song_ids: &[String],
+) -> Result<ReorderTracksResult, diesel::result::Error> {
+    use crate::persistence::schema::_playlist_to_song::dsl as tracks;
+    use crate::persistence::schema::playlist::dsl as playlists;
+
+    connection.transaction(|connection| {
+        if !is_owner(connection, playlist_id, owner_id)? {
+            return Ok(ReorderTracksResult::PlaylistMissing);
+        }
+
+        let current_ids = tracks::_playlist_to_song
+            .filter(tracks::a.eq(playlist_id))
+            .select(tracks::b)
+            .load::<String>(connection)?;
+        let requested = song_ids.iter().cloned().collect::<HashSet<_>>();
+        let current = current_ids.iter().cloned().collect::<HashSet<_>>();
+        if requested.len() != song_ids.len()
+            || current.len() != current_ids.len()
+            || requested != current
+        {
+            return Ok(ReorderTracksResult::TrackSetMismatch);
+        }
+
+        for (position, song_id) in song_ids.iter().enumerate() {
+            diesel::update(
+                tracks::_playlist_to_song
+                    .filter(tracks::a.eq(playlist_id))
+                    .filter(tracks::b.eq(song_id)),
+            )
+            .set(tracks::position.eq(position as i32))
+            .execute(connection)?;
+        }
+        diesel::update(playlists::playlist.find(playlist_id))
+            .set(playlists::updated_at.eq(diesel::dsl::now))
+            .execute(connection)?;
+        Ok(ReorderTracksResult::Reordered)
+    })
 }
 
 fn add_track_transactionally(
@@ -781,6 +836,56 @@ async fn add_tracks(
     }
 }
 
+#[patch("/{id}/tracks/order")]
+async fn reorder_tracks(
+    request: HttpRequest,
+    id: web::Path<i32>,
+    body: web::Json<ReorderTracks>,
+    pool: web::Data<DbPool>,
+) -> HttpResponse {
+    let owner_id = match crate::api::auth::authenticated_user_id(&request) {
+        Ok(id) => id,
+        Err(response) => return response,
+    };
+    let playlist_id = id.into_inner();
+    let song_ids = body.song_ids.clone();
+    if song_ids.len() > MAX_TRACKS_PER_PLAYLIST as usize
+        || song_ids.iter().any(|song_id| !valid_song_id(song_id))
+        || song_ids.iter().collect::<HashSet<_>>().len() != song_ids.len()
+    {
+        return crate::api::error::bad_request(
+            "Playlist order contains invalid or duplicate song IDs.",
+            "playlist_track_order_invalid",
+        );
+    }
+
+    let reorder_pool = pool.get_ref().clone();
+    let result = web::block(move || -> Result<ReorderTracksResult, String> {
+        let mut connection = reorder_pool.get().map_err(|error| error.to_string())?;
+        reorder_tracks_transactionally(&mut connection, playlist_id, owner_id, &song_ids)
+            .map_err(|error| error.to_string())
+    })
+    .await;
+    match result {
+        Ok(Ok(ReorderTracksResult::Reordered)) => HttpResponse::NoContent().finish(),
+        Ok(Ok(ReorderTracksResult::PlaylistMissing)) => {
+            not_found("Playlist not found.", "playlist_not_found")
+        }
+        Ok(Ok(ReorderTracksResult::TrackSetMismatch)) => crate::api::error::conflict(
+            "The playlist changed before its new order could be saved.",
+            "playlist_track_order_stale",
+        ),
+        Ok(Err(error)) => {
+            tracing::error!(%error, "could not reorder playlist tracks");
+            internal_server_error("Could not reorder tracks.", "playlist_track_reorder_failed")
+        }
+        Err(error) => {
+            tracing::error!(%error, "playlist track reorder worker failed");
+            internal_server_error("Could not reorder tracks.", "playlist_track_reorder_failed")
+        }
+    }
+}
+
 #[post("/{id}/albums/{album_id}")]
 async fn add_album(
     request: HttpRequest,
@@ -847,9 +952,9 @@ mod tests {
     use diesel::connection::SimpleConnection;
 
     use super::{
-        AddTrackResult, MAX_PLAYLIST_NAME_CHARACTERS, MAX_TRACKS_PER_PLAYLIST,
+        AddTrackResult, MAX_PLAYLIST_NAME_CHARACTERS, MAX_TRACKS_PER_PLAYLIST, ReorderTracksResult,
         add_track_transactionally, add_tracks_transactionally, is_owner, playlist_list_rows,
-        valid_optional_text,
+        reorder_tracks_transactionally, valid_optional_text,
     };
 
     #[test]
@@ -1007,6 +1112,136 @@ mod tests {
     }
 
     #[test]
+    fn playlist_reordering_requires_the_complete_track_set() {
+        let mut connection = diesel::sqlite::SqliteConnection::establish(":memory:")
+            .expect("in-memory sqlite connection");
+        connection
+            .batch_execute(
+                "CREATE TABLE playlist (
+                    id INTEGER PRIMARY KEY,
+                    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+                 );
+                 CREATE TABLE _playlist_to_user (
+                    rowid INTEGER PRIMARY KEY, a INTEGER NOT NULL, b INTEGER NOT NULL
+                 );
+                 CREATE TABLE _playlist_to_song (
+                    rowid INTEGER PRIMARY KEY AUTOINCREMENT,
+                    a INTEGER NOT NULL, b TEXT NOT NULL, position INTEGER,
+                    UNIQUE(a, b)
+                 );
+                 INSERT INTO playlist (id) VALUES (1);
+                 INSERT INTO _playlist_to_user (a, b) VALUES (1, 7);
+                 INSERT INTO _playlist_to_song (a, b, position) VALUES
+                    (1, 'song-a', 0),
+                    (1, 'song-b', 1),
+                    (1, 'song-c', 2);",
+            )
+            .expect("playlist reorder fixture");
+
+        assert_eq!(
+            reorder_tracks_transactionally(
+                &mut connection,
+                1,
+                7,
+                &["song-c".into(), "song-a".into(), "song-b".into()],
+            )
+            .expect("reorder"),
+            ReorderTracksResult::Reordered,
+        );
+        let ids =
+            diesel::sql_query("SELECT b AS id FROM _playlist_to_song ORDER BY position, rowid")
+                .load::<IdRow>(&mut connection)
+                .expect("track order")
+                .into_iter()
+                .map(|row| row.id)
+                .collect::<Vec<_>>();
+        assert_eq!(ids, ["song-c", "song-a", "song-b"]);
+
+        assert_eq!(
+            reorder_tracks_transactionally(
+                &mut connection,
+                1,
+                7,
+                &["song-a".into(), "song-c".into()],
+            )
+            .expect("stale reorder"),
+            ReorderTracksResult::TrackSetMismatch,
+        );
+    }
+
+    #[test]
+    fn playlist_reordering_persists_positions_after_database_reopen() {
+        let directory = std::env::temp_dir().join(format!(
+            "parson-playlist-order-test-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&directory).expect("playlist order test directory");
+        let database = directory.join("music.db");
+        let database_url = database.to_str().expect("playlist order database path");
+
+        {
+            let mut connection = diesel::sqlite::SqliteConnection::establish(database_url)
+                .expect("playlist order database");
+            connection
+                .batch_execute(
+                    "CREATE TABLE playlist (
+                        id INTEGER PRIMARY KEY,
+                        updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+                     );
+                     CREATE TABLE _playlist_to_user (
+                        rowid INTEGER PRIMARY KEY, a INTEGER NOT NULL, b INTEGER NOT NULL
+                     );
+                     CREATE TABLE _playlist_to_song (
+                        rowid INTEGER PRIMARY KEY AUTOINCREMENT,
+                        a INTEGER NOT NULL, b TEXT NOT NULL, position INTEGER,
+                        UNIQUE(a, b)
+                     );
+                     INSERT INTO playlist (id) VALUES (1);
+                     INSERT INTO _playlist_to_user (a, b) VALUES (1, 7);
+                     INSERT INTO _playlist_to_song (a, b, position) VALUES
+                        (1, 'song-a', 10),
+                        (1, 'song-b', 20),
+                        (1, 'song-c', 30);",
+                )
+                .expect("persistent playlist reorder fixture");
+
+            assert_eq!(
+                reorder_tracks_transactionally(
+                    &mut connection,
+                    1,
+                    7,
+                    &["song-c".into(), "song-a".into(), "song-b".into()],
+                )
+                .expect("persistent reorder"),
+                ReorderTracksResult::Reordered,
+            );
+        }
+
+        let mut reopened = diesel::sqlite::SqliteConnection::establish(database_url)
+            .expect("reopen playlist order database");
+        let rows = diesel::sql_query(
+            "SELECT b AS id, position
+             FROM _playlist_to_song
+             WHERE a = 1
+             ORDER BY position, rowid",
+        )
+        .load::<PositionRow>(&mut reopened)
+        .expect("persisted playlist positions");
+        assert_eq!(
+            rows.into_iter()
+                .map(|row| (row.id, row.position))
+                .collect::<Vec<_>>(),
+            [
+                ("song-c".to_string(), 0),
+                ("song-a".to_string(), 1),
+                ("song-b".to_string(), 2),
+            ]
+        );
+        drop(reopened);
+        std::fs::remove_dir_all(directory).expect("remove playlist order test directory");
+    }
+
+    #[test]
     fn playlist_list_rows_are_scoped_aggregated_and_cover_bounded() {
         let mut connection = diesel::sqlite::SqliteConnection::establish(":memory:")
             .expect("in-memory sqlite connection");
@@ -1081,6 +1316,14 @@ mod tests {
         #[diesel(sql_type = diesel::sql_types::Text)]
         id: String,
     }
+
+    #[derive(diesel::QueryableByName)]
+    struct PositionRow {
+        #[diesel(sql_type = diesel::sql_types::Text)]
+        id: String,
+        #[diesel(sql_type = diesel::sql_types::Integer)]
+        position: i32,
+    }
 }
 
 #[delete("/{id}/tracks/{song_id}")]
@@ -1148,6 +1391,7 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
             .service(add_album)
             .service(add_tracks)
             .service(add_track)
+            .service(reorder_tracks)
             .service(remove_track)
             .service(update)
             .service(delete_playlist)

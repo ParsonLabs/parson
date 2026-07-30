@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { LyricsResult } from "@parson/music-sdk";
 import {
+  lyricsRequestFailure,
   resolveLyricsRenderState,
   shouldRequestLyrics,
 } from "./player-lyrics-state";
@@ -96,5 +97,27 @@ describe("lyrics request policy", () => {
         songId: "cached-song",
       }),
     ).toBe(false);
+  });
+});
+
+describe("lyrics request failures", () => {
+  test("treats a cached no-match response as unavailable content, not a provider outage", () => {
+    expect(
+      lyricsRequestFailure({
+        response: { data: { code: "lyrics_not_found" }, status: 404 },
+      }),
+    ).toBe("missing");
+  });
+
+  test("keeps genuine provider and network failures retryable", () => {
+    expect(
+      lyricsRequestFailure({
+        response: {
+          data: { code: "lyrics_provider_unavailable" },
+          status: 500,
+        },
+      }),
+    ).toBe("failed");
+    expect(lyricsRequestFailure(new Error("offline"))).toBe("failed");
   });
 });

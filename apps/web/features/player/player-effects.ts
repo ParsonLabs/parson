@@ -10,6 +10,11 @@ import {
 import { toast } from "sonner";
 import type { AudioGraph } from "./audio-presets";
 import type { QueueOrigin } from "./player-model";
+import { watchDesktopPowerResume } from "@/lib/desktop/bridge";
+import {
+  shouldContinuePlayback,
+  wasSystemLikelyAsleep,
+} from "./playback-lifecycle";
 
 export type PlaybackTelemetry = {
   started: boolean;
@@ -44,6 +49,7 @@ export function useAudioEvents({
   audioVersion,
   currentOrigin,
   handleEnded,
+  handleMediaError,
   resumeOnReconnect,
   sendPlaybackEvent,
   setCurrentTime,
@@ -56,6 +62,7 @@ export function useAudioEvents({
   audioVersion: number;
   currentOrigin: MutableRefObject<QueueOrigin>;
   handleEnded: () => void;
+  handleMediaError?: (code: number | undefined) => boolean;
   resumeOnReconnect: MutableRefObject<boolean>;
   sendPlaybackEvent: PlaybackEventSender;
   setCurrentTime: StateSetter<number>;
@@ -122,12 +129,13 @@ export function useAudioEvents({
       setIsPlaying(false);
       const code = element.error?.code;
       resumeOnReconnect.current = code === MediaError.MEDIA_ERR_NETWORK;
+      if (handleMediaError?.(code)) return;
       setError(
         code === MediaError.MEDIA_ERR_NETWORK
           ? "Playback was interrupted by a network error."
           : code === MediaError.MEDIA_ERR_DECODE ||
               code === MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED
-            ? "This audio file could not be decoded by the browser."
+            ? "This audio format isn’t supported on this device. Try another track or convert the file."
             : "Playback failed. Try the track again.",
       );
     };
@@ -162,6 +170,7 @@ export function useAudioEvents({
     audioVersion,
     currentOrigin,
     handleEnded,
+    handleMediaError,
     resumeOnReconnect,
     sendPlaybackEvent,
     setCurrentTime,
@@ -200,24 +209,71 @@ export function useAudioLifecycle({
   );
 
   useEffect(() => {
-    const reconnect = () => {
-      if (resumeOnReconnect.current && source.current) play();
+    const recover = () => {
+      const element = audio.current;
+      if (graph.current?.context.state === "suspended")
+        void graph.current.context.resume().catch(() => {});
+      if (
+        element &&
+        source.current &&
+        shouldContinuePlayback({
+          wasPlaying: backgroundWasPlaying.current,
+          resumeAfterNetworkError: resumeOnReconnect.current,
+          paused: element.paused,
+          ended: element.ended,
+        })
+      )
+        play();
+      backgroundWasPlaying.current = false;
     };
+    const reconnect = () => recover();
     const visibilityChanged = () => {
       const element = audio.current;
       if (document.visibilityState === "hidden") {
         backgroundWasPlaying.current = Boolean(element && !element.paused);
         return;
       }
-      if (graph.current?.context.state === "suspended")
-        void graph.current.context.resume().catch(() => {});
-      if (backgroundWasPlaying.current && element?.paused) play();
-      backgroundWasPlaying.current = false;
+      recover();
     };
+    const outputDeviceChanged = () => {
+      const element = audio.current;
+      if (!element) return;
+      const sinkElement = element as HTMLAudioElement & {
+        setSinkId?: (sinkId: string) => Promise<void>;
+      };
+      if (sinkElement.setSinkId)
+        void sinkElement
+          .setSinkId("")
+          .catch(() => {})
+          .finally(recover);
+      else recover();
+    };
+    const intervalMs = 5_000;
+    let lastCheck = performance.now();
+    const wakeCheck = window.setInterval(() => {
+      const now = performance.now();
+      if (wasSystemLikelyAsleep(lastCheck, now, intervalMs)) recover();
+      lastCheck = now;
+    }, intervalMs);
+    const stopWatchingDesktopPower = watchDesktopPowerResume(recover);
     window.addEventListener("online", reconnect);
+    window.addEventListener("focus", recover);
+    window.addEventListener("pageshow", recover);
+    navigator.mediaDevices?.addEventListener(
+      "devicechange",
+      outputDeviceChanged,
+    );
     document.addEventListener("visibilitychange", visibilityChanged);
     return () => {
+      window.clearInterval(wakeCheck);
+      stopWatchingDesktopPower();
       window.removeEventListener("online", reconnect);
+      window.removeEventListener("focus", recover);
+      window.removeEventListener("pageshow", recover);
+      navigator.mediaDevices?.removeEventListener(
+        "devicechange",
+        outputDeviceChanged,
+      );
       document.removeEventListener("visibilitychange", visibilityChanged);
     };
   }, [audio, backgroundWasPlaying, graph, play, resumeOnReconnect, source]);

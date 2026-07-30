@@ -50,7 +50,7 @@ export function getAudioPreset(id: AudioPresetId) {
 export function createAudioElement() {
   const element = new Audio();
   element.crossOrigin = "anonymous";
-  element.preload = "metadata";
+  element.preload = "auto";
   return element;
 }
 

@@ -1,21 +1,23 @@
 use actix_web::dev::HttpServiceFactory;
-use actix_web::{App, HttpResponse, HttpServer, middleware, web};
+use actix_web::{App, HttpRequest, HttpResponse, HttpServer, middleware, web};
 use actix_web_httpauth::middleware::HttpAuthentication;
 use diesel::connection::SimpleConnection;
-use std::sync::Mutex;
-use std::time::{Duration, Instant};
+use sha2::{Digest, Sha256};
+use std::time::Duration;
 
 use crate::api::auth::{
-    admin_guard, create_media_stream_token, is_valid, login, logout, refresh, register, validator,
+    admin_guard, approve_pairing, create_media_stream_token, is_valid, login, logout,
+    pairing_status, refresh, register, start_pairing, validator,
 };
-use crate::api::image::image;
+use crate::api::image::{create_signed_image_url, image};
 use crate::api::library::{
-    head_stream_song, index, library_catalog, library_catalog_artists, library_readiness,
-    library_refresh, library_roots, remove_library_root, stream_song,
+    head_stream_song, index, library_catalog, library_catalog_artists,
+    library_classification_diagnostics, library_readiness, library_refresh, library_roots,
+    remove_library_root, stream_song,
 };
 use crate::api::{
-    album, artist, cast, filesystem, genres, home, lyrics, metadata, playback, playlist, search,
-    setup, song, user,
+    album, artist, cast, data, filesystem, genres, home, lyrics, metadata, playback, playlist,
+    search, setup, song, user,
 };
 use crate::app::LocalApp;
 use crate::library::state::LibraryLifecycle;
@@ -23,16 +25,7 @@ use crate::{assets, http, settings};
 
 const MAX_JSON_BODY_BYTES: usize = 1024 * 1024;
 const MAX_STREAMING_PAYLOAD_BYTES: usize = 6 * 1024 * 1024;
-static STARTED_AT: Mutex<Option<Instant>> = Mutex::new(None);
-
-fn uptime_seconds() -> u64 {
-    STARTED_AT
-        .lock()
-        .ok()
-        .and_then(|started| started.as_ref().map(Instant::elapsed))
-        .map(|elapsed| elapsed.as_secs())
-        .unwrap_or(0)
-}
+const DESKTOP_CHALLENGE_HEADER: &str = "x-parson-desktop-challenge";
 
 fn library_routes_at(path: &'static str) -> impl HttpServiceFactory {
     web::scope(path)
@@ -49,6 +42,7 @@ fn library_routes_at(path: &'static str) -> impl HttpServiceFactory {
                 .service(index)
                 .service(library_refresh)
                 .service(library_roots)
+                .service(library_classification_diagnostics)
                 .service(remove_library_root),
         )
 }
@@ -57,6 +51,7 @@ fn music_routes_at(path: &'static str) -> impl HttpServiceFactory {
     web::scope(path)
         .wrap(HttpAuthentication::with_fn(validator))
         .service(create_media_stream_token)
+        .service(create_signed_image_url)
         .service(head_stream_song)
         .service(stream_song)
         .service(
@@ -71,6 +66,12 @@ fn music_routes_at(path: &'static str) -> impl HttpServiceFactory {
                 .service(metadata::edit_album_metadata)
                 .service(metadata::upload_album_cover),
         )
+        .service(
+            web::scope("/data/admin")
+                .wrap(HttpAuthentication::with_fn(admin_guard))
+                .configure(data::configure_admin),
+        )
+        .service(web::scope("/data").configure(data::configure_personal))
         .configure(artist::configure)
         .configure(album::configure)
         .configure(song::configure)
@@ -119,7 +120,6 @@ async fn readiness(
     library: web::Data<LibraryLifecycle>,
 ) -> HttpResponse {
     let pool = database.get_ref().clone();
-    let pool_state = pool.state();
     let database_check = tokio::time::timeout(
         Duration::from_secs(2),
         web::block(move || {
@@ -129,28 +129,13 @@ async fn readiness(
         }),
     )
     .await;
-    let (database_ok, snapshot_count) = match database_check {
-        Ok(Ok(Ok(count))) => (true, Some(count)),
-        _ => (false, None),
-    };
+    let database_ok = matches!(database_check, Ok(Ok(Ok(_))));
     let library_state = library.readiness().await;
     let library_ok = !matches!(
-        library_state.state,
+        &library_state.state,
         crate::library::state::LibraryReadinessState::Failed
     );
-    let body = serde_json::json!({
-        "status": if database_ok && library_ok { "ready" } else { "not_ready" },
-        "database": if database_ok { "ok" } else { "unavailable" },
-        "library": library_state.state,
-        "message": library_state.message,
-        "version": env!("CARGO_PKG_VERSION"),
-        "uptime_seconds": uptime_seconds(),
-        "database_pool": {
-            "connections": pool_state.connections,
-            "idle_connections": pool_state.idle_connections,
-        },
-        "recovery_snapshots": snapshot_count,
-    });
+    let body = public_readiness_body(database_ok, library_state.state);
     if database_ok && library_ok {
         HttpResponse::Ok().json(body)
     } else {
@@ -158,7 +143,59 @@ async fn readiness(
     }
 }
 
-async fn discovery_manifest() -> HttpResponse {
+fn public_readiness_body(
+    database_ok: bool,
+    library_state: crate::library::state::LibraryReadinessState,
+) -> serde_json::Value {
+    let library_ok = !matches!(
+        &library_state,
+        crate::library::state::LibraryReadinessState::Failed
+    );
+    serde_json::json!({
+        "status": if database_ok && library_ok { "ready" } else { "not_ready" },
+        "database": if database_ok { "ok" } else { "unavailable" },
+        "library": library_state,
+        "version": env!("CARGO_PKG_VERSION"),
+    })
+}
+
+fn desktop_instance_proof(secret: &str, challenge: &str) -> Option<String> {
+    if secret.len() < 32
+        || !(32..=128).contains(&challenge.len())
+        || !challenge.bytes().all(|byte| byte.is_ascii_hexdigit())
+    {
+        return None;
+    }
+    const BLOCK_BYTES: usize = 64;
+    let secret = secret.as_bytes();
+    let mut key = [0_u8; BLOCK_BYTES];
+    if secret.len() > BLOCK_BYTES {
+        key[..32].copy_from_slice(&Sha256::digest(secret));
+    } else {
+        key[..secret.len()].copy_from_slice(secret);
+    }
+    let mut inner_pad = [0x36_u8; BLOCK_BYTES];
+    let mut outer_pad = [0x5c_u8; BLOCK_BYTES];
+    for offset in 0..BLOCK_BYTES {
+        inner_pad[offset] ^= key[offset];
+        outer_pad[offset] ^= key[offset];
+    }
+    let mut inner = Sha256::new();
+    inner.update(inner_pad);
+    inner.update(challenge.as_bytes());
+    let mut outer = Sha256::new();
+    outer.update(outer_pad);
+    outer.update(inner.finalize());
+    Some(
+        outer
+            .finalize()
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect(),
+    )
+}
+
+async fn discovery_manifest(request: HttpRequest) -> HttpResponse {
     let instance_id = match settings::instance_id() {
         Ok(value) => value,
         Err(error) => {
@@ -166,7 +203,7 @@ async fn discovery_manifest() -> HttpResponse {
             return HttpResponse::InternalServerError().finish();
         }
     };
-    HttpResponse::Ok().json(serde_json::json!({
+    let mut manifest = serde_json::json!({
         "protocol": "parson",
         "protocolVersion": parson_core::PROTOCOL_VERSION,
         "instanceId": instance_id,
@@ -175,7 +212,18 @@ async fn discovery_manifest() -> HttpResponse {
         "serverVersion": env!("CARGO_PKG_VERSION"),
         "pairingRequired": true,
         "capabilities": ["streaming", "downloads", "lyrics", "casting"],
-    }))
+    });
+    if let (Ok(secret), Some(challenge)) = (
+        std::env::var("PARSON_DESKTOP_INSTANCE_TOKEN"),
+        request
+            .headers()
+            .get(DESKTOP_CHALLENGE_HEADER)
+            .and_then(|value| value.to_str().ok()),
+    ) && let Some(proof) = desktop_instance_proof(&secret, challenge)
+    {
+        manifest["desktopProof"] = serde_json::Value::String(proof);
+    }
+    HttpResponse::Ok().json(manifest)
 }
 
 async fn nearby_servers() -> HttpResponse {
@@ -200,10 +248,9 @@ pub async fn build_server() -> std::io::Result<(actix_web::dev::Server, u16)> {
 pub async fn build_server_with_shutdown_timeout(
     shutdown_timeout: Duration,
 ) -> std::io::Result<(actix_web::dev::Server, u16)> {
-    if let Ok(mut started) = STARTED_AT.lock() {
-        *started = Some(Instant::now());
-    }
     dotenvy::dotenv().ok();
+    settings::apply_staged_reset()?;
+    settings::apply_staged_restore()?;
     settings::validate().map_err(std::io::Error::other)?;
     let local_app =
         LocalApp::open_uninitialized().map_err(|error| std::io::Error::other(error.to_string()))?;
@@ -213,6 +260,7 @@ pub async fn build_server_with_shutdown_timeout(
         .try_begin_scan()
         .expect("new library lifecycle has no active scan");
     let database = web::Data::new(local_app.database);
+    data::start_automatic_backups(database.get_ref().clone());
     let library = web::Data::from(local_app.library);
     let lyrics_service = web::Data::new(
         lyrics::LyricsService::new()
@@ -260,7 +308,14 @@ pub async fn build_server_with_shutdown_timeout(
                     .service(register)
                     .service(refresh)
                     .service(is_valid)
-                    .service(logout),
+                    .service(logout)
+                    .service(start_pairing)
+                    .service(pairing_status)
+                    .service(
+                        web::scope("")
+                            .wrap(HttpAuthentication::with_fn(validator))
+                            .service(approve_pairing),
+                    ),
             )
             .service(web::scope("/api/v1/setup").configure(setup::configure))
             .route("/api/v1/discovery/nearby", web::get().to(nearby_servers))
@@ -278,7 +333,14 @@ pub async fn build_server_with_shutdown_timeout(
                             .service(register)
                             .service(refresh)
                             .service(is_valid)
-                            .service(logout),
+                            .service(logout)
+                            .service(start_pairing)
+                            .service(pairing_status)
+                            .service(
+                                web::scope("")
+                                    .wrap(HttpAuthentication::with_fn(validator))
+                                    .service(approve_pairing),
+                            ),
                     )
                     .service(web::scope("/setup").configure(setup::configure))
                     .route("/discovery/nearby", web::get().to(nearby_servers))
@@ -340,11 +402,14 @@ mod tests {
     use diesel::r2d2::{ConnectionManager, Pool};
     use diesel::sqlite::SqliteConnection;
 
-    use super::{MAX_JSON_BODY_BYTES, discovery_manifest, probe_database};
+    use super::{
+        MAX_JSON_BODY_BYTES, desktop_instance_proof, discovery_manifest, probe_database,
+        public_readiness_body,
+    };
 
     #[actix_web::test]
     async fn discovery_manifest_identifies_parson_without_exposing_private_data() {
-        let response = discovery_manifest().await;
+        let response = discovery_manifest(test::TestRequest::get().to_http_request()).await;
         assert_eq!(response.status(), StatusCode::OK);
         let body = actix_web::body::to_bytes(response.into_body())
             .await
@@ -359,6 +424,39 @@ mod tests {
                 .is_some_and(|id| !id.is_empty())
         );
         assert!(value.get("libraryPath").is_none());
+        assert!(value.get("desktopProof").is_none());
+    }
+
+    #[actix_web::test]
+    async fn desktop_instance_proofs_are_secret_bound_and_validate_challenges() {
+        let challenge = "a".repeat(64);
+        let first =
+            desktop_instance_proof(&"1".repeat(64), &challenge).expect("valid desktop proof");
+        let second =
+            desktop_instance_proof(&"2".repeat(64), &challenge).expect("second desktop proof");
+        assert_eq!(first.len(), 64);
+        assert_eq!(
+            first,
+            "c04f7260c84377afa8e5f1ec17f05215da0a1761b0187213d5d3b6dacb168e4d"
+        );
+        assert_ne!(first, second);
+        assert!(desktop_instance_proof("short", &challenge).is_none());
+        assert!(desktop_instance_proof(&"1".repeat(64), "not-hex").is_none());
+    }
+
+    #[actix_web::test]
+    async fn public_readiness_omits_host_diagnostics_and_failure_details() {
+        let body =
+            public_readiness_body(false, crate::library::state::LibraryReadinessState::Failed);
+        for private in [
+            "message",
+            "database_pool",
+            "recovery_snapshots",
+            "uptime_seconds",
+        ] {
+            assert!(body.get(private).is_none(), "{private} must stay private");
+        }
+        assert_eq!(body["status"], "not_ready");
     }
 
     async fn accept_json(_: web::Json<serde_json::Value>) -> HttpResponse {

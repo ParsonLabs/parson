@@ -8,11 +8,11 @@ import {
 } from "@parson/music-sdk";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { LinearGradient } from "expo-linear-gradient";
+import { Image } from "expo-image";
 import { useRouter } from "expo-router";
 import {
   ChevronDown,
   ChevronLeft,
-  ListMusic,
   Disc3,
   Download,
   ListEnd,
@@ -21,6 +21,7 @@ import {
   Play,
   Repeat,
   Repeat1,
+  Shuffle,
   SkipBack,
   SkipForward,
   Heart,
@@ -32,6 +33,7 @@ import {
 } from "lucide-react-native";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  FlatList,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -68,6 +70,12 @@ import {
 import { PlaylistPicker } from "@/components/playlist-picker";
 import { PauseGlyph } from "@/components/pause-glyph";
 import { useSession } from "@/providers/session-provider";
+import { CastOutputButton } from "@/components/cast-output-button";
+import { imageRequestHeaders, imageUrl } from "@/lib/runtime";
+import {
+  immediateBorderlessPressFeedback,
+  immediatePressFeedback,
+} from "@/lib/press-feedback";
 
 type Panel = "player" | "queue" | "lyrics";
 const AnimatedLinearGradient = Animated.createAnimatedComponent(LinearGradient);
@@ -100,6 +108,7 @@ function PlayerHeader({
   return (
     <View style={styles.header}>
       <Pressable
+        {...immediateBorderlessPressFeedback}
         accessibilityLabel={
           panel === "player" ? "Close player" : "Back to player"
         }
@@ -118,6 +127,7 @@ function PlayerHeader({
       </Text>
       {panel === "player" ? (
         <Pressable
+          {...immediateBorderlessPressFeedback}
           accessibilityLabel="More player actions"
           accessibilityRole="button"
           hitSlop={13}
@@ -136,8 +146,6 @@ function NowPlayingPanel({
   player,
   song,
   router,
-  currentTime,
-  duration,
   favorite,
   onToggleFavorite,
   onQueue,
@@ -149,8 +157,6 @@ function NowPlayingPanel({
   player: Player;
   song: PlayerSong;
   router: Router;
-  currentTime: number;
-  duration: number;
   favorite: boolean;
   onToggleFavorite: () => void;
   onQueue: () => void;
@@ -159,31 +165,6 @@ function NowPlayingPanel({
   notice?: string | null;
   online: boolean;
 }) {
-  const [scrubPosition, setScrubPosition] = useState<number | null>(null);
-  const settlingSeek = useRef<{ target: number; expiresAt: number } | null>(
-    null,
-  );
-  useEffect(() => {
-    const pending = settlingSeek.current;
-    if (!pending) return;
-    if (
-      Math.abs(currentTime - pending.target) < 0.65 ||
-      Date.now() >= pending.expiresAt
-    ) {
-      settlingSeek.current = null;
-      setScrubPosition(null);
-      return;
-    }
-    const timeout = setTimeout(
-      () => {
-        settlingSeek.current = null;
-        setScrubPosition(null);
-      },
-      Math.max(0, pending.expiresAt - Date.now()),
-    );
-    return () => clearTimeout(timeout);
-  }, [currentTime]);
-  const shownTime = scrubPosition ?? currentTime;
   const presetLabel = playerAudioPresets.find(
     (preset) => preset.id === player.audioPreset,
   )?.label;
@@ -223,6 +204,7 @@ function NowPlayingPanel({
           </Text>
         </View>
         <Pressable
+          {...immediateBorderlessPressFeedback}
           accessibilityLabel={
             !online
               ? "Liked songs unavailable offline"
@@ -243,34 +225,7 @@ function NowPlayingPanel({
           />
         </Pressable>
       </View>
-      <View style={styles.sliderHitbox}>
-        <Slider
-          accessibilityLabel="Playback position"
-          minimumValue={0}
-          maximumValue={Math.max(1, duration)}
-          value={shownTime}
-          onSlidingStart={setScrubPosition}
-          onValueChange={setScrubPosition}
-          onSlidingComplete={(target) => {
-            setScrubPosition(target);
-            settlingSeek.current = {
-              target,
-              expiresAt: Date.now() + 1_200,
-            };
-            player.seek(target);
-          }}
-          minimumTrackTintColor="white"
-          maximumTrackTintColor="#66666d"
-          thumbTintColor="white"
-          style={styles.slider}
-        />
-      </View>
-      <View style={styles.times}>
-        <Text style={styles.time}>{time(shownTime)}</Text>
-        <Text style={styles.time}>
-          -{time(Math.max(0, duration - shownTime))}
-        </Text>
-      </View>
+      <PlaybackTimeline onSeek={player.seek} />
       {notice ? (
         <Text accessibilityRole="alert" style={styles.playbackError}>
           {notice}
@@ -278,6 +233,50 @@ function NowPlayingPanel({
       ) : null}
       <View style={styles.controls}>
         <Pressable
+          {...immediateBorderlessPressFeedback}
+          accessibilityLabel={
+            player.shuffle ? "Turn shuffle off" : "Turn shuffle on"
+          }
+          accessibilityRole="button"
+          accessibilityState={{ selected: player.shuffle }}
+          hitSlop={12}
+          onPress={player.toggleShuffle}
+        >
+          <Shuffle color={player.shuffle ? "white" : palette.muted} size={24} />
+        </Pressable>
+        <Pressable
+          {...immediateBorderlessPressFeedback}
+          accessibilityLabel="Previous song"
+          accessibilityRole="button"
+          hitSlop={14}
+          onPress={player.previous}
+        >
+          <SkipBack color="white" fill="white" size={31} />
+        </Pressable>
+        <Pressable
+          {...immediatePressFeedback}
+          accessibilityLabel={player.isPlaying ? "Pause" : "Play"}
+          accessibilityRole="button"
+          style={styles.playButton}
+          onPress={player.toggle}
+        >
+          {player.isPlaying ? (
+            <PauseGlyph color="black" size={30} />
+          ) : (
+            <Play color="black" fill="black" size={34} />
+          )}
+        </Pressable>
+        <Pressable
+          {...immediateBorderlessPressFeedback}
+          accessibilityLabel="Next song"
+          accessibilityRole="button"
+          hitSlop={14}
+          onPress={player.next}
+        >
+          <SkipForward color="white" fill="white" size={31} />
+        </Pressable>
+        <Pressable
+          {...immediateBorderlessPressFeedback}
           accessibilityLabel={`Repeat ${player.repeat}`}
           accessibilityRole="button"
           hitSlop={12}
@@ -292,45 +291,21 @@ function NowPlayingPanel({
             />
           )}
         </Pressable>
-        <Pressable
-          accessibilityLabel="Previous song"
-          accessibilityRole="button"
-          hitSlop={14}
-          onPress={player.previous}
-        >
-          <SkipBack color="white" fill="white" size={31} />
-        </Pressable>
-        <Pressable
-          accessibilityLabel={player.isPlaying ? "Pause" : "Play"}
-          accessibilityRole="button"
-          style={styles.playButton}
-          onPress={player.toggle}
-        >
-          {player.isPlaying ? (
-            <PauseGlyph color="black" size={30} />
-          ) : (
-            <Play color="black" fill="black" size={34} />
-          )}
-        </Pressable>
-        <Pressable
-          accessibilityLabel="Next song"
-          accessibilityRole="button"
-          hitSlop={14}
-          onPress={player.next}
-        >
-          <SkipForward color="white" fill="white" size={31} />
-        </Pressable>
-        <Pressable
-          accessibilityLabel="Open queue"
-          accessibilityRole="button"
-          hitSlop={12}
-          onPress={onQueue}
-        >
-          <ListMusic color="white" size={24} />
-        </Pressable>
       </View>
       <View style={styles.panelButtons}>
+        <View style={styles.castButton}>
+          <CastOutputButton />
+        </View>
         <Pressable
+          {...immediatePressFeedback}
+          accessibilityRole="button"
+          style={styles.panelButton}
+          onPress={onQueue}
+        >
+          <Text style={styles.panelText}>Queue</Text>
+        </Pressable>
+        <Pressable
+          {...immediatePressFeedback}
           accessibilityRole="button"
           style={styles.panelButton}
           onPress={onLyrics}
@@ -339,6 +314,7 @@ function NowPlayingPanel({
         </Pressable>
         {player.audioPresetsEnabled ? (
           <Pressable
+            {...immediatePressFeedback}
             accessibilityLabel="Sound settings"
             accessibilityRole="button"
             style={styles.panelButton}
@@ -354,24 +330,109 @@ function NowPlayingPanel({
   );
 }
 
+function PlaybackTimeline({ onSeek }: { onSeek: (seconds: number) => void }) {
+  const { currentTime, duration } = usePlayerPosition();
+  const [scrubPosition, setScrubPosition] = useState<number | null>(null);
+  const settlingSeek = useRef<{ target: number; expiresAt: number } | null>(
+    null,
+  );
+  useEffect(() => {
+    const pending = settlingSeek.current;
+    if (!pending) return;
+    if (
+      Math.abs(currentTime - pending.target) < 0.65 ||
+      Date.now() >= pending.expiresAt
+    ) {
+      settlingSeek.current = null;
+      setScrubPosition(null);
+      return;
+    }
+    const timeout = setTimeout(
+      () => {
+        settlingSeek.current = null;
+        setScrubPosition(null);
+      },
+      Math.max(0, pending.expiresAt - Date.now()),
+    );
+    return () => clearTimeout(timeout);
+  }, [currentTime]);
+  const shownTime = scrubPosition ?? currentTime;
+  return (
+    <>
+      <View style={styles.sliderHitbox}>
+        <Slider
+          accessibilityLabel="Playback position"
+          minimumValue={0}
+          maximumValue={Math.max(1, duration)}
+          value={shownTime}
+          onSlidingStart={setScrubPosition}
+          onValueChange={setScrubPosition}
+          onSlidingComplete={(target) => {
+            setScrubPosition(target);
+            settlingSeek.current = {
+              target,
+              expiresAt: Date.now() + 1_200,
+            };
+            onSeek(target);
+          }}
+          minimumTrackTintColor="white"
+          maximumTrackTintColor="#66666d"
+          thumbTintColor="white"
+          style={styles.slider}
+        />
+      </View>
+      <View style={styles.times}>
+        <Text style={styles.time}>{time(shownTime)}</Text>
+        <Text style={styles.time}>
+          -{time(Math.max(0, duration - shownTime))}
+        </Text>
+      </View>
+    </>
+  );
+}
+
 function QueuePanel({ player }: { player: Player }) {
   return (
     <View style={styles.panel}>
-      <ScrollView contentContainerStyle={{ paddingVertical: 10 }}>
-        {player.queue.map((item, index) => (
+      {player.currentIndex < player.queue.length - 1 ? (
+        <Pressable
+          accessibilityRole="button"
+          style={styles.clearQueue}
+          onPress={player.clearUpcoming}
+        >
+          <Text style={styles.clearQueueText}>Clear upcoming</Text>
+        </Pressable>
+      ) : null}
+      <FlatList
+        data={player.queue}
+        contentContainerStyle={{ paddingVertical: 10 }}
+        getItemLayout={(_data, index) => ({
+          index,
+          length: 64,
+          offset: 64 * index,
+        })}
+        keyExtractor={(item, index) => `${item.id}-${index}`}
+        removeClippedSubviews
+        renderItem={({ item, index }) => (
           <SongRow
-            key={`${item.id}-${index}`}
             song={item}
             queue={player.queue}
             index={index}
+            onRemove={
+              index === player.currentIndex
+                ? undefined
+                : () => player.removeFromQueue(index)
+            }
+            removeLabel="Remove from queue"
           />
-        ))}
-      </ScrollView>
+        )}
+      />
     </View>
   );
 }
 
 function LyricsPanel({
+  artworkPath,
   pending,
   synced,
   plainLyrics,
@@ -382,6 +443,7 @@ function LyricsPanel({
   onRetry,
   offline,
 }: {
+  artworkPath?: string | null;
   pending: boolean;
   synced: SyncedLine[];
   plainLyrics?: string | null;
@@ -392,6 +454,7 @@ function LyricsPanel({
   onRetry: () => void;
   offline: boolean;
 }) {
+  const artworkUri = imageUrl(artworkPath);
   const scrollRef = useRef<ScrollView>(null);
   const lineLayouts = useRef(new Map<number, { height: number; y: number }>());
   const lastCenteredLine = useRef(-1);
@@ -418,7 +481,22 @@ function LyricsPanel({
     return () => cancelAnimationFrame(frame);
   }, [activeLine, contentHeight, viewportHeight]);
   return (
-    <View style={styles.panel}>
+    <View style={[styles.panel, styles.lyricsPanel]}>
+      {artworkUri ? (
+        <>
+          <Image
+            blurRadius={38}
+            contentFit="cover"
+            pointerEvents="none"
+            source={{
+              uri: artworkUri,
+              headers: imageRequestHeaders(artworkUri),
+            }}
+            style={styles.lyricsBackdrop}
+          />
+          <View pointerEvents="none" style={styles.lyricsScrim} />
+        </>
+      ) : null}
       <ScrollView
         ref={scrollRef}
         onLayout={({ nativeEvent }) =>
@@ -447,8 +525,12 @@ function LyricsPanel({
             style={styles.emptyLyrics}
             onPress={onRetry}
           >
-            <Text style={styles.emptyTitle}>Could not load lyrics</Text>
-            <Text style={styles.retryText}>Tap to try again</Text>
+            <Text style={styles.emptyTitle}>
+              Lyrics are temporarily unavailable
+            </Text>
+            <Text style={styles.retryText}>
+              Playback is unaffected. Tap to try lyrics again.
+            </Text>
           </Pressable>
         ) : synced.length ? (
           synced.map((line, index) => {
@@ -495,6 +577,13 @@ function LyricsPanel({
       </ScrollView>
     </View>
   );
+}
+
+function PositionedLyricsPanel(
+  props: Omit<Parameters<typeof LyricsPanel>[0], "currentTime">,
+) {
+  const { currentTime } = usePlayerPosition();
+  return <LyricsPanel {...props} currentTime={currentTime} />;
 }
 
 function PlayerDrawers({
@@ -636,7 +725,6 @@ export default function PlayerScreen() {
   const client = useQueryClient();
   const session = useSession();
   const player = usePlayer();
-  const { currentTime, duration } = usePlayerPosition();
   const [panel, setPanel] = useState<Panel>("player");
   const [actions, setActions] = useState(false);
   const [soundOptions, setSoundOptions] = useState(false);
@@ -708,6 +796,7 @@ export default function PlayerScreen() {
       <View style={styles.page}>
         <SafeAreaView>
           <Pressable
+            {...immediateBorderlessPressFeedback}
             accessibilityLabel="Close player"
             accessibilityRole="button"
             style={styles.down}
@@ -752,8 +841,6 @@ export default function PlayerScreen() {
               player={player}
               song={song}
               router={router}
-              currentTime={currentTime}
-              duration={duration}
               favorite={!!favorite.data}
               onToggleFavorite={() => void toggleFavorite()}
               onQueue={() => setPanel("queue")}
@@ -770,12 +857,12 @@ export default function PlayerScreen() {
           ) : panel === "queue" ? (
             <QueuePanel player={player} />
           ) : (
-            <LyricsPanel
+            <PositionedLyricsPanel
+              artworkPath={song.album_object?.cover_url}
               pending={lyrics.isPending}
               synced={synced}
               plainLyrics={lyrics.data?.plainLyrics}
               instrumental={lyrics.data?.instrumental}
-              currentTime={currentTime}
               onSeek={player.seek}
               failed={lyrics.isError}
               onRetry={() => void lyrics.refetch()}
@@ -863,6 +950,12 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   panelButtons: { flexDirection: "row", gap: 8 },
+  castButton: {
+    width: 46,
+    height: 46,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   panelButton: {
     flex: 1,
     height: 46,
@@ -873,6 +966,28 @@ const styles = StyleSheet.create({
   },
   panelText: { color: "white", fontWeight: "800" },
   panel: { flex: 1, paddingTop: 18 },
+  lyricsPanel: {
+    overflow: "hidden",
+    backgroundColor: "#111114",
+  },
+  lyricsBackdrop: {
+    position: "absolute",
+    inset: 0,
+    opacity: 0.58,
+    transform: [{ scale: 1.16 }],
+  },
+  lyricsScrim: {
+    position: "absolute",
+    inset: 0,
+    backgroundColor: "rgba(0,0,0,.52)",
+  },
+  clearQueue: {
+    alignSelf: "flex-end",
+    marginHorizontal: 20,
+    minHeight: 44,
+    justifyContent: "center",
+  },
+  clearQueueText: { color: palette.secondary, fontWeight: "700" },
   panelTitle: {
     color: "white",
     fontSize: 30,

@@ -216,6 +216,28 @@ fn setup_state_allowed(state: &LibraryReadinessState) -> bool {
     )
 }
 
+fn setup_response_details(
+    authenticated_admin: bool,
+    state: &LibraryReadinessState,
+    private_message: Option<String>,
+    suggested_path: &Path,
+) -> (Option<String>, String) {
+    if authenticated_admin {
+        return (
+            private_message,
+            suggested_path.to_string_lossy().to_string(),
+        );
+    }
+    let message = match state {
+        LibraryReadinessState::Failed => {
+            Some("The library is unavailable. Sign in as an administrator for details.".into())
+        }
+        LibraryReadinessState::Indexing => Some("The library is being prepared.".into()),
+        _ => None,
+    };
+    (message, String::new())
+}
+
 async fn setup_is_available(
     request: &HttpRequest,
     lifecycle: &LibraryLifecycle,
@@ -281,6 +303,12 @@ async fn setup_status(
         .as_ref()
         .is_some_and(|claims| claims.role == "admin");
     let needs_library = setup_state_allowed(&readiness.state);
+    let (message, suggested_library_path) = setup_response_details(
+        authenticated_admin,
+        &readiness.state,
+        readiness.message,
+        &crate::settings::suggested_library_path(),
+    );
 
     HttpResponse::Ok().json(serde_json::json!({
         "server_ready": true,
@@ -288,11 +316,11 @@ async fn setup_status(
         "account_setup_required": user_count == 0,
         "library_setup_required": needs_library,
         "library_state": readiness.state,
-        "message": readiness.message,
+        "message": message,
         "authenticated_admin": authenticated_admin,
         "authenticated": session.is_some(),
         "session": session,
-        "suggested_library_path": crate::settings::suggested_library_path().to_string_lossy(),
+        "suggested_library_path": suggested_library_path,
     }))
 }
 
@@ -394,7 +422,7 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
 
 #[cfg(test)]
 mod tests {
-    use super::{setup_required, setup_state_allowed, shallow_audio_count};
+    use super::{setup_required, setup_response_details, setup_state_allowed, shallow_audio_count};
     use crate::library::state::LibraryReadinessState;
     use std::time::{Duration, Instant};
 
@@ -440,5 +468,26 @@ mod tests {
         let result = shallow_audio_count(&root, Instant::now() + Duration::from_secs(1));
         assert_eq!(result, (3, false));
         std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn unauthenticated_setup_status_redacts_paths_and_private_errors() {
+        let (message, path) = setup_response_details(
+            false,
+            &LibraryReadinessState::Failed,
+            Some("permission denied at /home/alice/Music".into()),
+            std::path::Path::new("/home/alice/Music"),
+        );
+        assert_eq!(path, "");
+        assert!(!message.unwrap_or_default().contains("/home/alice"));
+
+        let (message, path) = setup_response_details(
+            true,
+            &LibraryReadinessState::Failed,
+            Some("permission denied".into()),
+            std::path::Path::new("/music"),
+        );
+        assert_eq!(path, "/music");
+        assert_eq!(message.as_deref(), Some("permission denied"));
     }
 }

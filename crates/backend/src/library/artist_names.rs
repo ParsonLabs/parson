@@ -12,7 +12,7 @@ fn delimiter_regex() -> &'static Regex {
     REGEX.get_or_init(|| {
         Regex::new(
             r"(?ix)
-            \s+(?:&|featuring|ft\.?|with|feat\.?|and|presents|vs\.?|x)\s+
+            \s+(?:&|featuring|ft\.?|with|w(?:/|\.)|feat\.?|and|presents|vs\.?|x)\s+
             |,\s*
             |;
             |\x00",
@@ -31,6 +31,20 @@ fn role_credit_regex() -> &'static Regex {
             \s+by\b.*$",
         )
         .expect("static artist role-credit regex is valid")
+    })
+}
+
+fn title_feature_regex() -> &'static Regex {
+    static REGEX: OnceLock<Regex> = OnceLock::new();
+    REGEX.get_or_init(|| {
+        Regex::new(
+            r"(?ix)
+            (?:\s*[\(\[]\s*|\s+-\s+|\s+)
+            (?:feat(?:uring)?\.?|ft\.?)\s+
+            ([^\)\]]+?)
+            [\)\]]?\s*$",
+        )
+        .expect("static title feature regex is valid")
     })
 }
 
@@ -94,9 +108,29 @@ pub fn format_contributing_artists(artists: &[String]) -> Vec<(String, Vec<Strin
     formatted_artists
 }
 
+pub fn artist_credit_names(artists: &[String]) -> Vec<String> {
+    let mut seen = HashSet::new();
+    format_contributing_artists(artists)
+        .into_iter()
+        .flat_map(|(primary, contributors)| std::iter::once(primary).chain(contributors))
+        .filter(|artist| {
+            let key = artist.to_lowercase();
+            !key.is_empty() && seen.insert(key)
+        })
+        .collect()
+}
+
+pub fn featured_artists_from_title(title: &str) -> Vec<String> {
+    title_feature_regex()
+        .captures(title)
+        .and_then(|captures| captures.get(1))
+        .map(|credit| artist_credit_names(&[credit.as_str().to_string()]))
+        .unwrap_or_default()
+}
+
 #[cfg(test)]
 mod tests {
-    use super::format_contributing_artists;
+    use super::{artist_credit_names, featured_artists_from_title, format_contributing_artists};
 
     fn parsed(value: &str) -> (String, Vec<String>) {
         let mut result = format_contributing_artists(&[value.to_string()]);
@@ -126,6 +160,14 @@ mod tests {
         assert_eq!(
             parsed("River Stone VS. Morgan Vale"),
             ("River Stone".into(), vec!["Morgan Vale".into()])
+        );
+        assert_eq!(
+            parsed("Primary Artist w. Guest Artist"),
+            ("Primary Artist".into(), vec!["Guest Artist".into()])
+        );
+        assert_eq!(
+            parsed("Primary Artist W/ Guest Artist"),
+            ("Primary Artist".into(), vec!["Guest Artist".into()])
         );
     }
 
@@ -169,5 +211,27 @@ mod tests {
             parsed("  Primary  \t Artist  feat.   Guest  Artist "),
             ("Primary Artist".into(), vec!["Guest Artist".into()])
         );
+    }
+
+    #[test]
+    fn credit_names_preserve_primary_and_guest_order_without_duplicates() {
+        assert_eq!(
+            artist_credit_names(&[
+                "Primary Artist feat. Guest Artist".into(),
+                "Primary Artist".into(),
+                "Second Guest".into(),
+            ]),
+            ["Primary Artist", "Guest Artist", "Second Guest"]
+        );
+    }
+
+    #[test]
+    fn title_only_feature_credits_are_extracted_without_changing_the_title() {
+        assert_eq!(
+            featured_artists_from_title("Song (feat. Guest & Second Guest)"),
+            ["Guest", "Second Guest"]
+        );
+        assert_eq!(featured_artists_from_title("Song ft. Guest"), ["Guest"]);
+        assert!(featured_artists_from_title("Featuring You").is_empty());
     }
 }

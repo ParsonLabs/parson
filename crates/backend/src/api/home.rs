@@ -173,9 +173,10 @@ async fn home(
             .unwrap_or_default();
     let continue_listening = hydrate(history, &cache);
 
-    let recommendation_ids = fetch_recommended_song_ids(user_id, None, &cache, &pool)
-        .await
-        .unwrap_or_default();
+    let recommendation_ids =
+        fetch_recommended_song_ids(user_id, None, cache.clone(), pool.get_ref().clone())
+            .await
+            .unwrap_or_default();
     let recommended = hydrate(recommendation_ids.clone(), &cache);
 
     let recommended_song_ids = recommended

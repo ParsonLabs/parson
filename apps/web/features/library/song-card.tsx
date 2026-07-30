@@ -4,7 +4,6 @@ import { usePlayer } from "@/features/player/player-context";
 import SongMenu from "@/features/library/song-menu";
 import getBaseURL from "@/lib/api/server-url";
 import { defaultCover } from "@/lib/images/default-cover";
-import { Pause, Play } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { useState } from "react";
@@ -18,6 +17,7 @@ type SongCardProps = {
   album_name: string;
   album_cover: string;
   path: string;
+  typeLabel?: "Song";
 };
 
 export default function SongCard({
@@ -28,21 +28,14 @@ export default function SongCard({
   album_id,
   album_name,
   album_cover,
+  typeLabel,
 }: SongCardProps) {
-  const {
-    song,
-    isPlaying,
-    togglePlayPause,
-    playAudioSource,
-    setQueue,
-    setSongCallback,
-    setCurrentSongIndex,
-  } = usePlayer();
+  const { playAudioSource, setQueue, setSongCallback, setCurrentSongIndex } =
+    usePlayer();
   const [imageLoaded, setImageLoaded] = useState(false);
   const imageSrc = album_cover
     ? `${getBaseURL()}/media/images/${encodeURIComponent(album_cover)}`
     : defaultCover;
-  const isActive = song?.id === song_id;
   const artist = { id: artist_id, name: artist_name };
   const album = { id: album_id, name: album_name, cover_url: album_cover };
 
@@ -84,21 +77,6 @@ export default function SongCard({
               }}
               onClick={handlePlay}
             />
-            <button
-              className="absolute bottom-3 right-3 flex h-11 w-11 items-center justify-center rounded-full bg-white text-black opacity-100 shadow-lg transition-[opacity,transform] focus-visible:translate-y-0 focus-visible:opacity-100 md:translate-y-1 md:opacity-0 md:group-hover:translate-y-0 md:group-hover:opacity-100"
-              onClick={(event) => {
-                event.stopPropagation();
-                isActive ? togglePlayPause() : handlePlay();
-              }}
-              aria-label={isActive && isPlaying ? "Pause" : "Play"}
-              type="button"
-            >
-              {isActive && isPlaying ? (
-                <Pause className="h-5 w-5 fill-current" />
-              ) : (
-                <Play className="ml-0.5 h-5 w-5 fill-current" />
-              )}
-            </button>
           </div>
 
           <div className="mt-3 min-w-0">
@@ -108,12 +86,15 @@ export default function SongCard({
             >
               {song_name}
             </Link>
-            <Link
-              href={`/artist?id=${artist_id ?? "0"}`}
-              className="block truncate text-sm leading-5 text-zinc-500 hover:text-zinc-200"
-            >
-              {artist_name}
-            </Link>
+            <p className="truncate text-sm leading-5 text-zinc-500">
+              {typeLabel && <span>{typeLabel} · </span>}
+              <Link
+                href={`/artist?id=${artist_id ?? "0"}`}
+                className="hover:text-zinc-200 hover:underline"
+              >
+                {artist_name}
+              </Link>
+            </p>
           </div>
         </div>
       </SongMenu>

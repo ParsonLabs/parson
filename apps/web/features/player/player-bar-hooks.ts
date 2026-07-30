@@ -9,6 +9,7 @@ import { usePathname } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { shouldDismissPlayerOverlayForLink } from "./player-overlay-state";
 import {
+  lyricsRequestFailure,
   resolveLyricsRenderState,
   shouldRequestLyrics,
 } from "./player-lyrics-state";
@@ -100,6 +101,7 @@ export function useLyrics(
 ) {
   const [lyrics, setLyrics] = useState<LyricsResult | null>(null);
   const [lyricsSongId, setLyricsSongId] = useState("");
+  const [lyricsErrorSongId, setLyricsErrorSongId] = useState("");
   const activeLineRef = useRef<HTMLElement | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const positionedSongRef = useRef("");
@@ -125,10 +127,18 @@ export function useLyrics(
     let cancelled = false;
     findLyrics(song.id)
       .then((result) => {
-        if (!cancelled) setLyrics(result);
+        if (!cancelled) {
+          setLyrics(result);
+          setLyricsErrorSongId("");
+        }
       })
-      .catch(() => {
-        if (!cancelled) setLyrics(null);
+      .catch((error) => {
+        if (!cancelled) {
+          setLyrics(null);
+          setLyricsErrorSongId(
+            lyricsRequestFailure(error) === "failed" ? song.id : "",
+          );
+        }
       })
       .finally(() => {
         if (!cancelled) {
@@ -197,8 +207,13 @@ export function useLyrics(
     activeLine,
     activeLineRef,
     fallback: currentLyrics?.plainLyrics ?? song.plain_lyrics,
+    failed: lyricsErrorSongId === song.id,
     instrumental: currentLyrics?.instrumental ?? false,
     loading,
+    retry: () => {
+      setLyricsErrorSongId("");
+      setLyricsSongId("");
+    },
     scrollRef,
     timed,
   };

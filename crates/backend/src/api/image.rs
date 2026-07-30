@@ -8,19 +8,37 @@ use actix_web::http::header::{CacheControl, CacheDirective, ETAG, IF_NONE_MATCH}
 use actix_web::{Error, HttpRequest, HttpResponse, Responder, Result, get, web};
 use mime_guess::from_path;
 use ravif::{Encoder, Img, RGBA8};
+use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use tokio::fs;
 use tokio::io::AsyncReadExt;
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use tokio::task::spawn_blocking;
 use webp::Encoder as WebpEncoder;
 
+use crate::api::auth::current_image_session_claims;
 use crate::api::library::read_library_paths;
 use crate::library::state::LibraryLifecycle;
 use crate::library::storage::{get_cover_art_path, get_icon_art_path, get_profile_picture_path};
+use crate::persistence::connection::DbPool;
 
 const MAX_CONCURRENT_IMAGE_TRANSFORMS: usize = 4;
 const MAX_RAW_IMAGE_BYTES: u64 = 25 * 1024 * 1024;
 static IMAGE_TRANSFORM_SLOTS: OnceLock<Arc<Semaphore>> = OnceLock::new();
+const SIGNED_IMAGE_MAX_LIFETIME_SECONDS: i64 = 12 * 60 * 60;
+const LOCK_SCREEN_IMAGE_LIFETIME_SECONDS: i64 = 6 * 60 * 60;
+
+#[derive(Deserialize)]
+pub struct SignedImageRequest {
+    path: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SignedImageResponse {
+    expires_at: i64,
+    signature: String,
+}
 
 fn image_transform_slots() -> Arc<Semaphore> {
     IMAGE_TRANSFORM_SLOTS
@@ -37,8 +55,15 @@ pub async fn image(
     req: HttpRequest,
     path: web::Path<String>,
     lifecycle: web::Data<LibraryLifecycle>,
+    pool: web::Data<DbPool>,
 ) -> Result<impl Responder, Error> {
     let requested_path = path.into_inner();
+    if !authorized_image_request(&req, &requested_path, pool.get_ref().clone()).await {
+        return Ok(HttpResponse::Unauthorized().json(serde_json::json!({
+            "error": "image_session_required",
+            "message": "A valid session or signed image URL is required."
+        })));
+    }
     let file_path = match resolve_image_path(&requested_path, &lifecycle).await {
         Ok(path) => path,
         Err(response) => return Ok(response),
@@ -103,7 +128,7 @@ pub async fn image(
                 Ok(response
                     .content_type(mime)
                     .insert_header(CacheControl(vec![
-                        CacheDirective::Public,
+                        CacheDirective::Private,
                         CacheDirective::NoCache,
                     ]))
                     .body(data))
@@ -116,6 +141,112 @@ pub async fn image(
     } else {
         serve_transformed_image(file_path, requested_format, etag).await
     }
+}
+
+fn signed_image_payload(path: &str, expires: i64) -> String {
+    format!("{expires}\n{path}")
+}
+
+fn signed_image_bytes(path: &str, expires: i64) -> [u8; 32] {
+    const BLOCK_BYTES: usize = 64;
+    let secret = crate::settings::session_secret().as_bytes();
+    let mut key = [0_u8; BLOCK_BYTES];
+    if secret.len() > BLOCK_BYTES {
+        key[..32].copy_from_slice(&Sha256::digest(secret));
+    } else {
+        key[..secret.len()].copy_from_slice(secret);
+    }
+    let mut inner_pad = [0x36_u8; BLOCK_BYTES];
+    let mut outer_pad = [0x5c_u8; BLOCK_BYTES];
+    for index in 0..BLOCK_BYTES {
+        inner_pad[index] ^= key[index];
+        outer_pad[index] ^= key[index];
+    }
+    let mut inner = Sha256::new();
+    inner.update(inner_pad);
+    inner.update(signed_image_payload(path, expires));
+    let inner = inner.finalize();
+    let mut outer = Sha256::new();
+    outer.update(outer_pad);
+    outer.update(inner);
+    outer.finalize().into()
+}
+
+pub(crate) fn sign_image_path(path: &str, expires: i64) -> String {
+    signed_image_bytes(path, expires)
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
+}
+
+#[actix_web::post("/media/images/sign")]
+pub async fn create_signed_image_url(request: web::Json<SignedImageRequest>) -> impl Responder {
+    let path = request.path.trim();
+    if path.is_empty() || path.len() > 4_096 || path.chars().any(char::is_control) {
+        return HttpResponse::BadRequest().json(serde_json::json!({
+            "status": false,
+            "message": "Invalid image path."
+        }));
+    }
+    let expires_at = chrono::Utc::now()
+        .timestamp()
+        .saturating_add(LOCK_SCREEN_IMAGE_LIFETIME_SECONDS);
+    HttpResponse::Ok().json(SignedImageResponse {
+        expires_at,
+        signature: sign_image_path(path, expires_at),
+    })
+}
+
+fn signed_image_request_is_valid(req: &HttpRequest, path: &str) -> bool {
+    let Ok(query) = web::Query::<HashMap<String, String>>::from_query(req.query_string()) else {
+        return false;
+    };
+    let Some(expires) = query
+        .get("expires")
+        .and_then(|value| value.parse::<i64>().ok())
+    else {
+        return false;
+    };
+    let Some(signature) = query.get("image_signature") else {
+        return false;
+    };
+    let now = chrono::Utc::now().timestamp();
+    if expires < now || expires > now.saturating_add(SIGNED_IMAGE_MAX_LIFETIME_SECONDS) {
+        return false;
+    }
+    let Ok(candidate) = hex_signature(signature) else {
+        return false;
+    };
+    candidate
+        .iter()
+        .zip(signed_image_bytes(path, expires))
+        .fold(0_u8, |difference, (left, right)| {
+            difference | (left ^ right)
+        })
+        == 0
+}
+
+fn hex_signature(value: &str) -> Result<[u8; 32], ()> {
+    if value.len() != 64 {
+        return Err(());
+    }
+    let mut decoded = [0_u8; 32];
+    for (index, byte) in decoded.iter_mut().enumerate() {
+        let offset = index * 2;
+        let high = hex_value(value.as_bytes()[offset]).ok_or(())?;
+        let low = hex_value(value.as_bytes()[offset + 1]).ok_or(())?;
+        *byte = (high << 4) | low;
+    }
+    Ok(decoded)
+}
+
+async fn authorized_image_request(req: &HttpRequest, path: &str, pool: DbPool) -> bool {
+    if signed_image_request_is_valid(req, path) {
+        return true;
+    }
+    current_image_session_claims(req, pool)
+        .await
+        .is_ok_and(|claims| claims.is_some())
 }
 
 async fn serve_transformed_image(
@@ -207,7 +338,7 @@ async fn serve_transformed_image(
             Ok(response
                 .content_type(content_type)
                 .insert_header(CacheControl(vec![
-                    CacheDirective::Public,
+                    CacheDirective::Private,
                     CacheDirective::NoCache,
                 ]))
                 .body(bytes))
@@ -227,19 +358,12 @@ async fn resolve_image_path(
     requested_path: &str,
     lifecycle: &LibraryLifecycle,
 ) -> Result<PathBuf, HttpResponse> {
-    let decoded_path = percent_decode_path(requested_path)
+    // Actix's Path extractor has already percent-decoded this route segment.
+    // Decoding it again would reinterpret legitimate filenames containing
+    // strings such as "%2F" or "%2e%2e".
+    let candidate = image_candidate(requested_path)
         .map_err(|message| HttpResponse::BadRequest().body(message))?;
 
-    if decoded_path.is_empty()
-        || decoded_path.contains('\0')
-        || decoded_path.starts_with("http://")
-        || decoded_path.starts_with("https://")
-        || has_parent_component(&decoded_path)
-    {
-        return Err(HttpResponse::BadRequest().body("Invalid path"));
-    }
-
-    let candidate = PathBuf::from(&decoded_path);
     let candidate = if candidate.is_absolute() {
         candidate
     } else {
@@ -278,39 +402,22 @@ async fn resolve_image_path(
     Err(HttpResponse::Forbidden().body("Image path is outside allowed directories"))
 }
 
+fn image_candidate(requested_path: &str) -> Result<PathBuf, &'static str> {
+    if requested_path.is_empty()
+        || requested_path.contains('\0')
+        || requested_path.starts_with("http://")
+        || requested_path.starts_with("https://")
+        || has_parent_component(requested_path)
+    {
+        return Err("Invalid path");
+    }
+    Ok(PathBuf::from(requested_path))
+}
+
 fn has_parent_component(path: &str) -> bool {
     Path::new(path)
         .components()
         .any(|component| matches!(component, Component::ParentDir))
-}
-
-fn percent_decode_path(path: &str) -> Result<String, String> {
-    let bytes = path.as_bytes();
-    let mut decoded = Vec::with_capacity(bytes.len());
-    let mut index = 0;
-
-    while index < bytes.len() {
-        if bytes[index] == b'%' {
-            if index + 2 >= bytes.len() {
-                return Err("Invalid image path: incomplete percent-encoded sequence.".to_string());
-            }
-
-            let high = hex_value(bytes[index + 1]).ok_or_else(|| {
-                "Invalid image path: malformed percent-encoded sequence.".to_string()
-            })?;
-            let low = hex_value(bytes[index + 2]).ok_or_else(|| {
-                "Invalid image path: malformed percent-encoded sequence.".to_string()
-            })?;
-            decoded.push((high << 4) | low);
-            index += 3;
-        } else {
-            decoded.push(bytes[index]);
-            index += 1;
-        }
-    }
-
-    String::from_utf8(decoded)
-        .map_err(|_| "Invalid image path: percent-decoded path is not UTF-8.".to_string())
 }
 
 fn hex_value(byte: u8) -> Option<u8> {
@@ -362,7 +469,7 @@ async fn serve_raw_image(file_path: &Path) -> Result<HttpResponse, Error> {
                     .to_string(),
             )
             .insert_header(CacheControl(vec![
-                CacheDirective::Public,
+                CacheDirective::Private,
                 CacheDirective::NoCache,
             ]))
             .body(data)),
@@ -377,9 +484,15 @@ async fn serve_raw_image(file_path: &Path) -> Result<HttpResponse, Error> {
 mod tests {
     use std::sync::Arc;
 
+    use actix_web::{App, http::StatusCode, test as actix_test, web};
+    use diesel::r2d2::{ConnectionManager, Pool};
+    use diesel::sqlite::SqliteConnection;
     use tokio::sync::Semaphore;
 
-    use super::{acquire_image_transform_slot, percent_decode_path, read_file_bounded};
+    use super::{
+        acquire_image_transform_slot, image, image_candidate, read_file_bounded, sign_image_path,
+        signed_image_request_is_valid,
+    };
 
     #[actix_web::test]
     async fn image_transform_requests_wait_for_capacity() {
@@ -409,13 +522,96 @@ mod tests {
     }
 
     #[test]
-    fn percent_decode_path_decodes_windows_drive_paths() {
-        let decoded = match percent_decode_path("C%3A%2FUsers%2Flistener%2FMusic%2Fcover.jpg") {
-            Ok(path) => path,
-            Err(e) => panic!("path should decode: {}", e),
-        };
+    fn signed_image_urls_are_path_bound_and_expire() {
+        let path = "%2Fmusic%2FArtist%2FAlbum%2Fcover.jpg";
+        let expires = chrono::Utc::now().timestamp() + 300;
+        let signature = sign_image_path(path, expires);
+        let request = actix_test::TestRequest::get()
+            .uri(&format!(
+                "/media/images/{path}?raw=true&expires={expires}&image_signature={signature}"
+            ))
+            .to_http_request();
+        assert!(signed_image_request_is_valid(&request, path));
+        assert!(!signed_image_request_is_valid(
+            &request,
+            "%2Fmusic%2FArtist%2FOther%2Fcover.jpg"
+        ));
 
-        assert_eq!(decoded, "C:/Users/listener/Music/cover.jpg");
+        let expired = chrono::Utc::now().timestamp() - 1;
+        let expired_signature = sign_image_path(path, expired);
+        let expired_request = actix_test::TestRequest::get()
+            .uri(&format!(
+                "/media/images/{path}?expires={expired}&image_signature={expired_signature}"
+            ))
+            .to_http_request();
+        assert!(!signed_image_request_is_valid(&expired_request, path));
+    }
+
+    #[test]
+    fn route_decoding_is_not_repeated_for_literal_percent_sequences() {
+        let candidate = image_candidate("/music/100%2Fpure/cover%2e%2ejpg")
+            .expect("literal percent sequences are valid filename text");
+        assert_eq!(
+            candidate,
+            std::path::PathBuf::from("/music/100%2Fpure/cover%2e%2ejpg")
+        );
+        assert!(image_candidate("/music/../private/cover.jpg").is_err());
+    }
+
+    #[actix_web::test]
+    async fn image_route_rejects_anonymous_requests_before_path_resolution() {
+        let manager = ConnectionManager::<SqliteConnection>::new(":memory:");
+        let pool = Pool::builder()
+            .max_size(1)
+            .build(manager)
+            .expect("image auth test pool");
+        let app = actix_test::init_service(
+            App::new()
+                .app_data(web::Data::new(Arc::new(pool)))
+                .app_data(web::Data::new(
+                    crate::library::state::LibraryLifecycle::new(),
+                ))
+                .service(image),
+        )
+        .await;
+        let request = actix_test::TestRequest::get()
+            .uri("/media/images/%2Fprivate%2Fcover.jpg")
+            .to_request();
+
+        let response = actix_test::call_service(&app, request).await;
+
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[actix_web::test]
+    async fn image_route_accepts_a_path_bound_cast_signature() {
+        let manager = ConnectionManager::<SqliteConnection>::new(":memory:");
+        let pool = Pool::builder()
+            .max_size(1)
+            .build(manager)
+            .expect("signed image test pool");
+        let app = actix_test::init_service(
+            App::new()
+                .app_data(web::Data::new(Arc::new(pool)))
+                .app_data(web::Data::new(
+                    crate::library::state::LibraryLifecycle::new(),
+                ))
+                .service(image),
+        )
+        .await;
+        let path = "/private/cover.jpg";
+        let encoded_path = "%2Fprivate%2Fcover.jpg";
+        let expires = chrono::Utc::now().timestamp() + 300;
+        let signature = sign_image_path(path, expires);
+        let request = actix_test::TestRequest::get()
+            .uri(&format!(
+                "/media/images/{encoded_path}?expires={expires}&image_signature={signature}"
+            ))
+            .to_request();
+
+        let response = actix_test::call_service(&app, request).await;
+
+        assert_ne!(response.status(), StatusCode::UNAUTHORIZED);
     }
 
     #[actix_web::test]
@@ -436,20 +632,5 @@ mod tests {
         assert_eq!(error.kind(), std::io::ErrorKind::FileTooLarge);
 
         std::fs::remove_dir_all(directory).expect("image read fixture cleanup");
-    }
-
-    #[test]
-    fn percent_decode_path_decodes_rooted_library_paths() {
-        let decoded = match percent_decode_path("%2FUsers%5Clistener%5CMusic%5Ccover.jpg") {
-            Ok(path) => path,
-            Err(e) => panic!("path should decode: {}", e),
-        };
-
-        assert_eq!(decoded, "/Users\\listener\\Music\\cover.jpg");
-    }
-
-    #[test]
-    fn percent_decode_path_rejects_malformed_sequences() {
-        assert!(percent_decode_path("%2FUsers%ZZcover.jpg").is_err());
     }
 }

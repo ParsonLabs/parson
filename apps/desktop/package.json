@@ -1,9 +1,9 @@
 {
   "name": "parson-music-desktop",
-  "version": "1.0.1",
+  "version": "1.0.0",
   "private": true,
   "license": "GPL-3.0-only",
-  "description": "Parson desktop client for Linux and Windows",
+  "description": "Parson desktop client for Linux, macOS, and Windows",
   "homepage": "https://github.com/ParsonLabs/Parson",
   "author": {
     "name": "ParsonLabs"
@@ -31,18 +31,30 @@
       "output": "../../target/release/bundle/electron"
     },
     "toolsets": {
-      "appimage": "1.0.3"
+      "appimage": "1.0.3",
+      "wine": "1.0.1"
     },
     "files": [
       "electron/main.cjs",
       "electron/linux-installer.cjs",
       "electron/linux-relaunch.cjs",
+      "electron/backend-trust.cjs",
+      "electron/failure-state.cjs",
+      "electron/navigation.cjs",
       "electron/preload.cjs",
       "electron/startup.html",
       "electron/startup-error.html",
       "package.json"
     ],
     "extraResources": [
+      {
+        "from": "../../LICENSE",
+        "to": "LICENSE"
+      },
+      {
+        "from": "../../THIRD_PARTY_NOTICES.md",
+        "to": "THIRD_PARTY_NOTICES.md"
+      },
       {
         "from": "electron/bin",
         "to": ".",
@@ -76,9 +88,33 @@
       "icon": "../../crates/windows-server/parson.ico",
       "executableName": "Parson",
       "signExts": [
+        ".exe",
         ".dll",
         ".node"
       ]
+    },
+    "mac": {
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "category": "public.app-category.music",
+      "icon": "../web/public/icons/icon.svg",
+      "hardenedRuntime": false,
+      "notarize": false,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist",
+      "binaries": [
+        "Contents/Resources/parson-music-server"
+      ],
+      "minimumSystemVersion": "12.0",
+      "artifactName": "Parson_${version}_${arch}.${ext}",
+      "extendInfo": {
+        "NSLocalNetworkUsageDescription": "Parson uses your local network to serve your music library to your devices.",
+        "NSBonjourServices": [
+          "_parson._tcp"
+        ]
+      }
     },
     "nsis": {
       "oneClick": false,

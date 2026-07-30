@@ -1,6 +1,5 @@
 import { ArrowRight, FolderOpen, Monitor, Play } from "lucide-react";
 import type { Metadata } from "next";
-import Image from "next/image";
 import Link from "next/link";
 import InteractiveProductDemo from "../components/interactive-product-demo";
 import PlatformDownloadButton from "../components/platform-download-button";
@@ -79,49 +78,6 @@ export default function Home() {
       <section className="landing-section landing-proof">
         <div className="landing-wide-container">
           <InteractiveProductDemo />
-        </div>
-      </section>
-
-      <section className="landing-section landing-screenshots">
-        <div className="landing-wide-container">
-          <div className="landing-screenshot-copy">
-            <h2>Every album gets room to breathe.</h2>
-            <span>
-              Browse your library, settle into a release, or follow the lyrics
-              without leaving your music behind.
-            </span>
-          </div>
-          <div className="landing-screenshot-grid">
-            <figure className="landing-screenshot-featured">
-              <Image
-                src="/screenshots/01-home.png"
-                alt="Parson Home showing the Afterlight, Night Swim, Amber Hours, and Evergreen albums"
-                width={2880}
-                height={1620}
-                sizes="(max-width: 900px) 100vw, 67vw"
-              />
-            </figure>
-            <div>
-              <figure>
-                <Image
-                  src="/screenshots/04-album.png"
-                  alt="The Amber Hours album and track list in Parson"
-                  width={2880}
-                  height={1620}
-                  sizes="(max-width: 900px) 100vw, 32vw"
-                />
-              </figure>
-              <figure>
-                <Image
-                  src="/screenshots/07-lyrics.png"
-                  alt="Centered synced lyrics for Signal Fires over the Golden State artwork"
-                  width={2880}
-                  height={1620}
-                  sizes="(max-width: 900px) 100vw, 32vw"
-                />
-              </figure>
-            </div>
-          </div>
         </div>
       </section>
 

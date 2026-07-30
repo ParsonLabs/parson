@@ -227,6 +227,41 @@ fn create_verified_snapshot(
     Ok(snapshot)
 }
 
+fn create_pre_migration_snapshot(
+    connection: &mut SqliteConnection,
+    _database_path: &Path,
+    migration_version: &str,
+) -> Result<PathBuf, BoxError> {
+    let directory = crate::settings::data_path(&["Backups", "Migrations"]);
+    fs::create_dir_all(&directory)?;
+    let safe_version = migration_version
+        .chars()
+        .filter(char::is_ascii_alphanumeric)
+        .collect::<String>();
+    let timestamp = SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos();
+    let temporary = directory.join(format!(
+        ".parson-music-before-{safe_version}-{timestamp}.tmp"
+    ));
+    let snapshot = directory.join(format!("parson-music-before-{safe_version}-{timestamp}.db"));
+    let sql_path = temporary.to_string_lossy().replace('\'', "''");
+    if let Err(error) = diesel::sql_query(format!("VACUUM INTO '{sql_path}'")).execute(connection) {
+        let _ = fs::remove_file(&temporary);
+        return Err(error.into());
+    }
+    let verify_url = temporary
+        .to_str()
+        .ok_or_else(|| "pre-migration snapshot path is not valid UTF-8".to_string())?;
+    let mut verification = SqliteConnection::establish(verify_url)?;
+    if let Err(error) = check_integrity(&mut verification) {
+        drop(verification);
+        let _ = fs::remove_file(&temporary);
+        return Err(error);
+    }
+    drop(verification);
+    fs::rename(&temporary, &snapshot)?;
+    Ok(snapshot)
+}
+
 /// Starts an asynchronous recovery snapshot after a changed import.
 pub fn snapshot_after_import(pool: &DbPool, database_changed: bool) {
     if !database_changed || !snapshots_enabled() {
@@ -340,10 +375,11 @@ fn recover_interrupted_scan_jobs(connection: &mut SqliteConnection) -> Result<us
 
 fn open_pool() -> Result<DbPool, BoxError> {
     let path = crate::settings::music_database_path();
+    let legacy = crate::settings::legacy_music_database_path();
+    let had_existing_database = path.is_file() || legacy.is_file();
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
-    let legacy = crate::settings::legacy_music_database_path();
     if migrate_legacy_database(&legacy, &path)? {
         tracing::info!(from = %legacy.display(), to = %path.display(), "migrated legacy database filename");
     }
@@ -355,8 +391,35 @@ fn open_pool() -> Result<DbPool, BoxError> {
         "PRAGMA journal_mode = WAL;
          PRAGMA busy_timeout = 30000;",
     )?;
+    let pending = connection.pending_migrations(MIGRATIONS)?;
+    if had_existing_database && !pending.is_empty() {
+        let first = pending[0].name().version().to_string();
+        let snapshot = create_pre_migration_snapshot(&mut connection, &path, &first)?;
+        tracing::info!(
+            migration = %first,
+            path = %snapshot.display(),
+            "created verified pre-migration database snapshot"
+        );
+    }
     prepare_legacy_schema_for_baseline(&mut connection)?;
-    connection.run_pending_migrations(MIGRATIONS)?;
+    for (index, migration) in pending.iter().enumerate() {
+        let version = migration.name().version().to_string();
+        if had_existing_database && index > 0 {
+            let snapshot = create_pre_migration_snapshot(&mut connection, &path, &version)?;
+            tracing::info!(
+                migration = %version,
+                path = %snapshot.display(),
+                "created verified pre-migration database snapshot"
+            );
+        }
+        connection
+            .run_migration(migration.as_ref())
+            .map_err(|error| {
+                std::io::Error::other(format!(
+                    "Database migration {version} failed. The database was left unchanged: {error}"
+                ))
+            })?;
+    }
     let marker = startup_marker(&path);
     let abnormal_shutdown = marker.exists();
     let recovered = recover_interrupted_scan_jobs(&mut connection)?;
@@ -679,6 +742,14 @@ mod tests {
         .expect("write-time playlist stats");
         assert_eq!(stats.song_count, 1);
         assert_eq!(stats.total_duration, 123.5);
+        let data_revision = diesel::sql_query(
+            "SELECT CAST(revision AS BIGINT) AS count
+             FROM user_data_change_state WHERE singleton = 1",
+        )
+        .get_result::<CountRow>(&mut connection)
+        .expect("meaningful data revision")
+        .count;
+        assert!(data_revision >= 3);
 
         let position = diesel::sql_query(
             "SELECT CAST(position AS TEXT) AS value FROM _playlist_to_song WHERE a = 1",

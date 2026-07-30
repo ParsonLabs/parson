@@ -13,6 +13,7 @@ import {
   type AudioPreset,
   type AudioPresetId,
 } from "./audio-presets";
+import { canPromotePreloadedMedia } from "./gapless-playback";
 
 const PLAYBACK_START_TIMEOUT_MS = 12_000;
 
@@ -20,6 +21,8 @@ export function useAudioEngine() {
   const audio = useRef<HTMLAudioElement | null>(
     typeof window === "undefined" ? null : createAudioElement(),
   );
+  const preloadedAudio = useRef<HTMLAudioElement | null>(null);
+  const preloadedSource = useRef("");
   const graph = useRef<AudioGraph | null>(null);
   const source = useRef("");
   const playbackAttempt = useRef(0);
@@ -37,17 +40,50 @@ export function useAudioEngine() {
   const [volume, setVolume] = useState(1);
   const [muted, setMuted] = useState(false);
 
+  const discardPreloadedAudio = useCallback(() => {
+    const element = preloadedAudio.current;
+    element?.pause();
+    element?.removeAttribute("src");
+    element?.load();
+    preloadedAudio.current = null;
+    preloadedSource.current = "";
+  }, []);
+
+  const configureAudioElement = useCallback((element: HTMLAudioElement) => {
+    element.crossOrigin = "anonymous";
+    element.volume = volumeRef.current;
+    element.muted = mutedRef.current;
+    setPitchPreservation(element, presetRef.current.preservePitch);
+    element.defaultPlaybackRate = presetRef.current.rate;
+    element.playbackRate = presetRef.current.rate;
+  }, []);
+
+  const preloadAudioSource = useCallback(
+    (next: string | null) => {
+      if (!next || typeof window === "undefined") {
+        discardPreloadedAudio();
+        return;
+      }
+      if (preloadedAudio.current && preloadedSource.current === next) return;
+      discardPreloadedAudio();
+      const element = createAudioElement();
+      configureAudioElement(element);
+      element.preload = "auto";
+      element.src = next;
+      element.load();
+      preloadedAudio.current = element;
+      preloadedSource.current = next;
+    },
+    [configureAudioElement, discardPreloadedAudio],
+  );
+
   const recoverAudioElement = useCallback(() => {
     if (recovered.current || typeof window === "undefined") return;
     const current = audio.current;
     const resumeAt = current?.currentTime || 0;
     current?.pause();
     const replacement = createAudioElement();
-    replacement.volume = volumeRef.current;
-    replacement.muted = mutedRef.current;
-    setPitchPreservation(replacement, presetRef.current.preservePitch);
-    replacement.defaultPlaybackRate = presetRef.current.rate;
-    replacement.playbackRate = presetRef.current.rate;
+    configureAudioElement(replacement);
     if (source.current) {
       replacement.src = source.current;
       try {
@@ -58,7 +94,7 @@ export function useAudioEngine() {
     audio.current = replacement;
     recovered.current = true;
     setAudioVersion((version) => version + 1);
-  }, []);
+  }, [configureAudioElement]);
 
   const ensureAudioGraph = useCallback(() => {
     recoverAudioElement();
@@ -124,18 +160,41 @@ export function useAudioEngine() {
     [ensureAudioGraph],
   );
 
-  const setAudioSource = useCallback((next: string) => {
-    playbackAttempt.current += 1;
-    setIsPlaying(false);
-    setError(null);
-    source.current = next;
-    if (!audio.current) return;
-    audio.current.crossOrigin = "anonymous";
-    audio.current.src = next;
-    setPitchPreservation(audio.current, presetRef.current.preservePitch);
-    audio.current.defaultPlaybackRate = presetRef.current.rate;
-    audio.current.playbackRate = presetRef.current.rate;
-  }, []);
+  const setAudioSource = useCallback(
+    (next: string) => {
+      playbackAttempt.current += 1;
+      setIsPlaying(false);
+      setError(null);
+      source.current = next;
+      if (!audio.current) return;
+
+      const prepared = preloadedAudio.current;
+      if (
+        prepared &&
+        canPromotePreloadedMedia(prepared, preloadedSource.current, next)
+      ) {
+        const previous = audio.current;
+        audio.current = prepared;
+        preloadedAudio.current = null;
+        preloadedSource.current = "";
+        configureAudioElement(prepared);
+        previous.pause();
+        previous.removeAttribute("src");
+        previous.load();
+        if (graph.current) {
+          void graph.current.context.close().catch(() => {});
+          graph.current = null;
+        }
+        setAudioVersion((version) => version + 1);
+        return;
+      }
+
+      discardPreloadedAudio();
+      configureAudioElement(audio.current);
+      audio.current.src = next;
+    },
+    [configureAudioElement, discardPreloadedAudio],
+  );
 
   const playAudioSource = useCallback(() => {
     recoverAudioElement();
@@ -191,7 +250,10 @@ export function useAudioEngine() {
           setError(
             cause instanceof DOMException && cause.name === "NotAllowedError"
               ? "Your browser blocked audio. Allow sound for this site, then press play."
-              : "This track could not be played.",
+              : cause instanceof DOMException &&
+                  cause.name === "NotSupportedError"
+                ? "This audio format isn’t supported on this device. Try another track or convert the file."
+                : "This track could not be played.",
           );
         },
       )
@@ -202,11 +264,13 @@ export function useAudioEngine() {
     const next = boundedVolume(value);
     if (next === null) return;
     if (audio.current) audio.current.volume = next;
+    if (preloadedAudio.current) preloadedAudio.current.volume = next;
     volumeRef.current = next;
     setVolume(next);
     if (next > 0) {
       mutedRef.current = false;
       if (audio.current) audio.current.muted = false;
+      if (preloadedAudio.current) preloadedAudio.current.muted = false;
       setMuted(false);
     }
   }, []);
@@ -214,6 +278,7 @@ export function useAudioEngine() {
     if (!audio.current) return;
     audio.current.muted = !audio.current.muted;
     mutedRef.current = audio.current.muted;
+    if (preloadedAudio.current) preloadedAudio.current.muted = mutedRef.current;
     setMuted(audio.current.muted);
   }, []);
   const setAudioPreset = useCallback(
@@ -222,10 +287,11 @@ export function useAudioEngine() {
       presetRef.current = preset;
       setAudioPresetState(preset.id);
       applyPreset(preset);
+      if (preloadedAudio.current) configureAudioElement(preloadedAudio.current);
       if (graph.current?.context.state === "suspended")
         void graph.current.context.resume().catch(() => {});
     },
-    [applyPreset],
+    [applyPreset, configureAudioElement],
   );
   const toggleSlowedReverb = useCallback(
     () =>
@@ -242,6 +308,8 @@ export function useAudioEngine() {
       void graph.current.context.resume().catch(() => {});
   }, [audioPreset]);
 
+  useEffect(() => discardPreloadedAudio, [discardPreloadedAudio]);
+
   return {
     audio,
     audioPreset,
@@ -252,6 +320,7 @@ export function useAudioEngine() {
     isPlaying,
     muted,
     playAudioSource,
+    preloadAudioSource,
     resumeOnReconnect,
     setAudioPreset,
     setAudioSource,

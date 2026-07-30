@@ -11,6 +11,23 @@ export function boundedMediaPosition(
     : nonNegative;
 }
 
+export function setMediaPosition(
+  element: Pick<HTMLMediaElement, "currentTime"> | null,
+  value: number | string,
+  duration?: number,
+): number | null {
+  const bounded = boundedMediaPosition(value, duration);
+  if (bounded === null) return null;
+  if (element) {
+    try {
+      element.currentTime = bounded;
+    } catch {
+      return null;
+    }
+  }
+  return bounded;
+}
+
 export function boundedVolume(value: number | string): number | null {
   const numeric = Number(value);
   if (!Number.isFinite(numeric)) return null;

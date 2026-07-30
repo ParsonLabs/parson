@@ -1,14 +1,19 @@
 import {
+  createPlaybackQueue,
   fillReverbImpulseChannel,
   getPlayerAudioPreset,
   playerAudioPresets,
+  recordPlaybackEvent,
   reverbImpulseLength,
   type LibrarySong,
+  type PlaybackEventType,
   type PlayerAudioPresetId,
 } from "@parson/music-sdk";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Haptics from "expo-haptics";
 import {
   createAudioPlayer,
+  requestNotificationPermissionsAsync,
   setAudioModeAsync,
   type AudioPlayer as ExpoAudioPlayer,
 } from "expo-audio";
@@ -37,15 +42,36 @@ import {
 } from "react";
 import { Platform } from "react-native";
 
-import { freshAuthorizationHeaders, imageUrl, streamUrl } from "@/lib/runtime";
+import {
+  freshAuthorizationHeaders,
+  imageUrl,
+  lockScreenArtworkUrl,
+  streamUrl,
+} from "@/lib/runtime";
 import { downloadedSongUri, hydrateDownloads } from "@/lib/downloads";
 import { shouldRestartFinishedTrack } from "@/lib/playback-state";
+import { playableQueueSongs } from "@/lib/playback-queue";
+import {
+  isCompleted,
+  isEarlySkip,
+  newPlaybackTelemetry,
+  qualifiedPlayThreshold,
+  updateListenedSeconds,
+} from "@/lib/playback-telemetry";
+import { restoredQueue, shuffledQueue } from "@/lib/shuffle-queue";
+import {
+  parseStoredPlayerState,
+  serializePlayerState,
+} from "@/lib/player-storage";
 import { useSession } from "@/providers/session-provider";
+import { useQueryClient } from "@tanstack/react-query";
+import { useCastOutput } from "@/hooks/use-cast-output";
 
 type RepeatMode = "none" | "one" | "all";
 export type AudioPreset = PlayerAudioPresetId;
 
 type PlaybackSource = {
+  artworkUrl?: string;
   autoplay: boolean;
   key: number;
   retryCount: number;
@@ -78,17 +104,22 @@ type PlayerContextValue = {
   isPlaying: boolean;
   queue: LibrarySong[];
   repeat: RepeatMode;
+  shuffle: boolean;
   audioPreset: AudioPreset;
   audioPresetsEnabled: boolean;
   playSong: (song: LibrarySong, queue?: LibrarySong[]) => void;
+  playShuffled: (songs: LibrarySong[]) => void;
   playAt: (index: number) => void;
   addNext: (song: LibrarySong) => void;
   addToQueue: (songs: LibrarySong[]) => void;
+  clearUpcoming: () => void;
+  removeFromQueue: (index: number) => void;
   toggle: () => void;
   next: () => void;
   previous: () => void;
   seek: (seconds: number) => void;
   cycleRepeat: () => void;
+  toggleShuffle: () => void;
   setAudioPreset: (preset: AudioPreset) => void;
 };
 
@@ -349,7 +380,11 @@ function useAndroidAudioOutput({
             setIsBuffering(false);
             setIsPlaying(false);
             setPlaybackError(
-              "Playback failed. Check your connection and try again.",
+              status.error.toLowerCase().includes("format") ||
+                status.error.toLowerCase().includes("codec") ||
+                status.error.toLowerCase().includes("decode")
+                ? "This audio format isn’t supported on this device. Try another track or convert the file."
+                : "Playback failed. Check your connection and try again.",
             );
           }
         }
@@ -394,7 +429,7 @@ function useAndroidAudioOutput({
       player.setActiveForLockScreen(true, {
         albumTitle: current.album_object?.name,
         artist: current.artist,
-        artworkUrl: imageUrl(current.album_object?.cover_url) ?? undefined,
+        artworkUrl: playbackSource.artworkUrl,
         title: current.name,
       });
     }
@@ -485,7 +520,13 @@ function BrowserAudioOutput({
 
 export function PlayerProvider({ children }: PropsWithChildren) {
   const session = useSession();
-  const [audioContext] = useState(() => new AudioContext());
+  const queryClient = useQueryClient();
+  // Android playback is handled by expo-audio. Constructing the separate
+  // WebAudio engine there starts an unused native audio graph and consumes a
+  // substantial amount of memory/CPU on older devices.
+  const [audioContext] = useState(() =>
+    Platform.OS === "android" ? null : new AudioContext(),
+  );
   const audioRef = useRef<AudioTagHandle>(null);
   const androidPlayerRef = useRef<ExpoAudioPlayer | null>(null);
   const graphRef = useRef<NativeAudioGraph | null>(null);
@@ -493,6 +534,12 @@ export function PlayerProvider({ children }: PropsWithChildren) {
   const desiredPlaying = useRef(false);
   const endedHandlerRef = useRef<() => void>(() => {});
   const playbackSourceRef = useRef<PlaybackSource | null>(null);
+  const notificationPermissionRequested = useRef(false);
+  const radioRequest = useRef(0);
+  const playbackOrigin = useRef<"generated" | "manual">("manual");
+  const playbackSessionId = useRef("");
+  const playbackEventSequence = useRef(0);
+  const telemetry = useRef(newPlaybackTelemetry());
 
   const [queue, setQueue] = useState<LibrarySong[]>([]);
   const [currentIndex, setCurrentIndex] = useState(-1);
@@ -502,10 +549,64 @@ export function PlayerProvider({ children }: PropsWithChildren) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [playbackError, setPlaybackError] = useState<string | null>(null);
   const [repeat, setRepeat] = useState<RepeatMode>("none");
+  const [shuffle, setShuffle] = useState(false);
+  const originalQueue = useRef<LibrarySong[]>([]);
   const [audioPreset, setAudioPresetState] = useState<AudioPreset>("original");
   const [playbackSource, setPlaybackSource] = useState<PlaybackSource | null>(
     null,
   );
+  const queueStorageReady = useRef(false);
+  const queueStorageKey =
+    session.instanceId && session.claims?.sub
+      ? `parson.player-state.${session.instanceId}.${session.claims.sub}`
+      : null;
+
+  useEffect(() => {
+    if (!queueStorageKey) {
+      queueStorageReady.current = false;
+      return;
+    }
+    let active = true;
+    queueStorageReady.current = false;
+    void AsyncStorage.getItem(queueStorageKey)
+      .then((serialized) => {
+        if (!active) return;
+        const stored = parseStoredPlayerState(serialized);
+        if (!stored) return;
+        originalQueue.current = stored.originalQueue;
+        playbackOrigin.current = stored.origin;
+        setQueue(stored.queue);
+        setCurrentIndex(stored.currentIndex);
+        setRepeat(stored.repeat);
+        setShuffle(stored.shuffle);
+        const restored = stored.queue[stored.currentIndex];
+        setDuration(Math.max(0, restored?.duration || 0));
+      })
+      .finally(() => {
+        if (active) queueStorageReady.current = true;
+      });
+    return () => {
+      active = false;
+    };
+  }, [queueStorageKey]);
+
+  useEffect(() => {
+    if (!queueStorageKey || !queueStorageReady.current) return;
+    const write = setTimeout(() => {
+      void AsyncStorage.setItem(
+        queueStorageKey,
+        serializePlayerState({
+          currentIndex,
+          originalQueue: originalQueue.current,
+          origin: playbackOrigin.current,
+          queue,
+          repeat,
+          shuffle,
+        }),
+      ).catch(() => {});
+    }, 250);
+    return () => clearTimeout(write);
+  }, [currentIndex, queue, queueStorageKey, repeat, shuffle]);
 
   useEffect(() => {
     if (session.claims || session.phase === "offline") return;
@@ -516,12 +617,13 @@ export function PlayerProvider({ children }: PropsWithChildren) {
       const androidPlayer = androidPlayerRef.current;
       if (androidPlayer) {
         androidPlayer.pause();
-        androidPlayer.replace(null);
         androidPlayer.clearLockScreenControls();
       }
       if (graphRef.current) disconnectSource(graphRef.current);
       setPlaybackSource(null);
       setQueue([]);
+      originalQueue.current = [];
+      setShuffle(false);
       setCurrentIndex(-1);
       setCurrentTime(0);
       setDuration(0);
@@ -539,8 +641,51 @@ export function PlayerProvider({ children }: PropsWithChildren) {
     ? preset
     : getPlayerAudioPreset("original");
 
+  const sendPlaybackEvent = useCallback(
+    (eventType: PlaybackEventType) => {
+      if (!current?.id || !session.claims?.sub || session.phase === "offline")
+        return;
+      if (!playbackSessionId.current) {
+        playbackSessionId.current = `mobile-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      }
+      playbackEventSequence.current += 1;
+      void recordPlaybackEvent({
+        duration_seconds: duration || current.duration,
+        event_key: `${playbackSessionId.current}:${current.id}:${eventType}:${playbackEventSequence.current}`,
+        event_type: eventType,
+        position_seconds: currentTime,
+        session_id: playbackSessionId.current,
+        song_id: current.id,
+        source: playbackOrigin.current,
+      })
+        .then(() => {
+          if (eventType === "play_started") return;
+          void Promise.all([
+            queryClient.invalidateQueries({
+              queryKey: ["home"],
+              refetchType: "none",
+            }),
+            queryClient.invalidateQueries({
+              queryKey: ["history"],
+              refetchType: "none",
+            }),
+          ]).catch(() => {});
+        })
+        .catch(() => {});
+    },
+    [
+      current,
+      currentTime,
+      duration,
+      queryClient,
+      session.claims?.sub,
+      session.phase,
+    ],
+  );
+
   const ensureGraph = useCallback(() => {
     if (graphRef.current) return graphRef.current;
+    if (!audioContext) return null;
     const dryGain = audioContext.createGain();
     const wetGain = audioContext.createGain();
     const convolver = audioContext.createConvolver();
@@ -565,7 +710,7 @@ export function PlayerProvider({ children }: PropsWithChildren) {
       const next = getPlayerAudioPreset(presetId);
       audioRef.current?.setPlaybackRate(next.rate);
       const graph = graphRef.current;
-      if (!graph) return;
+      if (!graph || !audioContext) return;
       const now = audioContext.currentTime;
       graph.dryGain.gain.setTargetAtTime(next.dry, now, 0.025);
       graph.wetGain.gain.setTargetAtTime(next.wet, now, 0.025);
@@ -585,7 +730,7 @@ export function PlayerProvider({ children }: PropsWithChildren) {
   const routeLoadedSource = useCallback(() => {
     setIsBuffering(false);
     const audio = audioRef.current;
-    if (!audio || Platform.OS === "web") return;
+    if (!audio || !audioContext || Platform.OS === "web") return;
     const playWhenRequested = () => {
       if (!desiredPlaying.current) return;
       void AudioManager.setAudioSessionActivity(true).catch(() => {});
@@ -599,6 +744,7 @@ export function PlayerProvider({ children }: PropsWithChildren) {
     }
     try {
       const graph = ensureGraph();
+      if (!graph) return;
       disconnectSource(graph);
       const source = audioContext.createMediaElementSource(audio);
       source.connect(graph.dryGain);
@@ -616,7 +762,11 @@ export function PlayerProvider({ children }: PropsWithChildren) {
     async (song: LibrarySong) => {
       const local = downloadedSongUri(song.id);
       const bitrate = session.claims?.bitrate ?? 0;
+      const artworkUrl = await lockScreenArtworkUrl(
+        song.album_object?.cover_url,
+      ).catch(() => undefined);
       return {
+        artworkUrl,
         // Native decoding expects a decoded path, not an Expo file URI.
         uri: local ? decodeURI(local) : streamUrl(song.id, bitrate),
         headers: local ? undefined : await freshAuthorizationHeaders(),
@@ -626,15 +776,42 @@ export function PlayerProvider({ children }: PropsWithChildren) {
   );
 
   const loadAt = useCallback(
-    (songs: LibrarySong[], index: number, autoplay = true) => {
-      const song = songs[index];
+    (
+      songs: LibrarySong[],
+      index: number,
+      autoplay = true,
+      preserveOriginal = false,
+      origin: "generated" | "manual" = "manual",
+    ) => {
+      let nextSongs = songs;
+      let nextIndex = index;
+      if (!preserveOriginal) {
+        originalQueue.current = [...songs];
+        if (shuffle && songs.length > 1) {
+          const shuffled = shuffledQueue(songs, index);
+          nextSongs = shuffled.queue;
+          nextIndex = shuffled.currentIndex;
+        }
+      }
+      const song = nextSongs[nextIndex];
       if (!song) return;
-      setQueue(songs);
-      setCurrentIndex(index);
+      radioRequest.current += 1;
+      playbackOrigin.current = origin;
+      telemetry.current = newPlaybackTelemetry();
+      if (
+        autoplay &&
+        Platform.OS === "android" &&
+        !notificationPermissionRequested.current
+      ) {
+        notificationPermissionRequested.current = true;
+        void requestNotificationPermissionsAsync().catch(() => {});
+      }
+      setQueue(nextSongs);
+      setCurrentIndex(nextIndex);
       setCurrentTime(0);
       setDuration(Math.max(0, song.duration || 0));
       setIsBuffering(true);
-      setIsPlaying(autoplay);
+      setIsPlaying(false);
       setPlaybackError(null);
       desiredPlaying.current = autoplay;
       audioRef.current?.pause();
@@ -642,9 +819,15 @@ export function PlayerProvider({ children }: PropsWithChildren) {
       setPlaybackSource(null);
       const key = ++sourceSequence.current;
       void sourceFor(song)
-        .then((value) => {
+        .then(({ artworkUrl, ...value }) => {
           if (sourceSequence.current !== key) return;
-          setPlaybackSource({ autoplay, key, retryCount: 0, value });
+          setPlaybackSource({
+            artworkUrl,
+            autoplay,
+            key,
+            retryCount: 0,
+            value,
+          });
         })
         .catch((cause) => {
           if (sourceSequence.current !== key) return;
@@ -655,7 +838,7 @@ export function PlayerProvider({ children }: PropsWithChildren) {
           console.error("Could not prepare audio source", cause);
         });
     },
-    [sourceFor],
+    [shuffle, sourceFor],
   );
 
   const playSong = useCallback(
@@ -670,28 +853,93 @@ export function PlayerProvider({ children }: PropsWithChildren) {
   );
 
   const playAt = useCallback(
-    (index: number) => loadAt(queue, index),
+    (index: number) => loadAt(queue, index, true, true, "manual"),
     [loadAt, queue],
+  );
+
+  const playShuffled = useCallback(
+    (songs: LibrarySong[]) => {
+      if (!songs.length) return;
+      originalQueue.current = [...songs];
+      const selected = Math.floor(Math.random() * songs.length);
+      const shuffled = shuffledQueue(songs, selected);
+      setShuffle(true);
+      loadAt(shuffled.queue, shuffled.currentIndex, true, true);
+    },
+    [loadAt],
   );
 
   const addNext = useCallback(
     (song: LibrarySong) => {
+      const currentId = queue[currentIndex]?.id;
+      const originalIndex = originalQueue.current.findIndex(
+        (item) => item.id === currentId,
+      );
+      const insertOriginalAt =
+        originalIndex >= 0 ? originalIndex + 1 : originalQueue.current.length;
+      originalQueue.current = [
+        ...originalQueue.current.slice(0, insertOriginalAt),
+        song,
+        ...originalQueue.current.slice(insertOriginalAt),
+      ];
       setQueue((items) => {
         const insert = Math.max(0, currentIndex + 1);
         return [...items.slice(0, insert), song, ...items.slice(insert)];
       });
     },
-    [currentIndex],
+    [currentIndex, queue],
   );
 
   const addToQueue = useCallback((songs: LibrarySong[]) => {
-    if (songs.length) setQueue((items) => [...items, ...songs]);
+    if (songs.length) {
+      originalQueue.current = [...originalQueue.current, ...songs];
+      setQueue((items) => [...items, ...songs]);
+    }
   }, []);
+
+  const removeFromQueue = useCallback(
+    (index: number) => {
+      if (index < 0 || index >= queue.length || index === currentIndex) return;
+      const removed = queue[index]!;
+      const occurrence = queue
+        .slice(0, index + 1)
+        .filter((song) => song.id === removed.id).length;
+      let seen = 0;
+      originalQueue.current = originalQueue.current.filter((song) => {
+        if (song.id !== removed.id) return true;
+        seen += 1;
+        return seen !== occurrence;
+      });
+      setQueue((items) => items.filter((_, itemIndex) => itemIndex !== index));
+      if (index < currentIndex) setCurrentIndex((value) => value - 1);
+    },
+    [currentIndex, queue],
+  );
+
+  const clearUpcoming = useCallback(() => {
+    if (currentIndex < 0 || currentIndex >= queue.length - 1) return;
+    const kept = queue.slice(0, currentIndex + 1);
+    const remaining = new Map<string, number>();
+    kept.forEach((song) =>
+      remaining.set(song.id, (remaining.get(song.id) ?? 0) + 1),
+    );
+    setQueue(kept);
+    originalQueue.current = originalQueue.current.filter((song) => {
+      const count = remaining.get(song.id) ?? 0;
+      if (!count) return false;
+      remaining.set(song.id, count - 1);
+      return true;
+    });
+  }, [currentIndex, queue]);
 
   const play = useCallback(() => {
     if (!current) return;
+    if (!playbackSource) {
+      loadAt(queue, currentIndex, true, true);
+      return;
+    }
     if (playbackError) {
-      loadAt(queue, currentIndex);
+      loadAt(queue, currentIndex, true, true);
       return;
     }
     if (shouldRestartFinishedTrack(currentTime, duration)) {
@@ -718,6 +966,7 @@ export function PlayerProvider({ children }: PropsWithChildren) {
     duration,
     isBuffering,
     loadAt,
+    playbackSource,
     playbackError,
     queue,
   ]);
@@ -745,16 +994,36 @@ export function PlayerProvider({ children }: PropsWithChildren) {
     return wasPlaying;
   }, []);
 
+  const cast = useCastOutput({
+    currentIndex,
+    pauseLocal: pause,
+    queue,
+    repeat,
+  });
+
+  useEffect(() => {
+    if (!cast.casting || Platform.OS !== "android") return;
+    androidPlayerRef.current?.clearLockScreenControls();
+  }, [cast.casting]);
+
   const next = useCallback(() => {
     if (!queue.length) return;
     const nextIndex = currentIndex + 1;
-    if (nextIndex < queue.length) loadAt(queue, nextIndex);
-    else if (repeat === "all") loadAt(queue, 0);
+    if (
+      playbackOrigin.current === "generated" &&
+      isEarlySkip(telemetry.current.listenedSeconds, duration)
+    ) {
+      sendPlaybackEvent("early_skip");
+    }
+    if (nextIndex < queue.length)
+      loadAt(queue, nextIndex, true, true, playbackOrigin.current);
+    else if (repeat === "all")
+      loadAt(queue, 0, true, true, playbackOrigin.current);
     else {
       desiredPlaying.current = false;
       setIsPlaying(false);
     }
-  }, [currentIndex, loadAt, queue, repeat]);
+  }, [currentIndex, duration, loadAt, queue, repeat, sendPlaybackEvent]);
 
   const seek = useCallback(
     (seconds: number) => {
@@ -775,9 +1044,24 @@ export function PlayerProvider({ children }: PropsWithChildren) {
       return;
     }
     const previousIndex = currentIndex - 1;
-    if (previousIndex >= 0) loadAt(queue, previousIndex);
+    if (
+      playbackOrigin.current === "generated" &&
+      isEarlySkip(telemetry.current.listenedSeconds, duration)
+    ) {
+      sendPlaybackEvent("early_skip");
+    }
+    if (previousIndex >= 0)
+      loadAt(queue, previousIndex, true, true, playbackOrigin.current);
     else seek(0);
-  }, [currentIndex, currentTime, loadAt, queue, seek]);
+  }, [
+    currentIndex,
+    currentTime,
+    duration,
+    loadAt,
+    queue,
+    seek,
+    sendPlaybackEvent,
+  ]);
 
   const toggle = useCallback(() => {
     void Haptics.selectionAsync().catch(() => {});
@@ -801,11 +1085,72 @@ export function PlayerProvider({ children }: PropsWithChildren) {
     );
   }, []);
 
+  const toggleShuffle = useCallback(() => {
+    if (queue.length < 2) {
+      setShuffle((value) => !value);
+      return;
+    }
+    const currentSong = queue[currentIndex] ?? null;
+    if (shuffle) {
+      const restored = restoredQueue(originalQueue.current, currentSong);
+      setQueue(restored.queue);
+      setCurrentIndex(restored.currentIndex);
+      setShuffle(false);
+      return;
+    }
+    if (!originalQueue.current.length) originalQueue.current = [...queue];
+    const shuffled = shuffledQueue(queue, currentIndex);
+    setQueue(shuffled.queue);
+    setCurrentIndex(shuffled.currentIndex);
+    setShuffle(true);
+  }, [currentIndex, queue, shuffle]);
+
   const handleEnded = useCallback(() => {
     setIsPlaying(false);
-    if (repeat === "one") loadAt(queue, currentIndex);
-    else next();
-  }, [currentIndex, loadAt, next, queue, repeat]);
+    if (
+      !telemetry.current.completed &&
+      isCompleted(telemetry.current.listenedSeconds, duration)
+    ) {
+      telemetry.current.completed = true;
+      sendPlaybackEvent("completed");
+    }
+    if (repeat === "one")
+      loadAt(queue, currentIndex, true, true, playbackOrigin.current);
+    else if (currentIndex + 1 < queue.length)
+      loadAt(queue, currentIndex + 1, true, true, playbackOrigin.current);
+    else if (repeat === "all")
+      loadAt(queue, 0, true, true, playbackOrigin.current);
+    else if (current?.id && session.phase === "ready") {
+      desiredPlaying.current = false;
+      const endingSongId = current.id;
+      const request = ++radioRequest.current;
+      void createPlaybackQueue({
+        exclude_song_ids: queue.slice(-50).map((song) => song.id),
+        generated_items: 20,
+        seed_song_id: endingSongId,
+        source: "radio",
+      })
+        .then((generated) => {
+          if (request !== radioRequest.current || current?.id !== endingSongId)
+            return;
+          const songs = playableQueueSongs(generated.items);
+          if (!songs.length) return;
+          originalQueue.current = songs;
+          setShuffle(false);
+          loadAt(songs, 0, true, true, "generated");
+        })
+        .catch(() => {});
+    } else desiredPlaying.current = false;
+  }, [
+    current,
+    currentIndex,
+    duration,
+    loadAt,
+    queue,
+    repeat,
+    sendPlaybackEvent,
+    session.phase,
+  ]);
 
   useEffect(() => {
     endedHandlerRef.current = handleEnded;
@@ -814,6 +1159,29 @@ export function PlayerProvider({ children }: PropsWithChildren) {
   useEffect(() => {
     playbackSourceRef.current = playbackSource;
   }, [playbackSource]);
+
+  useEffect(() => {
+    if (!current?.id) return;
+    const state = telemetry.current;
+    updateListenedSeconds(state, currentTime, Date.now(), isPlaying);
+    if (isPlaying && !state.started) {
+      state.started = true;
+      sendPlaybackEvent(
+        playbackOrigin.current === "manual"
+          ? "manual_selection"
+          : "play_started",
+      );
+    }
+    const threshold = qualifiedPlayThreshold(duration);
+    if (
+      !state.qualified &&
+      threshold > 0 &&
+      state.listenedSeconds >= threshold
+    ) {
+      state.qualified = true;
+      sendPlaybackEvent("qualified_play");
+    }
+  }, [current?.id, currentTime, duration, isPlaying, sendPlaybackEvent]);
 
   useAndroidAudioOutput({
     current,
@@ -848,53 +1216,73 @@ export function PlayerProvider({ children }: PropsWithChildren) {
     rate: effectivePreset.rate,
   });
 
-  const value = useMemo<PlayerContextValue>(
-    () => ({
-      current,
-      currentIndex,
+  const value = useMemo<PlayerContextValue>(() => {
+    const effectiveIndex = cast.casting ? cast.currentIndex : currentIndex;
+    return {
+      current: queue[effectiveIndex] ?? current,
+      currentIndex: effectiveIndex,
       error: playbackError,
       isBuffering,
-      isPlaying,
+      isPlaying: cast.casting ? cast.isPlaying : isPlaying,
       queue,
       repeat,
+      shuffle,
       audioPreset,
       audioPresetsEnabled,
       playSong,
+      playShuffled,
       playAt,
       addNext,
       addToQueue,
-      toggle,
-      next,
-      previous,
-      seek,
+      clearUpcoming,
+      removeFromQueue,
+      toggle: cast.casting ? cast.toggle : toggle,
+      next: cast.casting ? cast.next : next,
+      previous: cast.casting ? cast.previous : previous,
+      seek: cast.casting ? cast.seek : seek,
       cycleRepeat,
+      toggleShuffle,
       setAudioPreset,
-    }),
-    [
-      addNext,
-      addToQueue,
-      audioPreset,
-      audioPresetsEnabled,
-      current,
-      currentIndex,
-      cycleRepeat,
-      playbackError,
-      isBuffering,
-      isPlaying,
-      next,
-      playAt,
-      playSong,
-      previous,
-      queue,
-      repeat,
-      seek,
-      setAudioPreset,
-      toggle,
-    ],
-  );
+    };
+  }, [
+    addNext,
+    addToQueue,
+    clearUpcoming,
+    audioPreset,
+    audioPresetsEnabled,
+    cast.casting,
+    cast.currentIndex,
+    cast.isPlaying,
+    cast.next,
+    cast.previous,
+    cast.seek,
+    cast.toggle,
+    current,
+    currentIndex,
+    cycleRepeat,
+    playbackError,
+    isBuffering,
+    isPlaying,
+    next,
+    playAt,
+    playSong,
+    playShuffled,
+    previous,
+    queue,
+    removeFromQueue,
+    repeat,
+    shuffle,
+    seek,
+    setAudioPreset,
+    toggleShuffle,
+    toggle,
+  ]);
   const position = useMemo(
-    () => ({ currentTime, duration }),
-    [currentTime, duration],
+    () => ({
+      currentTime: cast.casting ? cast.currentTime : currentTime,
+      duration: cast.casting ? cast.duration : duration,
+    }),
+    [cast.casting, cast.currentTime, cast.duration, currentTime, duration],
   );
 
   return (
@@ -902,7 +1290,7 @@ export function PlayerProvider({ children }: PropsWithChildren) {
       <PlayerPositionContext.Provider value={position}>
         {children}
       </PlayerPositionContext.Provider>
-      {playbackSource && Platform.OS !== "android" ? (
+      {playbackSource && Platform.OS !== "android" && audioContext ? (
         <BrowserAudioOutput
           playbackSource={playbackSource}
           currentRate={effectivePreset.rate}

@@ -6,6 +6,7 @@ import {
   ContextMenuItem,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
+import { useSession } from "@/features/account/session-provider";
 import { usePlayer } from "@/features/player/player-context";
 import { getAlbumInfo, type LibraryAlbum } from "@parson/music-sdk";
 import { Disc3, Download, Play, UserRound } from "lucide-react";
@@ -27,6 +28,7 @@ export default function AlbumMenu({
   showArtist = true,
 }: AlbumMenuProps) {
   const player = usePlayer();
+  const { session } = useSession();
 
   const loadAlbum = () =>
     getAlbumInfo(album_id, false) as Promise<LibraryAlbum>;
@@ -62,10 +64,12 @@ export default function AlbumMenu({
             View album
           </Link>
         </ContextMenuItem>
-        <ContextMenuItem onSelect={() => void save()}>
-          <Download className="h-4 w-4" />
-          Download album
-        </ContextMenuItem>
+        {session?.role === "user" && (
+          <ContextMenuItem onSelect={() => void save()}>
+            <Download className="h-4 w-4" />
+            Download album
+          </ContextMenuItem>
+        )}
         {showArtist && (
           <ContextMenuItem asChild>
             <Link href={`/artist?id=${artist_id}`}>

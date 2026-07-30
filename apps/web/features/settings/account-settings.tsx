@@ -8,6 +8,7 @@ import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
 import { toast } from "sonner";
 import { PasswordForm } from "./password-form";
+import { UsernameForm } from "./username-form";
 
 export default function AccountSettings() {
   const { session, setSession } = useSession();
@@ -36,7 +37,9 @@ export default function AccountSettings() {
     <div className="space-y-8">
       <section>
         <h2 className="text-base font-semibold text-white">Username</h2>
-        <p className="mt-2 text-sm text-zinc-300">{session?.username}</p>
+        <div className="mt-4">
+          <UsernameForm />
+        </div>
       </section>
       <section className="border-t border-white/[0.08] pt-7">
         <h2 className="mb-4 text-base font-semibold text-white">

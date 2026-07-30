@@ -10,6 +10,9 @@ $workspace = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..\..")).Path
 $output = Join-Path $workspace $OutputDirectory
 $staging = Join-Path $workspace "target\windows-server-package"
 
+& node (Join-Path $workspace "tools\generate-third-party-notices.cjs")
+if ($LASTEXITCODE -ne 0) { throw "Generating third-party notices failed." }
+
 if (-not $SkipWebBuild) {
     & bun install --frozen-lockfile
     if ($LASTEXITCODE -ne 0) { throw "Installing web dependencies failed." }
@@ -19,6 +22,8 @@ if (-not $SkipWebBuild) {
 
 & cargo build --locked --release -p parson-music-windows-server
 if ($LASTEXITCODE -ne 0) { throw "Building Parson for Windows failed." }
+
+$builtExecutable = Join-Path $workspace "target\release\ParsonMusicServer.exe"
 
 foreach ($path in @($output, $staging)) {
     if (Test-Path -LiteralPath $path) {
@@ -31,15 +36,16 @@ foreach ($path in @($output, $staging)) {
 }
 New-Item -ItemType Directory -Path $output, $staging -Force | Out-Null
 
-Copy-Item -LiteralPath (Join-Path $workspace "target\release\ParsonMusicServer.exe") -Destination $staging
+Copy-Item -LiteralPath $builtExecutable -Destination $staging
 Copy-Item -LiteralPath (Join-Path $workspace "crates\windows-server\README.md") -Destination $staging
 Copy-Item -LiteralPath (Join-Path $workspace "LICENSE") -Destination $staging
+Copy-Item -LiteralPath (Join-Path $workspace "THIRD_PARTY_NOTICES.md") -Destination $staging
 
 $archive = Join-Path $output "ParsonMusicServer-$Version-win-x64.zip"
 Compress-Archive -Path (Join-Path $staging "*") -DestinationPath $archive -CompressionLevel Optimal
 
 $executable = Join-Path $output "ParsonMusicServer.exe"
-Copy-Item -LiteralPath (Join-Path $workspace "target\release\ParsonMusicServer.exe") -Destination $executable
+Copy-Item -LiteralPath $builtExecutable -Destination $executable
 $hash = (Get-FileHash -LiteralPath $executable -Algorithm SHA256).Hash.ToLowerInvariant()
 $size = (Get-Item -LiteralPath $executable).Length
 $manifest = [ordered]@{

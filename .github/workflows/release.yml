@@ -3,7 +3,7 @@ name: Publish Stable Release
 on:
   push:
     branches:
-      - stable
+      - master
 
 permissions:
   artifact-metadata: write
@@ -39,8 +39,8 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          if [[ "$GITHUB_REF_NAME" != "stable" ]]; then
-            echo "Stable releases must run from the stable branch." >&2
+          if [[ "$GITHUB_REF_NAME" != "master" ]]; then
+            echo "Stable releases must run from the master branch." >&2
             exit 1
           fi
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then

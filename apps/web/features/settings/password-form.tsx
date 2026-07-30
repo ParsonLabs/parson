@@ -1,6 +1,6 @@
 "use client";
 
-import { changePassword } from "@parson/music-sdk";
+import { changePassword, logout, validPasswordLength } from "@parson/music-sdk";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useRef, useState, type FormEvent } from "react";
@@ -16,8 +16,8 @@ export function PasswordForm() {
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (requestInFlight.current) return;
-    if (newPassword.length < 8) {
-      toast("New password must contain at least 8 characters.");
+    if (!validPasswordLength(newPassword)) {
+      toast("New password must contain between 8 and 256 characters.");
       return;
     }
     if (newPassword !== confirmPassword) {
@@ -31,7 +31,9 @@ export function PasswordForm() {
       setCurrentPassword("");
       setNewPassword("");
       setConfirmPassword("");
-      toast.success("Password updated.");
+      toast.success("Password updated. Sign in again.");
+      await logout().catch(() => {});
+      window.location.assign("/login");
     } catch {
       toast("Could not update password.");
     } finally {
@@ -63,6 +65,7 @@ export function PasswordForm() {
             value={newPassword}
             onChange={(event) => setNewPassword(event.target.value)}
             minLength={8}
+            maxLength={256}
             required
           />
         </label>
@@ -75,6 +78,7 @@ export function PasswordForm() {
             value={confirmPassword}
             onChange={(event) => setConfirmPassword(event.target.value)}
             minLength={8}
+            maxLength={256}
             required
           />
         </label>

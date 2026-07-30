@@ -3,6 +3,7 @@ import { describe, expect, test } from "bun:test";
 import {
   parseDiscoveryManifest,
   parseDiscoveryManifestResponse,
+  savedAddressWasReplaced,
   serverIdentityChanged,
 } from "./discovery-manifest";
 
@@ -89,5 +90,26 @@ describe("server identity transitions", () => {
         { origin: "https://music.test", instanceId: "library-b" },
       ),
     ).toBeTrue();
+  });
+
+  test("only requires replacement trust when a saved address changes identity", () => {
+    expect(
+      savedAddressWasReplaced(
+        { origin: "https://music.test", instanceId: "library-a" },
+        { origin: "https://music.test", instanceId: "library-b" },
+      ),
+    ).toBeTrue();
+    expect(
+      savedAddressWasReplaced(
+        { origin: "https://music.test", instanceId: "library-a" },
+        { origin: "https://other.test", instanceId: "library-b" },
+      ),
+    ).toBeFalse();
+    expect(
+      savedAddressWasReplaced(
+        { origin: "https://music.test", instanceId: null },
+        { origin: "https://music.test", instanceId: "library-b" },
+      ),
+    ).toBeFalse();
   });
 });

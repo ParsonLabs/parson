@@ -166,6 +166,8 @@ jobs:
           echo "ref=ghcr.io/parsonlabs/parson:${version}-${{ matrix.arch }}" >> "$GITHUB_OUTPUT"
       - name: Scan the exact release image
         uses: aquasecurity/trivy-action@v0.36.0
+        env:
+          TRIVY_PLATFORM: linux/${{ matrix.arch }}
         with:
           image-ref: ${{ steps.image.outputs.ref }}
           severity: HIGH,CRITICAL

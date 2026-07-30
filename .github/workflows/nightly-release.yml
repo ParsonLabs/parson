@@ -18,6 +18,8 @@ jobs:
   build:
     name: Build release packages
     uses: ./.github/workflows/test.yml
+    with:
+      release: true
 
   release:
     name: GitHub nightly release
@@ -28,6 +30,8 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
+      - name: Generate third-party notices
+        run: node tools/generate-third-party-notices.cjs
       - name: Download release packages
         uses: actions/download-artifact@v6
         with:
@@ -36,11 +40,20 @@ jobs:
           merge-multiple: true
       - name: Verify release package set
         run: |
+          cp LICENSE THIRD_PARTY_NOTICES.md artifacts/
           test "$(find artifacts -maxdepth 1 -type f -name '*.AppImage' | wc -l)" -eq 2
           test "$(find artifacts -maxdepth 1 -type f -name '*.deb' | wc -l)" -eq 2
           test "$(find artifacts -maxdepth 1 -type f -name '*-setup.exe' | wc -l)" -eq 2
           test "$(find artifacts -maxdepth 1 -type f -name '*-portable.exe' | wc -l)" -eq 2
-          test "$(find artifacts -maxdepth 1 -type f -name '*.apk' | wc -l)" -eq 3
+          test "$(find artifacts -maxdepth 1 -type f -name '*.dmg' | wc -l)" -eq 2
+          test "$(find artifacts -maxdepth 1 -type f -name 'Parson_*.zip' | wc -l)" -eq 2
+          test "$(find artifacts -maxdepth 1 -type f -name 'ParsonMusicServer-*-win-x64.zip' | wc -l)" -eq 1
+          test "$(find artifacts -maxdepth 1 -type f -name 'ParsonMusicServer.exe' | wc -l)" -eq 1
+          test "$(find artifacts -maxdepth 1 -type f -name 'ParsonMusicServer.exe.sha256' | wc -l)" -eq 1
+          test "$(find artifacts -maxdepth 1 -type f -name 'windows-server-update.json' | wc -l)" -eq 1
+          test "$(find artifacts -maxdepth 1 -type f -name 'LICENSE' | wc -l)" -eq 1
+          test "$(find artifacts -maxdepth 1 -type f -name 'THIRD_PARTY_NOTICES.md' | wc -l)" -eq 1
+          test "$(find artifacts -maxdepth 1 -type f | wc -l)" -eq 18
           find artifacts -maxdepth 1 -type f -print0 | sort -z | xargs -0 sha256sum > "$RUNNER_TEMP/SHA256SUMS"
           mv "$RUNNER_TEMP/SHA256SUMS" artifacts/SHA256SUMS
       - name: Publish rolling nightly release
@@ -56,5 +69,5 @@ jobs:
           gh release create nightly "${packages[@]}" \
             --target "$GITHUB_SHA" \
             --title "Parson Nightly" \
-            --notes "Automated nightly packages for Linux, Windows, and Android." \
+            --notes "Automated nightly desktop and server packages for Linux, macOS, and Windows." \
             --prerelease

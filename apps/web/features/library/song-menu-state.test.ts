@@ -1,5 +1,8 @@
 import { expect, test } from "bun:test";
-import { songMenuQueueItem } from "./song-menu-state";
+import {
+  songMenuEntityLinkVisibility,
+  songMenuQueueItem,
+} from "./song-menu-state";
 
 test("song menu queue actions preserve album artwork", () => {
   const item = songMenuQueueItem({
@@ -13,4 +16,19 @@ test("song menu queue actions preserve album artwork", () => {
   });
 
   expect(item.album.cover_url).toBe("/music/album/cover.jpg");
+});
+
+test("album track menus omit links to the page already in view", () => {
+  expect(songMenuEntityLinkVisibility("album")).toEqual({
+    album: false,
+    artist: false,
+  });
+  expect(songMenuEntityLinkVisibility("default")).toEqual({
+    album: true,
+    artist: true,
+  });
+  expect(songMenuEntityLinkVisibility("artist")).toEqual({
+    album: true,
+    artist: false,
+  });
 });

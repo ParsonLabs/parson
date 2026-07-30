@@ -2,12 +2,12 @@
 
 import { createPlaybackQueue } from "@parson/music-sdk";
 import type { Album, Artist, LibrarySong } from "@parson/music-sdk/types";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSession } from "@/features/account/session-provider";
 import { defaultCover } from "@/lib/images/default-cover";
 import getBaseURL from "@/lib/api/server-url";
 import streamUrl from "@/lib/api/stream-url";
-import { boundedMediaPosition, isCurrentTrackGeneration } from "./player-state";
+import { isCurrentTrackGeneration, setMediaPosition } from "./player-state";
 import { audioPresets } from "./audio-presets";
 import {
   blankAlbum,
@@ -29,8 +29,17 @@ import {
 import { useAudioEngine } from "./use-audio-engine";
 import type { Player } from "./player-api";
 import { usePlaybackTelemetry } from "./player-telemetry";
-import { storeQueue } from "./player-queue-storage";
+import { storeQueue, storeQueueSnapshot } from "./player-queue-storage";
 import { useQueueRestore } from "./use-queue-restore";
+import {
+  shouldAdvancePastFailedTrack,
+  shouldRetryWithCompatibilityStream,
+} from "./playback-recovery";
+import { syncQueuePosition } from "./queue-position-sync";
+import {
+  activeQueueIndexAfterMove,
+  moveQueueItem,
+} from "./player-queue-reorder";
 const cover = (path?: string) =>
   path
     ? `${getBaseURL()}/media/images/${encodeURIComponent(path)}`
@@ -47,6 +56,7 @@ export function usePlayerController() {
     isPlaying,
     muted,
     playAudioSource,
+    preloadAudioSource,
     resumeOnReconnect,
     setAudioPreset,
     setAudioSource,
@@ -72,6 +82,8 @@ export function usePlayerController() {
   const [queue, setQueueState] = useState<QueueItem[]>([]);
   const playbackGeneration = useRef(0);
   const radioRequest = useRef(0);
+  const compatibilityRetry = useRef(false);
+  const queuePositionSync = useRef<Promise<void>>(Promise.resolve());
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const loopingRef = useRef(false);
@@ -92,6 +104,7 @@ export function usePlayerController() {
     ) => {
       const normalized = normalizeSong(next, nextArtist, nextAlbum);
       const generation = ++playbackGeneration.current;
+      compatibilityRetry.current = false;
       activeSong.current = normalized;
       telemetry.current = {
         started: false,
@@ -144,45 +157,106 @@ export function usePlayerController() {
             index.current = 0;
             currentOrigin.current = items[0]?.origin ?? "manual";
             storeQueue(created.id);
+            storeQueueSnapshot(session?.sub, items, 0);
             setQueueState(items);
           })
           .catch(() => {});
       }
     },
-    [session?.bitrate, setAudioSource],
+    [session?.bitrate, session?.sub, setAudioSource],
   );
-  const setQueue = useCallback((items: QueueInput[]) => {
-    playbackGeneration.current += 1;
-    const normalized = manualQueueItems(items);
-    queueRef.current = normalized;
-    currentOrigin.current = "manual";
-    persistedQueue.current = null;
-    storeQueue(null);
-    index.current = 0;
-    setQueueState(normalized);
-  }, []);
-  const addToQueue = useCallback((items: QueueInput[]) => {
-    if (!items.length) return;
-    const additions = manualQueueItems(items);
-    const next = [...queueRef.current, ...additions];
-    queueRef.current = next;
-    persistedQueue.current = null;
-    storeQueue(null);
-    setQueueState(next);
-  }, []);
-  const addNextToQueue = useCallback((items: QueueInput[]) => {
-    if (!items.length) return;
-    const additions = manualQueueItems(items);
-    const insertionIndex = Math.min(index.current + 1, queueRef.current.length);
-    const next = [
-      ...queueRef.current.slice(0, insertionIndex),
-      ...additions,
-      ...queueRef.current.slice(insertionIndex),
-    ];
-    queueRef.current = next;
-    persistedQueue.current = null;
-    storeQueue(null);
-    setQueueState(next);
+  const setQueue = useCallback(
+    (items: QueueInput[]) => {
+      playbackGeneration.current += 1;
+      const normalized = manualQueueItems(items);
+      queueRef.current = normalized;
+      currentOrigin.current = "manual";
+      persistedQueue.current = null;
+      storeQueue(null);
+      index.current = 0;
+      storeQueueSnapshot(session?.sub, normalized, 0);
+      setQueueState(normalized);
+    },
+    [session?.sub],
+  );
+  const addToQueue = useCallback(
+    (items: QueueInput[]) => {
+      if (!items.length) return;
+      const additions = manualQueueItems(items);
+      const next = [...queueRef.current, ...additions];
+      queueRef.current = next;
+      persistedQueue.current = null;
+      storeQueue(null);
+      storeQueueSnapshot(session?.sub, next, index.current);
+      setQueueState(next);
+    },
+    [session?.sub],
+  );
+  const addNextToQueue = useCallback(
+    (items: QueueInput[]) => {
+      if (!items.length) return;
+      const additions = manualQueueItems(items);
+      const insertionIndex = Math.min(
+        index.current + 1,
+        queueRef.current.length,
+      );
+      const next = [
+        ...queueRef.current.slice(0, insertionIndex),
+        ...additions,
+        ...queueRef.current.slice(insertionIndex),
+      ];
+      queueRef.current = next;
+      persistedQueue.current = null;
+      storeQueue(null);
+      storeQueueSnapshot(session?.sub, next, index.current);
+      setQueueState(next);
+    },
+    [session?.sub],
+  );
+  const reorderQueue = useCallback(
+    (from: number, to: number) => {
+      if (!Number.isFinite(from) || !Number.isFinite(to)) return;
+      const sourceIndex = Math.trunc(from);
+      const destinationIndex = Math.trunc(to);
+      const items = queueRef.current;
+      if (
+        sourceIndex === destinationIndex ||
+        sourceIndex < 0 ||
+        destinationIndex < 0 ||
+        sourceIndex >= items.length ||
+        destinationIndex >= items.length
+      )
+        return;
+
+      const next = moveQueueItem(items, sourceIndex, destinationIndex);
+      const nextActiveIndex = activeQueueIndexAfterMove(
+        index.current,
+        sourceIndex,
+        destinationIndex,
+      );
+      queueRef.current = next;
+      index.current = nextActiveIndex;
+      currentOrigin.current =
+        next[nextActiveIndex]?.origin ?? currentOrigin.current;
+      persistedQueue.current = null;
+      storeQueue(null);
+      storeQueueSnapshot(session?.sub, next, nextActiveIndex);
+      setQueueState(next);
+    },
+    [session?.sub],
+  );
+  const persistQueuePosition = useCallback((position: number | null) => {
+    if (position === null || !persistedQueue.current) return;
+    const queueId = persistedQueue.current.id;
+    queuePositionSync.current = queuePositionSync.current
+      .then(async () => {
+        const active = persistedQueue.current;
+        if (!active || active.id !== queueId) return;
+        const saved = await syncQueuePosition(active, position);
+        if (persistedQueue.current?.id === saved.id)
+          persistedQueue.current = saved;
+      })
+      .catch(() => {});
   }, []);
 
   const playItem = useCallback(
@@ -191,11 +265,42 @@ export function usePlayerController() {
       if (!item) return false;
       index.current = nextIndex;
       currentOrigin.current = item.origin;
+      storeQueueSnapshot(session?.sub, queueRef.current, nextIndex);
+      persistQueuePosition(item.queuePosition);
       setSongCallback(item.song, item.artist, item.album);
       playAudioSource();
       return true;
     },
-    [playAudioSource, setSongCallback],
+    [persistQueuePosition, playAudioSource, session?.sub, setSongCallback],
+  );
+  const handleMediaError = useCallback(
+    (code: number | undefined) => {
+      const activeSongId = activeSong.current.id;
+      if (
+        activeSongId &&
+        shouldRetryWithCompatibilityStream(
+          code,
+          session?.bitrate ?? 0,
+          compatibilityRetry.current,
+        )
+      ) {
+        compatibilityRetry.current = true;
+        setError("Direct playback failed; retrying a compatible audio stream.");
+        setAudioSource(streamUrl(activeSongId, 192));
+        playAudioSource();
+        return true;
+      }
+      const hasNext =
+        queueRef.current.length > 0 &&
+        index.current + 1 < queueRef.current.length;
+      if (shouldAdvancePastFailedTrack(code, hasNext)) {
+        setError("The unavailable track was skipped.");
+        playItem(index.current + 1);
+        return true;
+      }
+      return false;
+    },
+    [playAudioSource, playItem, session?.bitrate, setAudioSource, setError],
   );
   const playNextSong = useCallback(() => {
     const element = audio.current;
@@ -234,9 +339,8 @@ export function usePlayerController() {
   }, [playAudioSource, setIsPlaying]);
   const handleTimeChange = useCallback((value: number | string) => {
     const element = audio.current;
-    const bounded = boundedMediaPosition(value, element?.duration);
+    const bounded = setMediaPosition(element, value, element?.duration);
     if (bounded === null) return;
-    if (element) element.currentTime = bounded;
     setCurrentTime(bounded);
   }, []);
   const toggleLoop = useCallback(() => {
@@ -297,12 +401,31 @@ export function usePlayerController() {
           };
           storeQueue(nextQueue.id);
           queueRef.current = items;
+          storeQueueSnapshot(session?.sub, items, 0);
           setQueueState(items);
           playItem(0);
         })
         .catch(() => {});
     }
-  }, [playAudioSource, playItem, sendPlaybackEvent, song.id]);
+  }, [playAudioSource, playItem, sendPlaybackEvent, session?.sub, song.id]);
+
+  useEffect(() => {
+    if (looping) {
+      preloadAudioSource(null);
+      return;
+    }
+    const next = queueRef.current[index.current + 1];
+    preloadAudioSource(
+      next ? streamUrl(next.song.id, session?.bitrate ?? 0) : null,
+    );
+  }, [
+    audioVersion,
+    looping,
+    preloadAudioSource,
+    queue,
+    session?.bitrate,
+    song.id,
+  ]);
 
   useTransientPlayerError(error, setError);
   useAudioEvents({
@@ -310,6 +433,7 @@ export function usePlayerController() {
     audioVersion,
     currentOrigin,
     handleEnded,
+    handleMediaError,
     resumeOnReconnect,
     sendPlaybackEvent,
     setCurrentTime,
@@ -368,7 +492,11 @@ export function usePlayerController() {
         );
         index.current = bounded;
         const item = queueRef.current[bounded];
-        if (item) currentOrigin.current = item.origin;
+        if (item) {
+          currentOrigin.current = item.origin;
+          storeQueueSnapshot(session?.sub, queueRef.current, bounded);
+          persistQueuePosition(item.queuePosition);
+        }
       },
       playAudioSource,
       togglePlayPause,
@@ -377,6 +505,7 @@ export function usePlayerController() {
       playQueueItem: (nextIndex) => {
         playItem(nextIndex);
       },
+      reorderQueue,
       handleTimeChange,
       setAudioVolume,
       toggleMute,
@@ -401,7 +530,10 @@ export function usePlayerController() {
       playNextSong,
       playPreviousSong,
       playItem,
+      reorderQueue,
+      persistQueuePosition,
       queue,
+      session?.sub,
       setAudioVolume,
       setAudioPreset,
       setQueue,

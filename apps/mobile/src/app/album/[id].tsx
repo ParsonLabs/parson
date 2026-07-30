@@ -1,7 +1,7 @@
 import { getAlbumInfo, type LibraryAlbum } from "@parson/music-sdk";
 import { useQuery } from "@tanstack/react-query";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { ArrowLeft, MoreHorizontal, Play } from "lucide-react-native";
+import { ArrowLeft, MoreHorizontal, Play, Shuffle } from "lucide-react-native";
 import { useState } from "react";
 import {
   ActivityIndicator,
@@ -20,6 +20,10 @@ import { Screen, SongRow } from "@/components/music-ui";
 import { palette } from "@/constants/colors";
 import { usePlayer } from "@/providers/player-provider";
 import { formatCollectionDuration } from "@/lib/format";
+import {
+  immediateBorderlessPressFeedback,
+  immediatePressFeedback,
+} from "@/lib/press-feedback";
 
 export default function AlbumScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -64,6 +68,7 @@ export default function AlbumScreen() {
       <SafeAreaView edges={["top"]} style={{ flex: 1 }}>
         <View style={styles.nav}>
           <Pressable
+            {...immediateBorderlessPressFeedback}
             accessibilityLabel="Back"
             accessibilityRole="button"
             hitSlop={12}
@@ -72,6 +77,7 @@ export default function AlbumScreen() {
             <ArrowLeft color="white" size={25} />
           </Pressable>
           <Pressable
+            {...immediateBorderlessPressFeedback}
             accessibilityLabel="More album actions"
             accessibilityRole="button"
             hitSlop={12}
@@ -90,6 +96,7 @@ export default function AlbumScreen() {
             />
             <Text style={styles.title}>{data.name}</Text>
             <Pressable
+              {...immediatePressFeedback}
               accessibilityLabel={`View ${artist}`}
               accessibilityRole="button"
               disabled={!data.artist_object?.id}
@@ -106,6 +113,7 @@ export default function AlbumScreen() {
             </Text>
             <View style={styles.actions}>
               <Pressable
+                {...immediatePressFeedback}
                 accessibilityLabel={albumPlaying ? "Pause album" : "Play album"}
                 accessibilityRole="button"
                 disabled={!data.songs.length}
@@ -123,6 +131,16 @@ export default function AlbumScreen() {
                   <Play color="black" fill="black" size={28} />
                 )}
               </Pressable>
+              <Pressable
+                {...immediateBorderlessPressFeedback}
+                accessibilityLabel={`Shuffle ${data.name}`}
+                accessibilityRole="button"
+                disabled={!data.songs.length}
+                style={styles.shuffle}
+                onPress={() => player.playShuffled(data.songs)}
+              >
+                <Shuffle color={palette.secondary} size={21} />
+              </Pressable>
             </View>
           </View>
           {data.songs.map((song, index) => (
@@ -132,6 +150,8 @@ export default function AlbumScreen() {
               queue={data.songs}
               index={index}
               showAlbum={false}
+              albumArtist={artist}
+              albumType={data.primary_type}
             />
           ))}
           {data.description ? (
@@ -187,9 +207,10 @@ const styles = StyleSheet.create({
   artist: { color: "white", fontWeight: "800", fontSize: 15 },
   meta: { color: palette.secondary, fontSize: 13, marginTop: 5 },
   actions: {
+    width: "100%",
     flexDirection: "row",
     alignItems: "center",
-    gap: 17,
+    justifyContent: "space-between",
     marginVertical: 22,
   },
   circle: {
@@ -197,6 +218,13 @@ const styles = StyleSheet.create({
     height: 56,
     borderRadius: 28,
     backgroundColor: "white",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  shuffle: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
     alignItems: "center",
     justifyContent: "center",
   },

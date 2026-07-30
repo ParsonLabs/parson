@@ -1,46 +1,43 @@
 import api, { isApiError } from "../core/http";
-import { deleteCookie, getCookie, setCookie } from "cookies-next";
-
-const ACCESS_TOKEN_COOKIE = "plm_accessToken";
-const REFRESH_TOKEN_COOKIE = "plm_refreshToken";
-
-function usesRemoteBrowserServer(): boolean {
-  try {
-    const configured = globalThis.localStorage?.getItem("server_url");
-    const current = globalThis.location?.origin;
-    return Boolean(
-      configured && current && new URL(configured).origin !== current,
-    );
-  } catch {
-    return false;
-  }
-}
-
-function persistRemoteBrowserTokens(response: AuthResponse): void {
-  if (!usesRemoteBrowserServer() || !response.status) return;
-  const secure = globalThis.location?.protocol === "https:";
-  if (response.access_token) {
-    setCookie(ACCESS_TOKEN_COOKIE, response.access_token, {
-      maxAge: 7 * 24 * 60 * 60,
-      path: "/",
-      sameSite: "lax",
-      secure,
-    });
-  }
-  if (response.refresh_token) {
-    setCookie(REFRESH_TOKEN_COOKIE, response.refresh_token, {
-      maxAge: 30 * 24 * 60 * 60,
-      path: "/",
-      sameSite: "lax",
-      secure,
-    });
-  }
-}
 
 export interface AuthCredentials {
   username: string;
   password: string;
   role?: string;
+}
+
+export function validPasswordLength(value: string): boolean {
+  const characters = Array.from(value).length;
+  return characters >= 8 && characters <= 256;
+}
+
+export function validUsername(value: string): boolean {
+  const characters = Array.from(value);
+  return (
+    characters.length >= 1 &&
+    characters.length <= 64 &&
+    value.trim() === value &&
+    characters.every((character) => {
+      const codePoint = character.codePointAt(0) ?? 0;
+      return codePoint > 0x1f && !(codePoint >= 0x7f && codePoint <= 0x9f);
+    })
+  );
+}
+
+export function isInsecureHttpOrigin(origin: string): boolean {
+  try {
+    const url = new URL(origin);
+    if (url.protocol !== "http:") return false;
+    const hostname = url.hostname.toLowerCase();
+    return !(
+      hostname === "localhost" ||
+      hostname === "::1" ||
+      hostname === "[::1]" ||
+      hostname.startsWith("127.")
+    );
+  } catch {
+    return false;
+  }
 }
 
 export interface AuthResponse {
@@ -77,6 +74,7 @@ export interface SessionResponse {
     bitrate: number;
     token_type: string;
     role: string;
+    session_id?: string;
   };
   message?: string;
   transient?: boolean;
@@ -87,6 +85,25 @@ export interface MediaTokenResponse {
   status: boolean;
   media_token?: string;
   expires_at?: number;
+}
+
+export interface PairingStartResponse {
+  pairingId: string;
+  secret: string;
+  code: string;
+  expiresIn: number;
+}
+
+export interface PairingStatusResponse extends AuthResponse {
+  pending?: boolean;
+  expired?: boolean;
+}
+
+export interface PairingApprovalResponse {
+  status: boolean;
+  deviceName?: string;
+  username?: string;
+  message?: string;
 }
 
 let mediaToken: string | null = null;
@@ -164,18 +181,58 @@ export async function login(
   options?: AuthRequestOptions,
 ): Promise<AuthResponse> {
   try {
-    const remoteBrowser = usesRemoteBrowserServer();
-    const response = (
+    return (
       await api.post<AuthResponse>("/auth/login", credentials, {
-        headers: authRequestHeaders(
-          remoteBrowser ? { ...options, native: true } : options,
-        ),
+        headers: authRequestHeaders(options),
       })
     ).data;
-    persistRemoteBrowserTokens(response);
-    return response;
   } catch (error) {
     return failure(error, "Sign in failed");
+  }
+}
+
+export async function startDevicePairing(
+  deviceName: string,
+): Promise<PairingStartResponse> {
+  return (
+    await api.post<PairingStartResponse>(
+      "/auth/pairing/start",
+      { device_name: deviceName },
+      { skipAuth: true },
+    )
+  ).data;
+}
+
+export async function checkDevicePairing(
+  pairingId: string,
+  secret: string,
+): Promise<PairingStatusResponse> {
+  try {
+    return (
+      await api.post<PairingStatusResponse>(
+        "/auth/pairing/status",
+        { pairing_id: pairingId, secret },
+        { skipAuth: true, timeout: 5_000 },
+      )
+    ).data;
+  } catch (error) {
+    const data = isApiError(error) ? error.response?.data : undefined;
+    if (typeof data === "object" && data) return data as PairingStatusResponse;
+    return failure(error, "Could not check pairing");
+  }
+}
+
+export async function approveDevicePairing(
+  code: string,
+): Promise<PairingApprovalResponse> {
+  try {
+    return (
+      await api.post<PairingApprovalResponse>("/auth/pairing/approve", {
+        code,
+      })
+    ).data;
+  } catch (error) {
+    return failure(error, "Could not approve this device");
   }
 }
 
@@ -191,24 +248,11 @@ export async function refreshToken(
   options?: AuthRequestOptions,
 ): Promise<AuthResponse> {
   try {
-    const remoteBrowser = usesRemoteBrowserServer();
-    const response = (
+    return (
       await api.post<AuthResponse>("/auth/refresh", undefined, {
-        headers: authRequestHeaders(
-          remoteBrowser
-            ? {
-                ...options,
-                native: true,
-                refreshToken:
-                  options?.refreshToken ||
-                  String(getCookie(REFRESH_TOKEN_COOKIE) || ""),
-              }
-            : options,
-        ),
+        headers: authRequestHeaders(options),
       })
     ).data;
-    persistRemoteBrowserTokens(response);
-    return response;
   } catch (error) {
     return failure(error, "Session refresh failed");
   }
@@ -219,7 +263,5 @@ export async function logout(): Promise<void> {
     await api.post("/auth/logout");
   } finally {
     clearMediaToken();
-    deleteCookie(ACCESS_TOKEN_COOKIE, { path: "/" });
-    deleteCookie(REFRESH_TOKEN_COOKIE, { path: "/" });
   }
 }

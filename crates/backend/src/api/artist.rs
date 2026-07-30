@@ -67,7 +67,7 @@ fn build_discography_sections(albums: &[Album]) -> Vec<ArtistDiscographySection>
         ("Soundtrack", "Soundtracks"),
         ("Promotional", "Promotional Releases"),
         ("Acapella", "Acapella"),
-        ("Bonus Audio", "Bonus Audio"),
+        ("Bonus Audio", "Bonus Releases"),
     ];
 
     let mut sections = Vec::new();
@@ -113,37 +113,29 @@ fn discography_section_matches(album: &Album, release_type: &str) -> bool {
         "Edition" => is_edition_primary_type(&album.primary_type),
         "Companion EP" => album.primary_type == "EP" && is_dvd_companion(album),
         "EP" => album.primary_type == "EP" && !is_dvd_companion(album),
-        "Remix Album" => album.primary_type == "Remix" && is_album_length_remix(album),
-        "Remix EP" => {
-            album.primary_type == "Remix" && !is_album_length_remix(album) && album.songs.len() > 3
-        }
-        "Remix Single" => {
-            album.primary_type == "Remix" && !is_album_length_remix(album) && album.songs.len() <= 3
-        }
+        "Remix Album" => album.primary_type == "Remix" && remix_release_form(album) == "Album",
+        "Remix EP" => album.primary_type == "Remix" && remix_release_form(album) == "EP",
+        "Remix Single" => album.primary_type == "Remix" && remix_release_form(album) == "Single",
         _ => album.primary_type == release_type,
     }
 }
 
-fn is_album_length_remix(album: &Album) -> bool {
-    distinct_base_song_titles(album) > 1
-        && (album.songs.len() >= 8
-            || album.songs.iter().map(|song| song.duration).sum::<f64>() >= 35.0 * 60.0)
-}
-
-fn distinct_base_song_titles(album: &Album) -> usize {
-    album
-        .songs
-        .iter()
-        .map(|song| {
-            song.name
-                .split(['(', '['])
-                .next()
-                .unwrap_or(&song.name)
-                .trim()
-                .to_ascii_lowercase()
-        })
-        .collect::<std::collections::HashSet<_>>()
-        .len()
+fn remix_release_form(album: &Album) -> &'static str {
+    let track_count = album.songs.len();
+    if track_count <= 3 {
+        return "Single";
+    }
+    let complete_duration = !album.songs.is_empty()
+        && album
+            .songs
+            .iter()
+            .all(|song| song.duration.is_finite() && song.duration > 0.0);
+    let total_duration = album.songs.iter().map(|song| song.duration).sum::<f64>();
+    if track_count <= 6 || complete_duration && total_duration < 30.0 * 60.0 {
+        "EP"
+    } else {
+        "Album"
+    }
 }
 
 fn is_dvd_companion(album: &Album) -> bool {
@@ -307,48 +299,40 @@ mod tests {
     }
 
     #[test]
-    fn full_length_remixes_are_separate_from_remix_singles_and_eps() {
-        let mut long_mix = album("continuous-mix", "Remix");
-        long_mix.songs = vec![
-            Song {
-                name: "Dance Mix 1".into(),
-                duration: 21.0 * 60.0,
-                ..Song::default()
-            },
-            Song {
-                name: "Dance Mix 2".into(),
-                duration: 21.0 * 60.0,
-                ..Song::default()
-            },
-        ];
-        let mut remix_album = album("remix-album", "Remix");
-        remix_album.songs = (0..11)
+    fn remix_sections_use_track_count_then_runtime_boundaries() {
+        let mut remix_album = album("seven-track-album", "Remix");
+        remix_album.songs = (0..7)
             .map(|index| Song {
-                name: format!("Song {index}"),
+                name: format!("Recording {index}"),
                 ..Song::default()
             })
             .collect();
-        let mut remix_ep = album("remix-ep", "Remix");
-        remix_ep.songs = vec![Song::default(); 4];
-        let mut long_variant_ep = album("long-variant-ep", "Remix");
-        long_variant_ep.songs = (0..10)
+        let mut long_remix_album = album("long-runtime-album", "Remix");
+        long_remix_album.songs = (0..7)
             .map(|index| Song {
-                name: format!("Lead Song (Mix {index})"),
+                name: format!("Recording {index}"),
+                duration: 5.0 * 60.0,
+                ..Song::default()
+            })
+            .collect();
+        let mut remix_ep = album("six-track-ep", "Remix");
+        remix_ep.songs = vec![Song::default(); 6];
+        let mut short_runtime_ep = album("short-runtime-ep", "Remix");
+        short_runtime_ep.songs = (0..7)
+            .map(|index| Song {
+                name: format!("Recording {index}"),
                 duration: 4.0 * 60.0,
                 ..Song::default()
             })
             .collect();
         let mut remix_single = album("remix-single", "Remix");
-        remix_single.songs = vec![Song {
-            name: "Lead Song (Club Remix)".into(),
-            ..Song::default()
-        }];
+        remix_single.songs = vec![Song::default(); 3];
 
         let sections = build_discography_sections(&[
-            long_mix,
             remix_album,
+            long_remix_album,
             remix_ep,
-            long_variant_ep,
+            short_runtime_ep,
             remix_single,
         ]);
         assert_eq!(sections[0].key, "remix_album");
@@ -358,7 +342,7 @@ mod tests {
                 .iter()
                 .map(|album| album.id.as_str())
                 .collect::<Vec<_>>(),
-            ["continuous-mix", "remix-album"]
+            ["seven-track-album", "long-runtime-album"]
         );
         assert_eq!(sections[1].key, "remix_ep");
         assert_eq!(
@@ -367,7 +351,7 @@ mod tests {
                 .iter()
                 .map(|album| album.id.as_str())
                 .collect::<Vec<_>>(),
-            ["remix-ep", "long-variant-ep"]
+            ["six-track-ep", "short-runtime-ep"]
         );
         assert_eq!(sections[2].key, "remix_single");
         assert_eq!(sections[2].albums[0].id, "remix-single");
@@ -382,6 +366,67 @@ mod tests {
         let sections = build_discography_sections(&[companion]);
         assert_eq!(sections[0].key, "companion_ep");
         assert_eq!(sections[0].title, "DVD Companion EPs");
+    }
+
+    #[test]
+    fn bonus_audio_uses_a_natural_section_title() {
+        let sections = build_discography_sections(&[album("studio-extras", "Bonus Audio")]);
+        assert_eq!(sections[0].key, "bonus_audio");
+        assert_eq!(sections[0].title, "Bonus Releases");
+    }
+
+    #[test]
+    fn inferred_version_bundles_reach_the_matching_discography_sections() {
+        let release = |id: &str, tracks: &[&str]| Album {
+            id: id.into(),
+            name: "Lead Recording".into(),
+            songs: tracks
+                .iter()
+                .map(|name| Song {
+                    name: (*name).into(),
+                    path: format!("/music/{id}/{name}.flac"),
+                    ..Song::default()
+                })
+                .collect(),
+            ..Album::default()
+        };
+        let response = response_artist(Artist {
+            id: "artist".into(),
+            albums: vec![
+                release(
+                    "remix-ep",
+                    &[
+                        "Lead Recording (Radio Edit)",
+                        "Lead Recording (Club Remix)",
+                        "Lead Recording (Dub Mix)",
+                        "Lead Recording (Extended Mix)",
+                        "Lead Recording (Instrumental Mix)",
+                    ],
+                ),
+                release(
+                    "remix-single",
+                    &[
+                        "Lead Recording (Club Remix)",
+                        "Lead Recording (Radio Remix)",
+                    ],
+                ),
+                release("single", &["First Recording", "Second Recording"]),
+            ],
+            ..Artist::default()
+        });
+
+        assert_eq!(
+            response
+                .discography
+                .iter()
+                .map(|section| (section.key.as_str(), section.albums[0].id.as_str()))
+                .collect::<Vec<_>>(),
+            [
+                ("single", "single"),
+                ("remix_ep", "remix-ep"),
+                ("remix_single", "remix-single"),
+            ]
+        );
     }
 
     #[test]

@@ -6,20 +6,30 @@ import { usePlayer } from "@/features/player/player-context";
 import {
   deletePlaylist,
   getPlaylist,
+  reorderPlaylistSongs,
   updatePlaylist,
   removeSongFromPlaylist,
   type PlaylistResponse,
   type PlaylistSummary,
 } from "@parson/music-sdk";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Loader2 } from "lucide-react";
+import { ArrowLeft, Loader2 } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useMemo, useState, type FormEvent } from "react";
 import { toast } from "sonner";
+import LikedSongsDetails from "./liked-songs-details";
 import { PlaylistActions, PlaylistTracks } from "./playlist-components";
+import { formatPlaylistDuration } from "./playlist-duration";
+import { shuffledIndices } from "./playlist-playback";
 
 export default function PlaylistDetails() {
+  const searchParams = useSearchParams();
+  if (searchParams.get("system") === "liked") return <LikedSongsDetails />;
+  return <UserPlaylistDetails />;
+}
+
+function UserPlaylistDetails() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const queryClient = useQueryClient();
@@ -98,27 +108,86 @@ export default function PlaylistDetails() {
     },
     onError: () => toast("Could not delete the playlist."),
   });
+  const reorder = useMutation({
+    mutationFn: (orderedSongIds: string[]) =>
+      reorderPlaylistSongs(id, orderedSongIds),
+    onMutate: async (orderedSongIds) => {
+      await queryClient.cancelQueries({ queryKey: ["playlist", id] });
+      const previous = queryClient.getQueryData<PlaylistResponse>([
+        "playlist",
+        id,
+      ]);
+      queryClient.setQueryData<PlaylistResponse>(
+        ["playlist", id],
+        (current) => {
+          if (!current) return current;
+          const songsById = new Map(
+            current.songs.map((song) => [song.id, song] as const),
+          );
+          const infoById = new Map(
+            current.song_infos.map((info) => [info.song_id, info] as const),
+          );
+          return {
+            ...current,
+            songs: orderedSongIds.flatMap((songId) => {
+              const song = songsById.get(songId);
+              return song ? [song] : [];
+            }),
+            song_infos: orderedSongIds.flatMap((songId) => {
+              const info = infoById.get(songId);
+              return info ? [info] : [];
+            }),
+          };
+        },
+      );
+      return { previous };
+    },
+    onError: (_error, _orderedSongIds, context) => {
+      if (context?.previous) {
+        queryClient.setQueryData(["playlist", id], context.previous);
+      }
+      toast("Could not save the new song order.");
+    },
+    onSuccess: () => {
+      const current = queryClient.getQueryData<PlaylistResponse>([
+        "playlist",
+        id,
+      ]);
+      queryClient.setQueryData<PlaylistSummary[]>(["playlists"], (playlists) =>
+        playlists?.map((item) =>
+          item.id === id
+            ? { ...item, cover_songs: current?.songs.slice(0, 4) ?? [] }
+            : item,
+        ),
+      );
+    },
+    onSettled: async () => {
+      await queryClient.invalidateQueries({
+        queryKey: ["playlist", id],
+        refetchType: "none",
+      });
+      await queryClient.invalidateQueries({
+        queryKey: ["playlists"],
+        refetchType: "none",
+      });
+    },
+  });
   const player = usePlayer();
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [editName, setEditName] = useState("");
-  const [editDescription, setEditDescription] = useState("");
   const editPlaylist = useMutation({
     mutationFn: () =>
       updatePlaylist(id, {
         name: editName.trim(),
-        description: editDescription.trim(),
       }),
     onSuccess: () => {
       const name = editName.trim();
-      const description = editDescription.trim();
       queryClient.setQueryData<PlaylistResponse>(["playlist", id], (current) =>
-        current ? { ...current, name, description } : current,
+        current ? { ...current, name } : current,
       );
       queryClient.setQueryData<PlaylistSummary[]>(["playlists"], (current) =>
-        current?.map((item) =>
-          item.id === id ? { ...item, name, description } : item,
-        ),
+        current?.map((item) => (item.id === id ? { ...item, name } : item)),
       );
       setEditOpen(false);
       toast.success("Playlist updated");
@@ -142,6 +211,32 @@ export default function PlaylistDetails() {
       })),
     );
     player.setCurrentSongIndex(index);
+    if (player.song.id === selected.id) {
+      player.togglePlayPause();
+      return;
+    }
+    player.setSongCallback(
+      selected,
+      selected.artist_object,
+      selected.album_object,
+    );
+    player.playAudioSource();
+  };
+  const shuffle = () => {
+    const songs = playlist.data?.songs ?? [];
+    const order = shuffledIndices(songs.length);
+    const firstIndex = order[0];
+    if (firstIndex === undefined) return;
+    const shuffled = order.map((index) => songs[index]!);
+    const selected = shuffled[0]!;
+    player.setQueue(
+      shuffled.map((song) => ({
+        song,
+        artist: song.artist_object,
+        album: song.album_object,
+      })),
+    );
+    player.setCurrentSongIndex(0);
     player.setSongCallback(
       selected,
       selected.artist_object,
@@ -181,15 +276,17 @@ export default function PlaylistDetails() {
   );
   const openEdit = () => {
     setEditName(playlist.data.name);
-    setEditDescription(playlist.data.description ?? "");
     setEditOpen(true);
   };
   return (
     <section className="mx-auto w-full max-w-[1000px] px-5 py-9 pb-36 sm:px-7">
       <Link
-        className="text-sm text-zinc-500 hover:text-white"
+        className="inline-flex select-none items-center gap-2 text-sm text-zinc-500 hover:text-white"
+        draggable={false}
         href="/library?view=playlists"
+        onDragStart={(event) => event.preventDefault()}
       >
+        <ArrowLeft aria-hidden="true" className="h-4 w-4" />
         Playlists
       </Link>
       <header className="mt-8 flex flex-col gap-6 sm:flex-row sm:items-end">
@@ -198,10 +295,7 @@ export default function PlaylistDetails() {
           songs={tracks}
         />
         <div className="min-w-0 flex-1">
-          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-zinc-500">
-            Playlist
-          </p>
-          <h1 className="mt-2 break-words text-4xl font-black text-white sm:text-5xl">
+          <h1 className="break-words text-4xl font-black text-white sm:text-5xl">
             {playlist.data.name}
           </h1>
           {playlist.data.description && (
@@ -211,7 +305,7 @@ export default function PlaylistDetails() {
           )}
           <p className="mt-3 text-sm text-zinc-500">
             {songIds.length} {songIds.length === 1 ? "song" : "songs"} ·{" "}
-            {formatTotalDuration(totalDuration)}
+            {formatPlaylistDuration(totalDuration)}
           </p>
         </div>
       </header>
@@ -219,7 +313,6 @@ export default function PlaylistDetails() {
       <PlaylistActions
         deleteOpen={deleteOpen}
         deletePending={removePlaylist.isPending}
-        editDescription={editDescription}
         editName={editName}
         editOpen={editOpen}
         editPending={editPlaylist.isPending}
@@ -227,30 +320,24 @@ export default function PlaylistDetails() {
         name={playlist.data.name}
         onDelete={() => removePlaylist.mutate()}
         onDeleteOpenChange={setDeleteOpen}
-        onEditDescriptionChange={setEditDescription}
         onEditNameChange={setEditName}
         onEditOpenChange={setEditOpen}
         onOpenEdit={openEdit}
         onPlay={() => playFrom(0)}
+        onShuffle={shuffle}
         onSubmitEdit={submitEdit}
       />
       <PlaylistTracks
+        activeSongId={player.song.id}
+        isPlaying={player.isPlaying}
         onPlay={playFrom}
         onRemove={(songId) => remove.mutate(songId)}
+        onReorder={(orderedSongIds) => reorder.mutate(orderedSongIds)}
+        reorderPending={reorder.isPending}
         tracks={tracks}
       />
     </section>
   );
-}
-
-function formatTotalDuration(seconds: number) {
-  if (!Number.isFinite(seconds) || seconds <= 0) return "0 min";
-  const wholeSeconds = Math.round(seconds);
-  const hours = Math.floor(wholeSeconds / 3600);
-  const minutes = Math.floor((wholeSeconds % 3600) / 60);
-  if (hours > 0) return `${hours} hr ${minutes} min`;
-  const remainder = wholeSeconds % 60;
-  return `${minutes}:${remainder.toString().padStart(2, "0")}`;
 }
 
 function PlaylistMessage({
@@ -274,7 +361,15 @@ function PlaylistMessage({
             </Button>
           )}
           <Button asChild variant="ghost">
-            <Link href="/library?view=playlists">Back to playlists</Link>
+            <Link
+              className="select-none"
+              draggable={false}
+              href="/library?view=playlists"
+              onDragStart={(event) => event.preventDefault()}
+            >
+              <ArrowLeft aria-hidden="true" className="h-4 w-4" />
+              Playlists
+            </Link>
           </Button>
         </div>
       </div>

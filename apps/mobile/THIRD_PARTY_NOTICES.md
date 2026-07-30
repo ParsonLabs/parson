@@ -31,3 +31,8 @@ and relinking instructions are maintained at:
 
 - https://github.com/software-mansion/react-native-audio-api/blob/0.13.2/THIRD_PARTY.md
 - https://github.com/software-mansion/react-native-audio-api/tree/0.13.2/packages/react-native-audio-api/common/cpp/audioapi/libs/ffmpeg
+
+Parson Mobile also uses `react-native-google-cast` 4.9.1, Copyright (c)
+2018-2022 Petr Bela and contributors, under the same MIT License terms
+reproduced above. Google Cast and Google Play services components are provided
+under their respective Google SDK terms.

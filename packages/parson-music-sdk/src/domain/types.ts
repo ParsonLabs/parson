@@ -143,11 +143,14 @@ export interface AlbumInfo {
   name: string;
   cover_url?: string;
   first_release_date?: string;
+  primary_type?: string;
 }
 
 export interface SongInfo {
   id: string;
   name: string;
+  artist?: string;
+  contributing_artists?: string[];
   duration: number;
   path: string;
 }

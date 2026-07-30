@@ -25,6 +25,7 @@ apps/mobile/ios/
 *.sqlite
 *.sqlite3
 *.pem
+nas-music-folder/
 
 *.log
 *.lockb

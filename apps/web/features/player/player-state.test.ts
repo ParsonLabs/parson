@@ -4,6 +4,7 @@ import {
   boundedVolume,
   isCurrentTrackGeneration,
   queueIndexForPersistedPosition,
+  setMediaPosition,
 } from "./player-state";
 
 describe("player numeric boundaries", () => {
@@ -21,6 +22,25 @@ describe("player numeric boundaries", () => {
     expect(boundedVolume(50)).toBe(0.5);
     expect(boundedMediaPosition("12.5", 120)).toBe(12.5);
     expect(boundedMediaPosition(180, Number.NaN)).toBe(180);
+  });
+
+  test("supports very long tracks and contains media-element seek failures", () => {
+    const longDuration = 60 * 60 * 24 * 365;
+    const media = { currentTime: 0 };
+    expect(setMediaPosition(media, longDuration - 0.001, longDuration)).toBe(
+      longDuration - 0.001,
+    );
+    expect(media.currentTime).toBe(longDuration - 0.001);
+
+    const unavailableMedia = {
+      get currentTime() {
+        return 0;
+      },
+      set currentTime(_value: number) {
+        throw new DOMException("not seekable", "InvalidStateError");
+      },
+    };
+    expect(setMediaPosition(unavailableMedia, 0.001, longDuration)).toBeNull();
   });
 });
 

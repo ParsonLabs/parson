@@ -3,18 +3,28 @@
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
+  InputOTP,
+  InputOTPGroup,
+  InputOTPSeparator,
+  InputOTPSlot,
+} from "@/components/ui/input-otp";
+import {
   connectToServer,
   normalizeServerOrigin,
 } from "@/features/server/server-connection";
 import {
+  approveDevicePairing,
   discoverNearbyServers,
   type DiscoveredServer,
 } from "@parson/music-sdk";
-import { Loader2, RefreshCw, Radio } from "lucide-react";
+import { REGEXP_ONLY_DIGITS } from "input-otp";
+import { Loader2, RefreshCw, Radio, Smartphone } from "lucide-react";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { toast } from "sonner";
 
 export default function ServerConnectionPanel() {
+  const [pairingCode, setPairingCode] = useState("");
+  const [pairing, setPairing] = useState(false);
   const [manualServer, setManualServer] = useState("");
   const [servers, setServers] = useState<DiscoveredServer[]>([]);
   const [discoveryState, setDiscoveryState] = useState<
@@ -50,8 +60,74 @@ export default function ServerConnectionPanel() {
     connect(origin);
   }
 
+  async function approvePairing(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const code = pairingCode.replace(/\D/g, "");
+    if (code.length !== 6 || pairing) return;
+    setPairing(true);
+    try {
+      const response = await approveDevicePairing(code);
+      if (!response.status) {
+        toast(response.message || "That pairing code is invalid or expired.");
+        return;
+      }
+      setPairingCode("");
+      toast.success(
+        `${response.deviceName || "Android device"} is connected to ${response.username || "this account"}.`,
+      );
+    } finally {
+      setPairing(false);
+    }
+  }
+
   return (
-    <section>
+    <section className="space-y-5">
+      <form
+        className="rounded-lg border border-white/10 p-4"
+        onSubmit={approvePairing}
+      >
+        <div className="flex items-start gap-3">
+          <Smartphone className="mt-0.5 h-5 w-5 text-zinc-400" />
+          <div>
+            <h2 className="text-sm font-medium text-zinc-200">
+              Pair an Android device
+            </h2>
+            <p className="mt-1 text-sm leading-5 text-zinc-500">
+              Open Parson on Android, choose this library, then enter the code
+              shown there. The phone will use your current account.
+            </p>
+          </div>
+        </div>
+        <div className="mt-4 flex flex-wrap items-center gap-3 pl-8">
+          <InputOTP
+            aria-label="Six-digit pairing code"
+            autoComplete="one-time-code"
+            disabled={pairing}
+            inputMode="numeric"
+            maxLength={6}
+            onChange={(value) =>
+              setPairingCode(value.replace(/\D/g, "").slice(0, 6))
+            }
+            pattern={REGEXP_ONLY_DIGITS}
+            value={pairingCode}
+          >
+            <InputOTPGroup>
+              <InputOTPSlot index={0} />
+              <InputOTPSlot index={1} />
+              <InputOTPSlot index={2} />
+            </InputOTPGroup>
+            <InputOTPSeparator />
+            <InputOTPGroup>
+              <InputOTPSlot index={3} />
+              <InputOTPSlot index={4} />
+              <InputOTPSlot index={5} />
+            </InputOTPGroup>
+          </InputOTP>
+          <Button disabled={pairingCode.length !== 6 || pairing} type="submit">
+            {pairing ? <Loader2 className="h-4 w-4 animate-spin" /> : "Pair"}
+          </Button>
+        </div>
+      </form>
       <div className="overflow-hidden rounded-lg border border-white/10">
         <div className="flex items-center justify-between gap-3">
           <h2 className="px-4 py-3 text-sm font-medium text-zinc-200">

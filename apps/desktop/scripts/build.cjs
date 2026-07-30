@@ -1,6 +1,9 @@
 const { spawnSync } = require("node:child_process");
 const { existsSync, readdirSync, rmSync } = require("node:fs");
 const path = require("node:path");
+const {
+  generateThirdPartyNotices,
+} = require("../../../tools/generate-third-party-notices.cjs");
 
 const desktopDirectory = path.resolve(__dirname, "..");
 const outputDirectory = path.resolve(
@@ -15,6 +18,8 @@ const architecture =
     : requestedArchitecture === "aarch64"
       ? "arm64"
       : requestedArchitecture;
+
+generateThirdPartyNotices();
 
 if (architecture !== "x64" && architecture !== "arm64") {
   throw new Error(
@@ -66,9 +71,24 @@ if (targetPlatform === "linux") {
     "portable",
     `--${architecture}`,
   ];
-  if (process.env.PARSON_REQUIRE_CODE_SIGNING === "true") {
-    args.push("--config.forceCodeSigning=true");
-  }
+  run(process.execPath, args);
+} else if (targetPlatform === "darwin") {
+  cleanOutput(
+    (name) =>
+      (name.startsWith("mac") && !name.endsWith(".dmg")) ||
+      name.endsWith(".dmg") ||
+      name.endsWith(".zip"),
+  );
+  const args = [
+    require.resolve("electron-builder/cli.js"),
+    "--mac",
+    "dmg",
+    "zip",
+    `--${architecture}`,
+    "--config.mac.identity=null",
+    "--config.mac.hardenedRuntime=false",
+    "--config.mac.notarize=false",
+  ];
   run(process.execPath, args);
 } else {
   throw new Error(`Desktop packaging is not configured for ${targetPlatform}.`);

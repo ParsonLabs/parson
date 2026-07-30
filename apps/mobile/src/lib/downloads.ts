@@ -1,6 +1,7 @@
 import type { LibraryAlbum, LibrarySong } from "@parson/music-sdk";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Directory, File, Paths } from "expo-file-system";
+import { downloadAsync as legacyDownloadAsync } from "expo-file-system/legacy";
 import { useSyncExternalStore } from "react";
 
 import { freshAuthorizationHeaders, streamUrl } from "@/lib/runtime";
@@ -228,6 +229,35 @@ async function rememberDownload(
   }
 }
 
+async function downloadToFile(url: string, destination: File) {
+  const headers = await freshAuthorizationHeaders();
+  try {
+    return await File.downloadFileAsync(url, destination, {
+      headers,
+      idempotent: true,
+    });
+  } catch (modernError) {
+    try {
+      if (destination.exists) destination.delete();
+      const fallback = await legacyDownloadAsync(url, destination.uri, {
+        headers,
+      });
+      if (fallback.status < 200 || fallback.status >= 300) {
+        throw new Error(`Download returned HTTP ${fallback.status}.`);
+      }
+      return new File(fallback.uri);
+    } catch (legacyError) {
+      const modernReason =
+        modernError instanceof Error ? modernError.message : "unknown error";
+      const legacyReason =
+        legacyError instanceof Error ? legacyError.message : "unknown error";
+      throw new Error(
+        `Native download failed (${modernReason}); compatibility download failed (${legacyReason}).`,
+      );
+    }
+  }
+}
+
 export async function removeDownload(songId: string) {
   await removeDownloads([songId]);
 }
@@ -253,7 +283,12 @@ export async function removeDownloads(songIds: string[]) {
 export async function downloadAlbum(
   name: string,
   songs: LibrarySong[],
-  onProgress?: (done: number) => void,
+  onProgress?: (progress: {
+    downloaded: number;
+    failed: number;
+    processed: number;
+    total: number;
+  }) => void,
 ) {
   const albumId = songs[0]?.album_object?.id;
   const artist = songs[0]?.artist;
@@ -269,27 +304,57 @@ export async function downloadAlbum(
       }
     : undefined;
   directory.create({ intermediates: true, idempotent: true });
+  if (albumDownload) {
+    songs.forEach((song) => {
+      const record = downloaded.get(song.id);
+      if (record) {
+        downloaded.set(song.id, { ...record, albumDownload, song });
+      }
+    });
+  }
+  let completed = songs.filter((song) => isSongDownloaded(song.id)).length;
+  let failed = 0;
+  let processed = completed;
+  const report = () =>
+    onProgress?.({
+      downloaded: completed,
+      failed,
+      processed,
+      total: songs.length,
+    });
+  report();
   try {
     for (let index = 0; index < songs.length; index += 1) {
       const song = songs[index];
-      if (!song) continue;
+      if (!song || isSongDownloaded(song.id)) continue;
       const destination = new File(
         directory,
         albumTrackFilename(index, song.name, song.id, song.path),
       );
-      const saved = await File.downloadFileAsync(
-        streamUrl(song.id),
-        destination,
-        { headers: await freshAuthorizationHeaders(), idempotent: true },
-      );
-      await rememberDownload(song, saved.uri, false, albumDownload);
-      onProgress?.(index + 1);
+      try {
+        const saved = await downloadToFile(streamUrl(song.id), destination);
+        await rememberDownload(song, saved.uri, false, albumDownload);
+        completed += 1;
+      } catch {
+        failed += 1;
+        try {
+          if (destination.exists) destination.delete();
+        } catch {}
+      } finally {
+        processed += 1;
+        report();
+      }
     }
   } finally {
     await persist();
     changed();
   }
-  return directory.uri;
+  return {
+    directoryUri: directory.uri,
+    downloaded: completed,
+    failed,
+    total: songs.length,
+  };
 }
 
 export async function downloadSong(song: LibrarySong) {
@@ -299,10 +364,7 @@ export async function downloadSong(song: LibrarySong) {
     directory,
     songFilename(song.artist, song.name, song.id, song.path),
   );
-  const saved = await File.downloadFileAsync(streamUrl(song.id), destination, {
-    headers: await freshAuthorizationHeaders(),
-    idempotent: true,
-  });
+  const saved = await downloadToFile(streamUrl(song.id), destination);
   await rememberDownload(song, saved.uri);
   return saved;
 }

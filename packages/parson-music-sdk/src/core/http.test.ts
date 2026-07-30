@@ -72,6 +72,28 @@ test("protected 401 responses refresh without inspecting HttpOnly cookies", () =
   ).toBeFalse();
 });
 
+test("browser sessions retry after an HttpOnly cookie refresh without a JS token", async () => {
+  let requests = 0;
+  globalThis.fetch = mock(async (input, init) => {
+    requests += 1;
+    expect(new Headers(init?.headers).has("authorization")).toBeFalse();
+    const url = String(input);
+    if (url.endsWith("/auth/refresh")) {
+      return Response.json({ status: true, access_token: "" });
+    }
+    if (requests === 1) {
+      return Response.json({ message: "expired" }, { status: 401 });
+    }
+    return Response.json({ status: true });
+  }) as typeof fetch;
+
+  const response = await api.get("/library", {
+    baseURL: "https://music.test/api/v1",
+  });
+  expect(response.status).toBe(200);
+  expect(requests).toBe(3);
+});
+
 test("auth routing uses the URL path rather than query-string contents", () => {
   expect(
     isAuthLifecycleURL("https://music.test/api/v1/auth/session"),
@@ -92,6 +114,22 @@ test("session validation sends the native runtime bearer token", async () => {
     expect(new Headers(init?.headers).get("authorization")).toBe(
       `Bearer header.${payload}.signature`,
     );
+    return Response.json({ status: true });
+  }) as typeof fetch;
+
+  await api.get("/auth/session", { baseURL: "https://music.test/api/v1" });
+});
+
+test("native runtimes can opt out of browser cookie credentials", async () => {
+  const payload = btoa(
+    JSON.stringify({ exp: Math.floor(Date.now() / 1000) + 300 }),
+  );
+  configureApiRuntime({
+    getAccessToken: () => `header.${payload}.signature`,
+    getCredentials: () => "omit",
+  });
+  globalThis.fetch = mock(async (_input, init) => {
+    expect(init?.credentials).toBe("omit");
     return Response.json({ status: true });
   }) as typeof fetch;
 

@@ -11,7 +11,7 @@ import {
   View,
 } from "react-native";
 import { useEffect, useRef, useState } from "react";
-import { isInsecureHttpOrigin, validPasswordLength } from "@parson/music-sdk";
+import { validPasswordLength } from "@parson/music-sdk";
 
 import { palette } from "@/constants/colors";
 import { useLibraryDiscovery } from "@/hooks/use-library-discovery";
@@ -53,9 +53,6 @@ export default function EntryScreen() {
     session.phase === "connecting" ||
     session.phase === "indexing";
   const invalidAccount = !username.trim() || !validPasswordLength(password);
-  const insecureConnection = Boolean(
-    session.origin && isInsecureHttpOrigin(session.origin),
-  );
   const libraryTarget =
     libraryPath.trim() ||
     session.setupStatus?.suggested_library_path?.trim() ||
@@ -122,12 +119,6 @@ export default function EntryScreen() {
           />
           <Text style={styles.heading}>{heading}</Text>
           {detail ? <Text style={styles.detail}>{detail}</Text> : null}
-          {insecureConnection ? (
-            <Text accessibilityRole="alert" style={styles.securityWarning}>
-              This HTTP connection is not private. Use it only on a network you
-              trust.
-            </Text>
-          ) : null}
           {busy && (
             <ActivityIndicator
               color="white"
@@ -527,14 +518,6 @@ const styles = StyleSheet.create({
     lineHeight: 22,
     marginTop: 10,
     maxWidth: 330,
-  },
-  securityWarning: {
-    color: "#fcd34d",
-    textAlign: "center",
-    fontSize: 13,
-    lineHeight: 19,
-    marginTop: 14,
-    maxWidth: 340,
   },
   spinner: { marginTop: 25 },
   form: { width: "100%", gap: 12, marginTop: 28 },

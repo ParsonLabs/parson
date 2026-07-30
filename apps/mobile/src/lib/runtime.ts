@@ -2,6 +2,7 @@ import {
   configureApiRuntime,
   getFreshAuthorizationHeaders,
   refreshToken as refreshTokenRequest,
+  signImagePath,
 } from "@parson/music-sdk";
 
 type RuntimeSnapshot = {
@@ -22,33 +23,41 @@ const runtime: RuntimeSnapshot = {
   tokenChanged: null,
 };
 let sessionGeneration = 0;
+const isBrowserRuntime =
+  typeof window !== "undefined" && typeof document !== "undefined";
 
 configureApiRuntime({
   getAccessToken: () => runtime.token,
+  // Native authentication is bearer-token only. Reusing an old WebView cookie
+  // can otherwise make API calls appear signed in after the token was cleared,
+  // while native media loaders have no cookie and fail every artwork request.
+  getCredentials: () => (isBrowserRuntime ? "include" : "omit"),
   getServerUrl: () => runtime.origin,
-  refreshAccessToken: async () => {
-    if (!runtime.refreshToken) return null;
-    const expectedGeneration = sessionGeneration;
-    const expectedRefreshToken = runtime.refreshToken;
-    const response = await refreshTokenRequest({
-      native: true,
-      refreshToken: expectedRefreshToken,
-    });
-    if (
-      sessionGeneration !== expectedGeneration ||
-      runtime.refreshToken !== expectedRefreshToken
-    )
-      return null;
-    if (!response.status || !response.access_token) {
-      if (!response.transient) runtime.unauthorized?.();
-      return null;
-    }
-    if (response.refresh_token) {
-      runtime.refreshToken = response.refresh_token;
-      runtime.refreshTokenChanged?.(response.refresh_token);
-    }
-    return response.access_token;
-  },
+  refreshAccessToken: isBrowserRuntime
+    ? undefined
+    : async () => {
+        if (!runtime.refreshToken) return null;
+        const expectedGeneration = sessionGeneration;
+        const expectedRefreshToken = runtime.refreshToken;
+        const response = await refreshTokenRequest({
+          native: true,
+          refreshToken: expectedRefreshToken,
+        });
+        if (
+          sessionGeneration !== expectedGeneration ||
+          runtime.refreshToken !== expectedRefreshToken
+        )
+          return null;
+        if (!response.status || !response.access_token) {
+          if (!response.transient) runtime.unauthorized?.();
+          return null;
+        }
+        if (response.refresh_token) {
+          runtime.refreshToken = response.refresh_token;
+          runtime.refreshTokenChanged?.(response.refresh_token);
+        }
+        return response.access_token;
+      },
   onAccessToken: (token) => {
     runtime.token = token;
     runtime.tokenChanged?.(token);
@@ -76,6 +85,16 @@ export function normalizeOrigin(value: string) {
   return parsed.origin;
 }
 
+export function embeddedWebClientTarget(
+  platform: string,
+  currentOrigin: string,
+  serverOrigin: string,
+) {
+  return platform === "web" && currentOrigin !== serverOrigin
+    ? serverOrigin
+    : null;
+}
+
 export function apiUrl(path: string) {
   if (!runtime.origin) throw new Error("No Parson library is connected.");
   return `${runtime.origin}/api/v1/${path.replace(/^\/+/, "")}`;
@@ -98,6 +117,39 @@ export function imageUrl(path?: string | null) {
     return null;
   if (/^https?:\/\//i.test(image)) return image;
   return `${runtime.origin}/media/images/${encodeURIComponent(image)}`;
+}
+
+export function imageRequestHeaders(
+  uri?: string | null,
+): Record<string, string> {
+  if (!runtime.token || !runtime.origin || !uri) return {};
+  try {
+    if (new URL(uri).origin !== new URL(runtime.origin).origin) return {};
+  } catch {
+    return {};
+  }
+  return { Authorization: `Bearer ${runtime.token}` };
+}
+
+export function applyImageSignature(
+  uri: string,
+  expiresAt: number,
+  signature: string,
+) {
+  const url = new URL(uri);
+  url.searchParams.set("expires", String(expiresAt));
+  url.searchParams.set("image_signature", signature);
+  return url.toString();
+}
+
+export async function lockScreenArtworkUrl(path?: string | null) {
+  const image = path?.trim();
+  const uri = imageUrl(image);
+  if (!image || !uri || /^https?:\/\//i.test(image)) return uri ?? undefined;
+  const expectedGeneration = sessionGeneration;
+  const signed = await signImagePath(image);
+  if (expectedGeneration !== sessionGeneration) return undefined;
+  return applyImageSignature(uri, signed.expiresAt, signed.signature);
 }
 
 export function streamUrl(songId: string, bitrate = 0) {

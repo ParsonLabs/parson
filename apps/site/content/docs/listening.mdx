@@ -5,7 +5,7 @@ description: Playback, queue controls, seeking, audio behavior, and media keys.
 
 ## Playback
 
-Select a song or an album's play button. Parson streams the source file when the client can play it and uses FFmpeg transcoding when needed. The Windows app, web player, and Android app share the same library and account data, but playback itself happens on the selected device unless you cast.
+Select a song or an album's play button. Parson streams the source file when the client can play it and uses FFmpeg transcoding when needed. The desktop app and web player share the same library and account data, while playback happens on the selected device.
 
 ## Queue
 
@@ -13,7 +13,7 @@ Starting an album or collection creates an ordered queue. Song menus can play no
 
 ## Shuffle and repeat
 
-Use **Shuffle** to create a randomized play order from a collection. Repeat cycles through off, repeat all, and repeat one where the client exposes all three modes. The current Android native surface exposes repeat-one; the web surface also provides repeat controls and keyboard shortcuts.
+Use **Shuffle** to create a randomized play order from a collection. The player cycles repeat through off, repeat all, and repeat one.
 
 ## Seeking and gapless playback
 
@@ -23,12 +23,12 @@ Parson does not currently advertise guaranteed gapless playback. Results depend 
 
 ## ReplayGain and normalization
 
-ReplayGain tag application and loudness normalization are not implemented in Parson 1.0.x. Volume and optional audio effects act on the current player output; they do not rewrite files.
+ReplayGain tag application and loudness normalization are not currently implemented. Volume and optional audio effects act on the current player output; they do not rewrite files.
 
 ## Audio output
 
-Choose the output device in Windows or Android system audio controls. The web player does not currently include a per-device audio-output picker. Google Cast is available on supported Android/web setups and uses the server-owned shared queue.
+Choose the output device in the operating system's audio controls. The web player does not currently include a per-device audio-output picker.
 
 ## Media keys
 
-The web player registers browser Media Session actions for play, pause, previous, next, and seeking where the browser supports them. Windows hardware media keys therefore work through the system/browser integration. Android publishes playback controls to the notification and lock screen.
+The web player registers browser Media Session actions for play, pause, previous, next, and seeking where the browser supports them. Windows hardware media keys therefore work through the system/browser integration.

@@ -17,4 +17,13 @@ contextBridge.exposeInMainWorld("__PARSON_ELECTRON__", {
       );
     },
   },
+  watchPowerResume: (callback) => {
+    const listener = () => callback();
+    ipcRenderer.on("parson:power-resume", listener);
+    return () => ipcRenderer.removeListener("parson:power-resume", listener);
+  },
+  startup: {
+    openLogs: () => ipcRenderer.invoke("parson:startup-action", "open-logs"),
+    retry: () => ipcRenderer.invoke("parson:startup-action", "retry"),
+  },
 });

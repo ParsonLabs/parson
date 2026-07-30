@@ -5,16 +5,25 @@ import getBaseURL from "@/lib/api/server-url";
 import type { Player } from "./player-api";
 import { ListMusic, Play, X } from "lucide-react";
 import Image from "next/image";
-import { useEffect, useRef } from "react";
+import {
+  type DragEvent,
+  type KeyboardEvent as ReactKeyboardEvent,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
+import { queueDropIndex } from "./player-queue-reorder";
 
 export default function PlayerQueue({
   currentSongId,
   onClose,
+  onReorder,
   onSelect,
   queue,
 }: {
   currentSongId: string;
   onClose: () => void;
+  onReorder: (from: number, to: number) => void;
   onSelect: (index: number) => void;
   queue: Player["queue"];
 }) {
@@ -66,6 +75,7 @@ export default function PlayerQueue({
       {queue.length ? (
         <PlayerQueueList
           currentSongId={currentSongId}
+          onReorder={onReorder}
           onSelect={onSelect}
           queue={queue}
         />
@@ -89,16 +99,55 @@ export default function PlayerQueue({
 export function PlayerQueueList({
   className = "",
   currentSongId,
+  onReorder,
   onSelect,
   queue,
 }: {
   className?: string;
   currentSongId: string;
+  onReorder: (from: number, to: number) => void;
   onSelect: (index: number) => void;
   queue: Player["queue"];
 }) {
+  const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
+  const [dropTarget, setDropTarget] = useState<{
+    edge: "before" | "after";
+    index: number;
+  } | null>(null);
+  const suppressClick = useRef(false);
+
+  const move = (from: number, to: number) => {
+    if (from === to || from < 0 || to < 0 || to >= queue.length) return;
+    onReorder(from, to);
+  };
+  const drop = (event: DragEvent<HTMLButtonElement>, targetIndex: number) => {
+    event.preventDefault();
+    const sourceIndex =
+      draggedIndex ?? Number(event.dataTransfer.getData("text/plain"));
+    const bounds = event.currentTarget.getBoundingClientRect();
+    const edge =
+      event.clientY < bounds.top + bounds.height / 2 ? "before" : "after";
+    move(
+      sourceIndex,
+      queueDropIndex(queue.length, sourceIndex, targetIndex, edge),
+    );
+    setDraggedIndex(null);
+    setDropTarget(null);
+  };
+  const moveWithKeyboard = (
+    event: ReactKeyboardEvent<HTMLButtonElement>,
+    index: number,
+  ) => {
+    if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
+    event.preventDefault();
+    move(index, index + (event.key === "ArrowUp" ? -1 : 1));
+  };
+
   return (
-    <div className={`overflow-y-auto p-2 ${className}`}>
+    <div
+      aria-label="Playback queue. Drag rows to reorder, or use the arrow keys."
+      className={`overflow-y-auto p-2 ${className}`}
+    >
       {queue.map((item, index) => {
         const active = item.song.id === currentSongId;
         const cover = item.album.cover_url
@@ -107,17 +156,59 @@ export function PlayerQueueList({
         return (
           <button
             aria-current={active ? "true" : undefined}
-            className={`group flex h-[62px] w-full items-center gap-3 rounded-xl p-2 text-left transition-colors ${
+            aria-label={`${item.song.name || "Untitled song"}. Position ${index + 1} of ${queue.length}. Drag to reorder, or use the arrow keys.`}
+            className={`group relative flex h-[62px] w-full cursor-grab items-center gap-3 rounded-xl p-2 text-left transition-colors active:cursor-grabbing ${
               active ? "bg-white/[0.09]" : "hover:bg-white/[0.05]"
-            }`}
+            } ${draggedIndex === index ? "opacity-60" : ""}`}
+            data-native-drag="true"
+            draggable
             key={`${item.song.id}-${index}`}
-            onClick={() => onSelect(index)}
+            onClick={() => {
+              if (!suppressClick.current) onSelect(index);
+            }}
+            onDragEnd={() => {
+              setDraggedIndex(null);
+              setDropTarget(null);
+              window.setTimeout(() => {
+                suppressClick.current = false;
+              }, 0);
+            }}
+            onDragOver={(event) => {
+              if (draggedIndex === null) return;
+              event.preventDefault();
+              event.dataTransfer.dropEffect = "move";
+              const bounds = event.currentTarget.getBoundingClientRect();
+              setDropTarget({
+                edge:
+                  event.clientY < bounds.top + bounds.height / 2
+                    ? "before"
+                    : "after",
+                index,
+              });
+            }}
+            onDragStart={(event) => {
+              suppressClick.current = true;
+              setDraggedIndex(index);
+              event.dataTransfer.effectAllowed = "move";
+              event.dataTransfer.setData("text/plain", String(index));
+            }}
+            onDrop={(event) => drop(event, index)}
+            onKeyDown={(event) => moveWithKeyboard(event, index)}
             type="button"
           >
+            {dropTarget?.index === index && draggedIndex !== index && (
+              <span
+                aria-hidden="true"
+                className={`pointer-events-none absolute inset-x-2 z-20 h-0.5 rounded-full bg-white ${
+                  dropTarget.edge === "before" ? "top-0" : "bottom-0"
+                }`}
+              />
+            )}
             <div className="relative h-11 w-11 shrink-0 overflow-hidden rounded-md bg-zinc-900">
               <Image
                 alt=""
                 className="object-cover"
+                draggable={false}
                 fill
                 sizes="44px"
                 src={cover}

@@ -3,9 +3,10 @@ use std::error::Error;
 
 use actix_web::http::{
     StatusCode,
-    header::{CacheControl, CacheDirective},
+    header::{self, CacheControl, CacheDirective, HeaderValue},
 };
 use actix_web::{HttpResponse, web};
+use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use bytes::Bytes;
 #[cfg(all(not(debug_assertions), not(test)))]
 use rust_embed::RustEmbed;
@@ -75,10 +76,63 @@ fn asset_response_with_status(
     } else {
         CacheControl(vec![CacheDirective::Public, CacheDirective::MaxAge(86_400)])
     };
-    HttpResponse::build(status)
+    let mut response = HttpResponse::build(status);
+    response
         .content_type(mime_type.as_ref())
-        .insert_header(cache_control)
-        .body(asset_bytes(content.data))
+        .insert_header(cache_control);
+    if file_path.ends_with(".html") {
+        let (html, nonce) = nonce_html_scripts(content.data);
+        if let Ok(policy) =
+            HeaderValue::from_str(&crate::http::content_security_policy(Some(&nonce)))
+        {
+            response.insert_header((header::CONTENT_SECURITY_POLICY, policy));
+        }
+        response.body(html)
+    } else {
+        response.body(asset_bytes(content.data))
+    }
+}
+
+fn nonce_html_scripts(data: Cow<'static, [u8]>) -> (Bytes, String) {
+    let mut nonce_bytes = [0_u8; 18];
+    rand::fill(&mut nonce_bytes);
+    let nonce = URL_SAFE_NO_PAD.encode(nonce_bytes);
+    let html = String::from_utf8_lossy(data.as_ref());
+    let mut output = String::with_capacity(html.len() + 64);
+    let mut cursor = 0;
+    while let Some(relative_start) = html[cursor..].find("<script") {
+        let script_start = cursor + relative_start;
+        let name_end = script_start + "<script".len();
+        if !html
+            .as_bytes()
+            .get(name_end)
+            .is_some_and(|next| next.is_ascii_whitespace() || *next == b'>')
+        {
+            output.push_str(&html[cursor..name_end]);
+            cursor = name_end;
+            continue;
+        }
+        let Some(relative_tag_end) = html[name_end..].find('>') else {
+            break;
+        };
+        let tag_end = name_end + relative_tag_end;
+        output.push_str(&html[cursor..name_end]);
+        output.push_str(&format!(" nonce=\"{nonce}\""));
+        output.push_str(&html[name_end..=tag_end]);
+
+        // Resume after this element's closing tag so JavaScript strings that
+        // contain literal "<script" text are never rewritten.
+        let content_start = tag_end + 1;
+        let Some(relative_close) = html[content_start..].find("</script>") else {
+            cursor = content_start;
+            break;
+        };
+        let script_end = content_start + relative_close + "</script>".len();
+        output.push_str(&html[content_start..script_end]);
+        cursor = script_end;
+    }
+    output.push_str(&html[cursor..]);
+    (Bytes::from(output), nonce)
 }
 
 fn asset_response(file_path: &str, content: AssetFile) -> HttpResponse {
@@ -177,9 +231,11 @@ fn next_export_rsc_path(request_path: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
+    use std::borrow::Cow;
+
     use actix_web::{body::to_bytes, http::StatusCode, web};
 
-    use super::{next_export_rsc_path, serve_embedded_file};
+    use super::{next_export_rsc_path, nonce_html_scripts, serve_embedded_file};
 
     #[actix_web::test]
     async fn root_and_extensionless_exported_routes_serve_html() {
@@ -202,9 +258,28 @@ mod tests {
                     .and_then(|value| value.to_str().ok()),
                 Some("no-store")
             );
+            let policy = response
+                .headers()
+                .get("content-security-policy")
+                .and_then(|value| value.to_str().ok())
+                .expect("HTML CSP");
+            assert!(policy.contains("script-src 'self' 'nonce-"));
+            assert!(!policy.contains("script-src 'self' 'unsafe-inline'"));
             let body = to_bytes(response.into_body()).await.unwrap();
             assert!(body.starts_with(b"<!DOCTYPE html>"));
         }
+    }
+
+    #[test]
+    fn every_inline_and_external_script_receives_the_response_nonce() {
+        let (body, nonce) = nonce_html_scripts(Cow::Borrowed(
+            b"<script>const example = '<script fake>';</script><script src=\"/app.js\"></script>",
+        ));
+        let html = String::from_utf8(body.to_vec()).expect("nonced HTML");
+        assert_eq!(html.matches(&format!("nonce=\"{nonce}\"")).count(), 2);
+        assert!(!html.contains("<script>"));
+        assert!(!html.contains("<script src="));
+        assert!(html.contains("'<script fake>'"));
     }
 
     #[actix_web::test]

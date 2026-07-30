@@ -3,7 +3,6 @@
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
@@ -43,9 +42,6 @@ export function CastOutputButton({ menuItem = false }: { menuItem?: boolean }) {
       <DialogContent className="max-w-sm">
         <DialogHeader>
           <DialogTitle>Play on another device</DialogTitle>
-          <DialogDescription>
-            Playback surfaces connected to your Parson account appear here.
-          </DialogDescription>
         </DialogHeader>
         <div className="space-y-2">
           <div className="flex items-center gap-3 rounded-xl border border-white/10 px-4 py-3">

@@ -12,7 +12,10 @@ COPY apps/mobile/patches ./apps/mobile/patches
 COPY apps/site/package.json ./apps/site/package.json
 COPY apps/web/package.json ./apps/web/package.json
 COPY packages ./packages
+COPY LICENSE ./LICENSE
+COPY tools/generate-third-party-notices.cjs ./tools/generate-third-party-notices.cjs
 RUN bun install --frozen-lockfile --ignore-scripts
+RUN node tools/generate-third-party-notices.cjs
 
 COPY apps/web ./apps/web
 
@@ -37,6 +40,9 @@ RUN cargo build --release -p parson-music
 FROM debian:trixie-slim AS runner
 WORKDIR /app
 
+LABEL org.opencontainers.image.licenses="GPL-3.0-only" \
+  org.opencontainers.image.source="https://github.com/ParsonLabs/Parson"
+
 RUN apt-get update \
   && apt-get install -y --no-install-recommends ca-certificates curl ffmpeg \
   && rm -rf /var/lib/apt/lists/*
@@ -45,6 +51,7 @@ RUN useradd --system --uid 10001 parson \
   && install -d -o parson -g parson /Parson
 
 COPY --from=backend-builder /app/target/release/parson-music-server /usr/local/bin/parson-music-server
+COPY --from=web-deps /app/LICENSE /app/THIRD_PARTY_NOTICES.md /usr/share/doc/parson/
 
 ENV RUNNING_IN_DOCKER=true
 ENV PARSON_PORT=1993

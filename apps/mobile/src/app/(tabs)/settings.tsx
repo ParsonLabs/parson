@@ -1,15 +1,26 @@
 import {
   changePassword,
+  deleteUser,
+  getUsers,
+  getLibraryRoots,
   indexLibrary,
+  isInsecureHttpOrigin,
   refreshCurrentLibrary,
+  removeLibraryRoot,
   register,
   setBitrate,
+  validPasswordLength,
+  validUsername,
+  type SettingsUser,
+  type LibraryRoot,
 } from "@parson/music-sdk";
-import { LogOut, Radio, Server } from "lucide-react-native";
+import { useQuery } from "@tanstack/react-query";
+import { LogOut, Radio, Server, Trash2 } from "lucide-react-native";
 import { useRouter } from "expo-router";
 import { useRef, useState } from "react";
 import {
   Platform,
+  Alert,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -45,6 +56,18 @@ export default function SettingsScreen() {
   const [tab, setTab] = useState<Tab>("account");
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
+  const accountKey =
+    session.savedAccounts.find((account) => account.current)?.key ??
+    session.origin;
+  const [accountUsernameDraft, setAccountUsernameDraft] = useState({
+    key: accountKey,
+    value: session.claims?.username ?? "",
+  });
+  const accountUsername =
+    accountUsernameDraft.key === accountKey
+      ? accountUsernameDraft.value
+      : (session.claims?.username ?? "");
+  const [usernamePassword, setUsernamePassword] = useState("");
   const [quality, setQuality] = useState(session.claims?.bitrate ?? 0);
   const [message, setMessage] = useState("");
   const [libraryPath, setLibraryPath] = useState("");
@@ -52,6 +75,16 @@ export default function SettingsScreen() {
   const [newUserPassword, setNewUserPassword] = useState("");
   const [newUserAdmin, setNewUserAdmin] = useState(false);
   const [busy, setBusy] = useState(false);
+  const users = useQuery({
+    queryKey: ["settings-users"],
+    queryFn: getUsers,
+    enabled: admin && tab === "users" && session.phase === "ready",
+  });
+  const roots = useQuery({
+    queryKey: ["library-roots"],
+    queryFn: getLibraryRoots,
+    enabled: admin && tab === "library" && session.phase === "ready",
+  });
   const busyRef = useRef(false);
   const beginOperation = () => {
     if (busyRef.current) return false;
@@ -83,6 +116,32 @@ export default function SettingsScreen() {
       finishOperation();
     }
   };
+  const saveUsername = async () => {
+    const requestedUsername = accountUsername.trim();
+    if (
+      !validUsername(requestedUsername) ||
+      !usernamePassword ||
+      !beginOperation()
+    )
+      return;
+    setMessage("Updating username…");
+    try {
+      const changed = await session.changeUsername(
+        requestedUsername,
+        usernamePassword,
+      );
+      if (!changed) {
+        setMessage(
+          "Could not update the username. Check the password and make sure the name is available.",
+        );
+        return;
+      }
+      setUsernamePassword("");
+      setMessage("Username updated.");
+    } finally {
+      finishOperation();
+    }
+  };
   const saveQuality = async (bitrate: number) => {
     if (!beginOperation()) return;
     const previous = quality;
@@ -107,11 +166,32 @@ export default function SettingsScreen() {
       setMessage(
         `Library updated · ${result.report.indexed_files} songs indexed.`,
       );
+      void roots.refetch();
     } catch {
       setMessage("Could not index this folder.");
     } finally {
       finishOperation();
     }
+  };
+  const removeRoot = (root: LibraryRoot) => {
+    Alert.alert("Remove music folder?", root.path, [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Remove",
+        style: "destructive",
+        onPress: () => {
+          if (!beginOperation()) return;
+          setMessage("Removing folder…");
+          void removeLibraryRoot(root.path)
+            .then(() => {
+              setMessage("Music folder removed.");
+              void roots.refetch();
+            })
+            .catch(() => setMessage("Could not remove that folder."))
+            .finally(finishOperation);
+        },
+      },
+    ]);
   };
   const refreshLibrary = async () => {
     if (!beginOperation()) return;
@@ -130,7 +210,7 @@ export default function SettingsScreen() {
   const createUser = async () => {
     if (
       newUsername.trim().length < 2 ||
-      newUserPassword.length < 8 ||
+      !validPasswordLength(newUserPassword) ||
       !beginOperation()
     )
       return;
@@ -149,11 +229,32 @@ export default function SettingsScreen() {
       setNewUserPassword("");
       setNewUserAdmin(false);
       setMessage("User created.");
+      void users.refetch();
     } catch {
       setMessage("Could not create user.");
     } finally {
       finishOperation();
     }
+  };
+  const removeUser = (user: SettingsUser) => {
+    Alert.alert("Delete account?", user.username, [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Delete",
+        style: "destructive",
+        onPress: () => {
+          if (!beginOperation()) return;
+          setMessage("Deleting account…");
+          void deleteUser(user.id)
+            .then(() => {
+              setMessage("Account deleted.");
+              void users.refetch();
+            })
+            .catch(() => setMessage("Could not delete that account."))
+            .finally(finishOperation);
+        },
+      },
+    ]);
   };
   return (
     <Screen>
@@ -200,14 +301,24 @@ export default function SettingsScreen() {
           <View style={styles.panel}>
             {tab === "account" ? (
               <AccountSettings
+                accounts={session.savedAccounts}
+                accountUsername={accountUsername}
                 busy={busy}
                 currentPassword={currentPassword}
+                currentUsername={session.claims?.username ?? ""}
                 newPassword={newPassword}
+                onAccountUsernameChange={(value) =>
+                  setAccountUsernameDraft({ key: accountKey, value })
+                }
                 onCurrentPasswordChange={setCurrentPassword}
                 onLogout={() => leaveAuthenticatedApp(session.logout)}
                 onNewPasswordChange={setNewPassword}
                 onSave={savePassword}
+                onSaveUsername={saveUsername}
+                onSwitch={session.switchAccount}
                 offline={session.phase === "offline"}
+                usernamePassword={usernamePassword}
+                onUsernamePasswordChange={setUsernamePassword}
               />
             ) : tab === "playback" ? (
               <PlaybackSettings
@@ -230,7 +341,9 @@ export default function SettingsScreen() {
                 onIndex={indexFolder}
                 onPathChange={setLibraryPath}
                 onRefresh={refreshLibrary}
+                onRemove={removeRoot}
                 path={libraryPath}
+                roots={roots.data ?? []}
               />
             ) : (
               <UserSettings
@@ -241,6 +354,9 @@ export default function SettingsScreen() {
                 onPasswordChange={setNewUserPassword}
                 onUsernameChange={setNewUsername}
                 password={newUserPassword}
+                currentUserId={session.claims?.sub ?? null}
+                onDelete={removeUser}
+                users={users.data ?? []}
                 username={newUsername}
               />
             )}
@@ -257,26 +373,120 @@ export default function SettingsScreen() {
 }
 
 function AccountSettings({
+  accounts,
+  accountUsername,
   busy,
   currentPassword,
+  currentUsername,
   newPassword,
+  onAccountUsernameChange,
   onCurrentPasswordChange,
   onLogout,
   onNewPasswordChange,
   onSave,
+  onSaveUsername,
+  onSwitch,
   offline,
+  onUsernamePasswordChange,
+  usernamePassword,
 }: {
+  accounts: { current: boolean; key: string; username: string }[];
+  accountUsername: string;
   busy: boolean;
   currentPassword: string;
+  currentUsername: string;
   newPassword: string;
+  onAccountUsernameChange: (value: string) => void;
   onCurrentPasswordChange: (value: string) => void;
   onLogout: () => Promise<void>;
   onNewPasswordChange: (value: string) => void;
   onSave: () => Promise<void>;
+  onSaveUsername: () => Promise<void>;
+  onSwitch: (key: string) => Promise<boolean>;
   offline: boolean;
+  onUsernamePasswordChange: (value: string) => void;
+  usernamePassword: string;
 }) {
   return (
     <>
+      {accounts.length > 1 ? (
+        <>
+          <Text style={styles.heading}>Accounts on this device</Text>
+          {accounts.map((account) => (
+            <Pressable
+              accessibilityRole="radio"
+              accessibilityState={{
+                selected: account.current,
+              }}
+              disabled={busy || account.current}
+              key={account.key}
+              style={[
+                styles.quality,
+                account.current && styles.selected,
+                busy && styles.disabled,
+              ]}
+              onPress={() => void onSwitch(account.key)}
+            >
+              <Text style={styles.actionText}>
+                {account.current ? "✓  " : ""}
+                {account.username}
+              </Text>
+            </Pressable>
+          ))}
+          <View style={styles.divider} />
+        </>
+      ) : null}
+      <Text style={styles.heading}>Change username</Text>
+      {offline ? (
+        <Text style={styles.offlineNote}>
+          Reconnect to change account settings.
+        </Text>
+      ) : null}
+      <TextInput
+        accessibilityLabel="Username"
+        autoCapitalize="none"
+        autoCorrect={false}
+        editable={!busy && !offline}
+        maxLength={64}
+        onChangeText={onAccountUsernameChange}
+        placeholder="Username"
+        placeholderTextColor={palette.muted}
+        style={styles.input}
+        value={accountUsername}
+      />
+      <TextInput
+        accessibilityLabel="Current password for username change"
+        editable={!busy && !offline}
+        onChangeText={onUsernamePasswordChange}
+        placeholder="Current password"
+        placeholderTextColor={palette.muted}
+        secureTextEntry
+        style={styles.input}
+        value={usernamePassword}
+      />
+      <Pressable
+        accessibilityRole="button"
+        disabled={
+          busy ||
+          offline ||
+          !usernamePassword ||
+          accountUsername.trim() === currentUsername ||
+          !validUsername(accountUsername.trim())
+        }
+        onPress={() => void onSaveUsername()}
+        style={[
+          styles.primary,
+          (busy ||
+            offline ||
+            !usernamePassword ||
+            accountUsername.trim() === currentUsername ||
+            !validUsername(accountUsername.trim())) &&
+            styles.disabled,
+        ]}
+      >
+        <Text style={styles.primaryText}>Update username</Text>
+      </Pressable>
+      <View style={styles.divider} />
       <Text style={styles.heading}>Change password</Text>
       {offline ? (
         <Text style={styles.offlineNote}>
@@ -305,10 +515,18 @@ function AccountSettings({
       />
       <Pressable
         accessibilityRole="button"
-        disabled={busy || offline || !currentPassword || newPassword.length < 8}
+        disabled={
+          busy ||
+          offline ||
+          !currentPassword ||
+          !validPasswordLength(newPassword)
+        }
         style={[
           styles.primary,
-          (busy || offline || !currentPassword || newPassword.length < 8) &&
+          (busy ||
+            offline ||
+            !currentPassword ||
+            !validPasswordLength(newPassword)) &&
             styles.disabled,
         ]}
         onPress={() => void onSave()}
@@ -399,6 +617,12 @@ function ServerSettings({
           </Text>
         </View>
       </View>
+      {origin && isInsecureHttpOrigin(origin) ? (
+        <Text accessibilityRole="alert" style={styles.securityWarning}>
+          This HTTP connection is not private. Use it only on a network you
+          trust; configure HTTPS before remote access.
+        </Text>
+      ) : null}
       {offline ? (
         <Pressable
           accessibilityRole="button"
@@ -427,17 +651,37 @@ function LibrarySettings({
   onIndex,
   onPathChange,
   onRefresh,
+  onRemove,
   path,
+  roots,
 }: {
   busy: boolean;
   onIndex: () => Promise<void>;
   onPathChange: (value: string) => void;
   onRefresh: () => Promise<void>;
+  onRemove: (root: LibraryRoot) => void;
   path: string;
+  roots: LibraryRoot[];
 }) {
   return (
     <>
       <Text style={styles.heading}>Library</Text>
+      {roots.map((root) => (
+        <View key={root.path} style={styles.userRow}>
+          <Text numberOfLines={2} style={[styles.value, { flex: 1 }]}>
+            {root.path}
+          </Text>
+          <Pressable
+            accessibilityLabel={`Remove music folder ${root.path}`}
+            accessibilityRole="button"
+            disabled={busy}
+            hitSlop={12}
+            onPress={() => onRemove(root)}
+          >
+            <Trash2 color="#fb7185" size={20} />
+          </Pressable>
+        </View>
+      ))}
       <TextInput
         accessibilityLabel="Music folder path"
         autoCapitalize="none"
@@ -478,6 +722,9 @@ function UserSettings({
   onPasswordChange,
   onUsernameChange,
   password,
+  currentUserId,
+  onDelete,
+  users,
   username,
 }: {
   admin: boolean;
@@ -487,6 +734,9 @@ function UserSettings({
   onPasswordChange: (value: string) => void;
   onUsernameChange: (value: string) => void;
   password: string;
+  currentUserId: string | null;
+  onDelete: (user: SettingsUser) => void;
+  users: SettingsUser[];
   username: string;
 }) {
   return (
@@ -527,16 +777,48 @@ function UserSettings({
       </Pressable>
       <Pressable
         accessibilityRole="button"
-        disabled={busy || username.trim().length < 2 || password.length < 8}
+        disabled={
+          busy || username.trim().length < 2 || !validPasswordLength(password)
+        }
         style={[
           styles.primary,
-          (busy || username.trim().length < 2 || password.length < 8) &&
+          (busy ||
+            username.trim().length < 2 ||
+            !validPasswordLength(password)) &&
             styles.disabled,
         ]}
         onPress={() => void onCreate()}
       >
         <Text style={styles.primaryText}>Create user</Text>
       </Pressable>
+      {users.length ? (
+        <>
+          <View style={styles.divider} />
+          <Text style={styles.heading}>Accounts</Text>
+          {users.map((user) => (
+            <View key={user.id} style={styles.userRow}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.label}>{user.username}</Text>
+                <Text style={styles.value}>
+                  {user.role === "admin" ? "Administrator" : "User"}
+                  {String(user.id) === currentUserId ? " · Current" : ""}
+                </Text>
+              </View>
+              {String(user.id) !== currentUserId ? (
+                <Pressable
+                  accessibilityLabel={`Delete ${user.username}`}
+                  accessibilityRole="button"
+                  disabled={busy}
+                  hitSlop={12}
+                  onPress={() => onDelete(user)}
+                >
+                  <Trash2 color="#fb7185" size={20} />
+                </Pressable>
+              ) : null}
+            </View>
+          ))}
+        </>
+      ) : null}
     </>
   );
 }
@@ -609,6 +891,11 @@ const styles = StyleSheet.create({
   value: { color: palette.secondary, fontSize: 13, marginTop: 4 },
   body: { color: palette.secondary, lineHeight: 21 },
   message: { color: palette.secondary, marginTop: 8 },
+  securityWarning: {
+    color: "#fcd34d",
+    lineHeight: 20,
+    paddingHorizontal: 2,
+  },
   adminToggle: {
     minHeight: 48,
     flexDirection: "row",
@@ -626,4 +913,11 @@ const styles = StyleSheet.create({
   },
   checked: { backgroundColor: "white", borderColor: "white" },
   check: { color: "black", fontWeight: "900" },
+  userRow: {
+    minHeight: 58,
+    borderBottomWidth: 1,
+    borderBottomColor: palette.border,
+    flexDirection: "row",
+    alignItems: "center",
+  },
 });

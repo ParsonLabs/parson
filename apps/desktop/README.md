@@ -1,6 +1,10 @@
 # Parson desktop client
 
-Electron client for Linux and Windows.
+Electron client for Linux, macOS, and Windows.
+
+Official Linux packages are built on Ubuntu 22.04 and require glibc 2.35 or
+newer. This includes Ubuntu 22.04+, Debian 12+, and distributions with an
+equivalent or newer userspace.
 
 ## Development
 
@@ -34,3 +38,12 @@ Windows release:
 ```powershell
 .\apps\desktop\scripts\package-windows.ps1 -Version 1.0.0
 ```
+
+macOS package check:
+
+```bash
+bash ./apps/desktop/scripts/verify-macos-package.sh
+```
+
+Release packages are built without paid platform signing credentials. GitHub
+build provenance is attached to stable release artifacts.

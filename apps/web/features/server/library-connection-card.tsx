@@ -10,7 +10,7 @@ import {
   discoverNearbyServers,
   type DiscoveredServer,
 } from "@parson/music-sdk";
-import { Loader2, RefreshCw } from "lucide-react";
+import { ArrowLeft, Loader2, RefreshCw } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { toast } from "sonner";
@@ -173,7 +173,15 @@ export default function LibraryConnectionCard() {
         />
         <div className="mt-4 flex items-center gap-3">
           <Button asChild className="h-12 flex-1 rounded-full" variant="ghost">
-            <Link href="/login">Back</Link>
+            <Link
+              className="select-none"
+              draggable={false}
+              href="/login"
+              onDragStart={(event) => event.preventDefault()}
+            >
+              <ArrowLeft aria-hidden="true" className="h-4 w-4" />
+              Sign in
+            </Link>
           </Button>
           <Button
             className="h-12 flex-1 rounded-full bg-white text-base text-black hover:bg-zinc-200"

@@ -1,12 +1,18 @@
 "use client";
 
 import { Download } from "lucide-react";
-import Link from "next/link";
 import type { ComponentType, SVGProps } from "react";
 import { useEffect, useState } from "react";
 
+import { releaseDownloads } from "../lib/release-downloads";
+
 type Platform =
   "windows" | "android" | "ios" | "macos" | "linux" | "chromeos" | "unknown";
+type Architecture = "arm64" | "x64" | "unknown";
+type PlatformSelection = {
+  architecture: Architecture;
+  platform: Platform;
+};
 
 type PlatformIcon = ComponentType<SVGProps<SVGSVGElement>>;
 
@@ -51,24 +57,138 @@ function ChromeIcon(props: SVGProps<SVGSVGElement>) {
 }
 
 const platformDetails = {
-  windows: { label: "Windows", Icon: WindowsIcon },
-  android: { label: "Android", Icon: AndroidIcon },
-  ios: { label: "iPhone", Icon: AppleIcon },
-  macos: { label: "macOS", Icon: AppleIcon },
-  linux: { label: "Linux", Icon: LinuxIcon },
-  chromeos: { label: "ChromeOS", Icon: ChromeIcon },
-  unknown: { label: "your device", Icon: Download },
-} satisfies Record<Platform, { label: string; Icon: PlatformIcon }>;
+  windows: {
+    label: "Windows x64",
+    Icon: WindowsIcon,
+    href: releaseDownloads.windowsX64,
+    available: true,
+    direct: true,
+  },
+  android: {
+    label: "Android",
+    Icon: AndroidIcon,
+    href: "/docs/download-and-install?platform=android",
+    available: false,
+    direct: false,
+  },
+  ios: {
+    label: "iPhone",
+    Icon: AppleIcon,
+    href: "/docs/download-and-install?platform=ios",
+    available: false,
+    direct: false,
+  },
+  macos: {
+    label: "macOS",
+    Icon: AppleIcon,
+    href: "/docs/download-and-install?platform=macos",
+    available: true,
+    direct: false,
+  },
+  linux: {
+    label: "Linux x64",
+    Icon: LinuxIcon,
+    href: releaseDownloads.linuxX64AppImage,
+    available: true,
+    direct: true,
+  },
+  chromeos: {
+    label: "ChromeOS",
+    Icon: ChromeIcon,
+    href: "/docs/download-and-install?platform=chromeos",
+    available: false,
+    direct: false,
+  },
+  unknown: {
+    label: "your device",
+    Icon: Download,
+    href: "/docs/download-and-install",
+    available: false,
+    direct: false,
+  },
+} satisfies Record<
+  Platform,
+  {
+    label: string;
+    Icon: PlatformIcon;
+    href: string;
+    available: boolean;
+    direct: boolean;
+  }
+>;
 
-function detectPlatform(): Platform {
-  const source = `${navigator.userAgent} ${navigator.platform}`.toLowerCase();
-  if (/android/.test(source)) return "android";
-  if (/iphone|ipad|ipod/.test(source)) return "ios";
-  if (/cros/.test(source)) return "chromeos";
-  if (/windows|win32|win64/.test(source)) return "windows";
-  if (/macintosh|mac os|macintel/.test(source)) return "macos";
-  if (/linux|x11/.test(source)) return "linux";
+function architectureFrom(value: string): Architecture {
+  if (/arm64|aarch64|armv8|arm.*64/.test(value)) return "arm64";
+  if (/x86_64|x86-64|x86.*64|amd64|win64|wow64|x64/.test(value)) return "x64";
   return "unknown";
+}
+
+async function detectPlatform(): Promise<PlatformSelection> {
+  const source = `${navigator.userAgent} ${navigator.platform}`.toLowerCase();
+  const platform = /android/.test(source)
+    ? "android"
+    : /iphone|ipad|ipod/.test(source)
+      ? "ios"
+      : /cros/.test(source)
+        ? "chromeos"
+        : /windows|win32|win64/.test(source)
+          ? "windows"
+          : /macintosh|mac os|macintel/.test(source)
+            ? "macos"
+            : /linux|x11/.test(source)
+              ? "linux"
+              : "unknown";
+  let architecture = architectureFrom(source);
+  const userAgentData = (
+    navigator as Navigator & {
+      userAgentData?: {
+        getHighEntropyValues?: (
+          hints: string[],
+        ) => Promise<{ architecture?: string; bitness?: string }>;
+      };
+    }
+  ).userAgentData;
+  if (userAgentData?.getHighEntropyValues) {
+    try {
+      const values = await userAgentData.getHighEntropyValues([
+        "architecture",
+        "bitness",
+      ]);
+      const detected = architectureFrom(
+        `${values.architecture ?? ""} ${values.bitness ?? ""}`,
+      );
+      if (detected !== "unknown") architecture = detected;
+    } catch {
+      // Browser architecture hints are optional.
+    }
+  }
+  return { architecture, platform };
+}
+
+function detailsFor({ architecture, platform }: PlatformSelection) {
+  if (platform === "windows" && architecture === "arm64")
+    return {
+      ...platformDetails.windows,
+      label: "Windows ARM64",
+      href: releaseDownloads.windowsArm64,
+    };
+  if (platform === "linux" && architecture === "arm64")
+    return {
+      ...platformDetails.linux,
+      label: "Linux ARM64",
+      href: releaseDownloads.linuxArm64AppImage,
+    };
+  if (platform === "macos" && architecture !== "unknown")
+    return {
+      ...platformDetails.macos,
+      label: architecture === "arm64" ? "macOS Apple Silicon" : "macOS Intel",
+      href:
+        architecture === "arm64"
+          ? releaseDownloads.macArm64Dmg
+          : releaseDownloads.macX64Dmg,
+      direct: true,
+    };
+  return platformDetails[platform];
 }
 
 export default function PlatformDownloadButton({
@@ -76,29 +196,53 @@ export default function PlatformDownloadButton({
 }: {
   compact?: boolean;
 }) {
-  const [platform, setPlatform] = useState<Platform | null>(null);
+  const [selection, setSelection] = useState<PlatformSelection | null>(null);
 
-  useEffect(() => setPlatform(detectPlatform()), []);
+  useEffect(() => {
+    let current = true;
+    void detectPlatform().then((detected) => {
+      if (current) setSelection(detected);
+    });
+    return () => {
+      current = false;
+    };
+  }, []);
 
-  const { label, Icon } = platform
-    ? platformDetails[platform]
-    : { label: "Parson", Icon: Download };
-  const buttonLabel = platform ? `Download for ${label}` : "Download Parson";
+  const { label, Icon, href, available, direct } = selection
+    ? detailsFor(selection)
+    : {
+        label: "Parson",
+        Icon: Download,
+        href: "/docs/download-and-install",
+        available: false,
+        direct: false,
+      };
+  const buttonLabel = !available
+    ? "View install options"
+    : direct
+      ? `Download for ${label}`
+      : `View downloads for ${label}`;
+  const external = href.startsWith("https://");
 
   return (
-    <Link
+    <a
       className="landing-primary-button landing-platform-download"
-      href={
-        platform
-          ? `/docs/download-and-install?platform=${platform}`
-          : "/docs/download-and-install"
-      }
-      title={platform ? `Download Parson for ${label}` : "Download Parson"}
+      href={href}
+      rel={external ? "noopener noreferrer" : undefined}
+      title={direct ? `Download Parson for ${label}` : buttonLabel}
     >
       <span className="landing-platform-download-content">
         <Icon aria-hidden="true" size={17} />
-        <span>{compact ? "Download" : buttonLabel}</span>
+        <span>
+          {compact
+            ? direct
+              ? "Download"
+              : available
+                ? "Downloads"
+                : "Install guide"
+            : buttonLabel}
+        </span>
       </span>
-    </Link>
+    </a>
   );
 }

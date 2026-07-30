@@ -1,0 +1,418 @@
+name: Validate Published Artifacts
+
+on:
+  release:
+    types:
+      - published
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Published release tag to validate.
+        required: true
+        type: string
+      previous_tag:
+        description: Previous stable tag used for upgrade and rollback tests.
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: validate-published-${{ github.event.release.tag_name || inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  resolve:
+    name: Resolve immutable releases
+    if: github.event_name == 'workflow_dispatch' || github.event.release.prerelease == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      current: ${{ steps.releases.outputs.current }}
+      previous: ${{ steps.releases.outputs.previous }}
+    steps:
+      - name: Resolve current and previous stable tags
+        id: releases
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CURRENT_TAG: ${{ github.event.release.tag_name || inputs.tag }}
+          REQUESTED_PREVIOUS_TAG: ${{ inputs.previous_tag }}
+        run: |
+          test -n "$CURRENT_TAG"
+          release_kind="$(
+            gh release view "$CURRENT_TAG" --repo "$GITHUB_REPOSITORY" \
+              --json isDraft,isPrerelease \
+              --jq '[.isDraft, .isPrerelease] | @tsv'
+          )"
+          test "$release_kind" = $'false\tfalse'
+          previous="$REQUESTED_PREVIOUS_TAG"
+          if [[ -z "$previous" ]]; then
+            previous="$(
+              gh release list --repo "$GITHUB_REPOSITORY" \
+                --exclude-drafts \
+                --exclude-pre-releases \
+                --limit 100 \
+                --json tagName \
+                --jq '.[].tagName' |
+                grep -Fxv "$CURRENT_TAG" |
+                head -1 || true
+            )"
+          fi
+          if [[ -n "$previous" ]]; then
+            gh release view "$previous" --repo "$GITHUB_REPOSITORY" >/dev/null
+          fi
+          {
+            echo "current=$CURRENT_TAG"
+            echo "previous=$previous"
+          } >> "$GITHUB_OUTPUT"
+
+  linux:
+    name: Linux install, upgrade, rollback (${{ matrix.arch }})
+    needs: resolve
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            runner: ubuntu-22.04
+            appimage_arch: x86_64
+            deb_arch: amd64
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+            appimage_arch: arm64
+            deb_arch: arm64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    steps:
+      - name: Download exact published Linux artifacts
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.resolve.outputs.current }}
+        run: |
+          version="${TAG#v}"
+          gh release download "$TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --pattern "Parson_${version}_${{ matrix.appimage_arch }}.AppImage" \
+            --pattern "Parson_${version}_${{ matrix.deb_arch }}.deb"
+      - name: Exercise AppImage installation
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          appimage="$(find . -maxdepth 1 -name '*.AppImage' -print -quit)"
+          deb="$(find . -maxdepth 1 -name '*.deb' -print -quit)"
+          test -n "$appimage"
+          gh attestation verify "$appimage" --repo "$GITHUB_REPOSITORY"
+          gh attestation verify "$deb" --repo "$GITHUB_REPOSITORY"
+          chmod +x "$appimage"
+          sudo apt-get update
+          sudo apt-get install -y "$deb" xvfb
+          package="$(dpkg-deb -f "$deb" Package)"
+          sudo apt-get remove -y "$package"
+          test_root="$(mktemp -d -t parson-published-appimage-XXXXXX)"
+          export HOME="$test_root/home"
+          export XDG_DATA_HOME="$test_root/share"
+          mkdir -p "$HOME" "$XDG_DATA_HOME"
+          timeout 45s "$appimage" --appimage-extract >/dev/null
+          test -s squashfs-root/resources/LICENSE
+          test -s squashfs-root/resources/THIRD_PARTY_NOTICES.md
+          rm -rf squashfs-root
+          set +e
+          timeout 45s xvfb-run -a "$appimage" --install
+          status="$?"
+          set -e
+          if [[ "$status" -ne 0 && "$status" -ne 124 ]]; then
+            echo "AppImage installer exited with status $status." >&2
+            exit "$status"
+          fi
+          installed="$HOME/.local/opt/parson/Parson.AppImage"
+          test -x "$installed"
+          cmp "$appimage" "$installed"
+          pkill -f "$installed" || true
+      - name: Exercise Debian install, upgrade, and rollback
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CURRENT_TAG: ${{ needs.resolve.outputs.current }}
+          PREVIOUS_TAG: ${{ needs.resolve.outputs.previous }}
+        run: |
+          current_deb="$(find . -maxdepth 1 -name '*.deb' -print -quit)"
+          test -n "$current_deb"
+          package="$(dpkg-deb -f "$current_deb" Package)"
+          sudo apt-get update
+          if [[ -n "$PREVIOUS_TAG" ]]; then
+            previous_version="${PREVIOUS_TAG#v}"
+            gh release download "$PREVIOUS_TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --pattern "Parson_${previous_version}_${{ matrix.deb_arch }}.deb"
+            previous_deb="$(
+              find . -maxdepth 1 -name "Parson_${previous_version}_*.deb" -print -quit
+            )"
+            sudo apt-get install -y "$previous_deb"
+          fi
+          sudo apt-get install -y "$current_deb"
+          test "$(dpkg-query -W -f='${Status}' "$package")" = "install ok installed"
+          dpkg-query -L "$package" | grep -q '/resources/LICENSE$'
+          sudo apt-get install -y --reinstall "$current_deb"
+          if [[ -n "$PREVIOUS_TAG" ]]; then
+            sudo apt-get install -y --allow-downgrades "$previous_deb"
+            test "$(dpkg-query -W -f='${Version}' "$package")" = "${PREVIOUS_TAG#v}"
+          fi
+          sudo apt-get remove -y "$package"
+
+  windows:
+    name: Windows install, upgrade, rollback (${{ matrix.arch }})
+    needs: resolve
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            runner: windows-latest
+          - arch: arm64
+            runner: windows-11-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    steps:
+      - name: Download exact published Windows artifacts
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.resolve.outputs.current }}
+        run: |
+          $version = $env:TAG.TrimStart("v")
+          gh release download $env:TAG `
+            --repo $env:GITHUB_REPOSITORY `
+            --pattern "Parson_${version}_${{ matrix.arch }}-setup.exe" `
+            --pattern "Parson_${version}_${{ matrix.arch }}-portable.exe"
+      - name: Verify provenance and exercise installer lifecycle
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CURRENT_TAG: ${{ needs.resolve.outputs.current }}
+          PREVIOUS_TAG: ${{ needs.resolve.outputs.previous }}
+        run: |
+          $installer = Get-ChildItem "Parson_*-setup.exe" | Select-Object -First 1
+          $portable = Get-ChildItem "Parson_*-portable.exe" | Select-Object -First 1
+          foreach ($artifact in @($installer, $portable)) {
+            gh attestation verify $artifact.FullName --repo $env:GITHUB_REPOSITORY
+            if ($LASTEXITCODE -ne 0) {
+              throw "$($artifact.Name) has no valid build provenance."
+            }
+          }
+          $install = Join-Path $env:RUNNER_TEMP "ParsonLifecycle"
+          $arguments = @("/S", "/D=$install")
+          if (-not [string]::IsNullOrWhiteSpace($env:PREVIOUS_TAG)) {
+            $previousVersion = $env:PREVIOUS_TAG.TrimStart("v")
+            gh release download $env:PREVIOUS_TAG `
+              --repo $env:GITHUB_REPOSITORY `
+              --pattern "Parson_${previousVersion}_${{ matrix.arch }}-setup.exe"
+            $previous = Get-Item "Parson_${previousVersion}_${{ matrix.arch }}-setup.exe"
+            $process = Start-Process $previous.FullName -ArgumentList $arguments -Wait -PassThru
+            if ($process.ExitCode -ne 0) { throw "Previous release installation failed." }
+          }
+          $process = Start-Process $installer.FullName -ArgumentList $arguments -Wait -PassThru
+          if ($process.ExitCode -ne 0) { throw "Current release installation failed." }
+          $installed = Join-Path $install "Parson.exe"
+          if (-not (Test-Path $installed)) { throw "Installed Parson.exe is missing." }
+          foreach ($relativePath in @(
+            "resources\LICENSE",
+            "resources\THIRD_PARTY_NOTICES.md"
+          )) {
+            if (-not (Test-Path (Join-Path $install $relativePath))) {
+              throw "Installed application is missing $relativePath."
+            }
+          }
+          $process = Start-Process $installer.FullName -ArgumentList $arguments -Wait -PassThru
+          if ($process.ExitCode -ne 0) { throw "In-place upgrade failed." }
+          if (-not [string]::IsNullOrWhiteSpace($env:PREVIOUS_TAG)) {
+            $process = Start-Process $previous.FullName -ArgumentList $arguments -Wait -PassThru
+            if ($process.ExitCode -ne 0) { throw "Rollback installation failed." }
+          }
+          $uninstaller = Join-Path $install "Uninstall Parson.exe"
+          if (-not (Test-Path $uninstaller)) { throw "Uninstaller is missing." }
+          $process = Start-Process $uninstaller -ArgumentList "/S" -Wait -PassThru
+          if ($process.ExitCode -ne 0) { throw "Uninstall failed." }
+
+  windows-server:
+    name: Windows server package and updater
+    needs: resolve
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - name: Download exact published Windows server artifacts
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.resolve.outputs.current }}
+        run: |
+          $version = $env:TAG.TrimStart("v")
+          gh release download $env:TAG `
+            --repo $env:GITHUB_REPOSITORY `
+            --pattern "ParsonMusicServer-${version}-win-x64.zip" `
+            --pattern "ParsonMusicServer.exe" `
+            --pattern "ParsonMusicServer.exe.sha256" `
+            --pattern "windows-server-update.json"
+      - name: Verify package, provenance, and updater metadata
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.resolve.outputs.current }}
+        run: |
+          $version = $env:TAG.TrimStart("v")
+          .\crates\windows-server\verify-update-assets.ps1 `
+            -Version $version `
+            -Directory "."
+
+          $executable = Get-Item "ParsonMusicServer.exe"
+          foreach ($artifact in @(
+            $executable,
+            (Get-Item "ParsonMusicServer-${version}-win-x64.zip")
+          )) {
+            gh attestation verify $artifact.FullName --repo $env:GITHUB_REPOSITORY
+            if ($LASTEXITCODE -ne 0) {
+              throw "$($artifact.Name) has no valid build provenance."
+            }
+          }
+
+          $expanded = Join-Path $env:RUNNER_TEMP "ParsonWindowsServer"
+          Expand-Archive "ParsonMusicServer-${version}-win-x64.zip" $expanded
+          $archivedExecutable = Join-Path $expanded "ParsonMusicServer.exe"
+          if ((Get-FileHash $archivedExecutable -Algorithm SHA256).Hash -ne
+              (Get-FileHash $executable.FullName -Algorithm SHA256).Hash) {
+            throw "Archived and updater Windows server executables differ."
+          }
+          foreach ($name in @("LICENSE", "THIRD_PARTY_NOTICES.md", "README.md")) {
+            if (-not (Test-Path (Join-Path $expanded $name) -PathType Leaf)) {
+              throw "Windows server archive is missing $name."
+            }
+          }
+
+  macos:
+    name: macOS install and startup (${{ matrix.arch }})
+    needs: resolve
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            executable_arch: x86_64
+            runner: macos-15-intel
+            server_port: 19931
+          - arch: arm64
+            executable_arch: arm64
+            runner: macos-15
+            server_port: 19932
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    steps:
+      - name: Download exact published macOS artifacts
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.resolve.outputs.current }}
+        run: |
+          version="${TAG#v}"
+          gh release download "$TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --pattern "Parson_${version}_${{ matrix.arch }}.dmg" \
+            --pattern "Parson_${version}_${{ matrix.arch }}.zip"
+      - name: Verify provenance, architecture, and payload
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.resolve.outputs.current }}
+        run: |
+          version="${TAG#v}"
+          dmg="Parson_${version}_${{ matrix.arch }}.dmg"
+          zip="Parson_${version}_${{ matrix.arch }}.zip"
+          for artifact in "$dmg" "$zip"; do
+            gh attestation verify "$artifact" --repo "$GITHUB_REPOSITORY"
+          done
+
+          mount_point="$RUNNER_TEMP/ParsonDMG"
+          mkdir -p "$mount_point"
+          hdiutil attach "$dmg" \
+            -nobrowse \
+            -readonly \
+            -mountpoint "$mount_point"
+          trap 'hdiutil detach "$mount_point" >/dev/null 2>&1 || true' EXIT
+          app="$mount_point/Parson.app"
+
+          for path in \
+            "$app/Contents/Resources/LICENSE" \
+            "$app/Contents/Resources/THIRD_PARTY_NOTICES.md" \
+            "$app/Contents/Resources/app.asar"; do
+            test -s "$path"
+          done
+          for executable in \
+            "$app/Contents/MacOS/Parson" \
+            "$app/Contents/Resources/parson-music-server"; do
+            lipo -archs "$executable" |
+              tr ' ' '\n' |
+              grep -Fqx "${{ matrix.executable_arch }}"
+          done
+
+          zip_root="$RUNNER_TEMP/ParsonZIP"
+          ditto -x -k "$zip" "$zip_root"
+      - name: Start the installed macOS application and embedded server
+        env:
+          PARSON_PORT: ${{ matrix.server_port }}
+        run: |
+          installed_root="$RUNNER_TEMP/ParsonApplications"
+          data_root="$RUNNER_TEMP/ParsonData"
+          mkdir -p "$installed_root" "$data_root"
+          ditto "$RUNNER_TEMP/ParsonZIP/Parson.app" "$installed_root/Parson.app"
+          export PARSON_DATA_DIR="$data_root"
+          "$installed_root/Parson.app/Contents/MacOS/Parson" \
+            >"$RUNNER_TEMP/parson-macos.log" 2>&1 &
+          app_pid="$!"
+          trap 'kill "$app_pid" >/dev/null 2>&1 || true' EXIT
+          for attempt in {1..60}; do
+            if curl --fail --silent \
+              "http://127.0.0.1:${PARSON_PORT}/health" >/dev/null; then
+              exit 0
+            fi
+            if ! kill -0 "$app_pid" >/dev/null 2>&1; then
+              cat "$RUNNER_TEMP/parson-macos.log"
+              exit 1
+            fi
+            sleep 1
+          done
+          cat "$RUNNER_TEMP/parson-macos.log"
+          exit 1
+
+  container:
+    name: Server container provenance and startup
+    needs: resolve
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Verify multi-architecture image and provenance
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.resolve.outputs.current }}
+        run: |
+          image="ghcr.io/parsonlabs/parson:${TAG#v}"
+          gh attestation verify "oci://${image}" --repo "$GITHUB_REPOSITORY"
+          docker buildx imagetools inspect "$image" --raw > "$RUNNER_TEMP/manifest.json"
+          test "$(jq '[.manifests[].platform.architecture] | unique | sort' "$RUNNER_TEMP/manifest.json")" = '[
+            "amd64",
+            "arm64"
+          ]'
+      - name: Start the published server image
+        env:
+          TAG: ${{ needs.resolve.outputs.current }}
+        run: |
+          image="ghcr.io/parsonlabs/parson:${TAG#v}"
+          docker run --detach \
+            --name parson-published-server \
+            --publish 127.0.0.1:1993:1993 \
+            "$image"
+          trap 'docker rm --force parson-published-server >/dev/null' EXIT
+          for attempt in {1..60}; do
+            if curl --fail --silent http://127.0.0.1:1993/health >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          docker logs parson-published-server
+          exit 1

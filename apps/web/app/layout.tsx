@@ -5,6 +5,8 @@ import { Inter } from "next/font/google";
 import type { ReactNode } from "react";
 import SessionProvider from "@/features/account/session-provider";
 import AppBootstrap from "@/components/app/splash-screen";
+import ConnectionSecurityNotice from "@/components/app/connection-security-notice";
+import NativeDragGuard from "@/components/app/native-drag-guard";
 
 import { Toaster } from "sonner";
 const inter = Inter({ subsets: ["latin"] });
@@ -48,7 +50,9 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         className={`${inter.className} min-h-screen bg-black text-white antialiased`}
       >
         <SessionProvider>
+          <NativeDragGuard />
           <AppBootstrap>{children}</AppBootstrap>
+          <ConnectionSecurityNotice />
           <Toaster
             closeButton={false}
             position="bottom-right"

@@ -1,6 +1,5 @@
 "use client";
 
-import { useSession } from "@/features/account/session-provider";
 import { usePlayer } from "@/features/player/player-context";
 import { defaultCover } from "@/lib/images/default-cover";
 import { useCallback, useState } from "react";
@@ -17,6 +16,8 @@ import { useMediaSession } from "./use-media-session";
 import { useCastOutput } from "./use-cast-output";
 import { getSongInfo } from "@parson/music-sdk";
 import { useQuery } from "@tanstack/react-query";
+import { displaySongTitle } from "@/features/library/song-presentation";
+import { trackArtistCredit } from "@/features/library/track-artist-credit";
 
 export default function PlayerBar() {
   const {
@@ -24,6 +25,7 @@ export default function PlayerBar() {
     artist,
     currentTime,
     duration,
+    error,
     handleTimeChange,
     imageSrc,
     isPlaying,
@@ -33,6 +35,7 @@ export default function PlayerBar() {
     playPreviousSong,
     playQueueItem,
     queue,
+    reorderQueue,
     setAudioVolume,
     setAudioPreset,
     slowedReverb,
@@ -45,7 +48,6 @@ export default function PlayerBar() {
     audioPreset,
     audioPresets,
   } = usePlayer();
-  const { session } = useSession();
   const cast = useCastOutput();
   const castItem = cast.session?.items[cast.session.current_position] ?? null;
   const castSong = useQuery({
@@ -71,6 +73,14 @@ export default function PlayerBar() {
     castItem?.artist ||
     effectiveSong.artist_object.name ||
     effectiveSong.artist;
+  const displayTitle = displaySongTitle(effectiveTitle);
+  const displayArtist =
+    trackArtistCredit({
+      albumArtist: effectiveSong.artist_object.name || effectiveArtist,
+      albumType: effectiveSong.album_object.primary_type,
+      contributingArtists: effectiveSong.contributing_artists ?? [],
+      trackArtist: effectiveSong.artist || effectiveArtist,
+    }) ?? effectiveArtist;
   const togglePlayback = casting
     ? () => cast.send({ command: cast.session?.playing ? "pause" : "play" })
     : togglePlayPause;
@@ -144,8 +154,10 @@ export default function PlayerBar() {
     activeLine,
     activeLineRef,
     fallback: fallbackLyrics,
+    failed: lyricsFailed,
     instrumental: lyricsInstrumental,
     loading: lyricsLoading,
+    retry: retryLyrics,
     scrollRef: lyricsScrollRef,
     timed: timedLyrics,
   } = useLyrics(effectiveSong, effectiveCurrentTime, lyricsOpen);
@@ -160,9 +172,10 @@ export default function PlayerBar() {
         <FullscreenPlayer
           activeLine={activeLine}
           activeLineRef={activeLineRef}
+          albumId={effectiveSong.album_object.id || album.id}
           albumName={effectiveSong.album_object.name || album.name}
           artistId={effectiveSong.artist_object.id || artist.id}
-          artistName={effectiveArtist}
+          artistName={displayArtist}
           cover={cover}
           currentTime={effectiveCurrentTime}
           duration={effectiveDuration}
@@ -170,6 +183,7 @@ export default function PlayerBar() {
           looping={looping}
           lyricsOpen={lyricsOpen}
           lyricsFallback={fallbackLyrics}
+          lyricsFailed={lyricsFailed}
           lyricsInstrumental={lyricsInstrumental}
           lyricsLoading={lyricsLoading}
           lyricsScrollRef={lyricsScrollRef}
@@ -178,7 +192,7 @@ export default function PlayerBar() {
           onNext={next}
           onOpenLyrics={() => {
             setQueueOpen(false);
-            setLyricsOpen(true);
+            setLyricsOpen((open) => !open);
           }}
           onOpenQueue={() => {
             setLyricsOpen(false);
@@ -189,6 +203,8 @@ export default function PlayerBar() {
             setQueueOpen(false);
           }}
           onPrevious={previous}
+          onRetryLyrics={retryLyrics}
+          onReorderQueue={reorderQueue}
           onSelectQueueItem={(index) => {
             playQueueItem(index);
             setLyricsOpen(false);
@@ -205,7 +221,7 @@ export default function PlayerBar() {
           queueOpen={queueOpen}
           slowedReverb={slowedReverb}
           songId={castItem?.song_id || song.id}
-          title={effectiveTitle}
+          title={displayTitle}
           timedLyrics={timedLyrics}
           volume={effectiveVolume}
         />
@@ -217,8 +233,10 @@ export default function PlayerBar() {
           activeLineRef={activeLineRef}
           cover={cover}
           fallback={fallbackLyrics}
+          failed={lyricsFailed}
           instrumental={lyricsInstrumental}
           loading={lyricsLoading}
+          onRetry={retryLyrics}
           scrollRef={lyricsScrollRef}
           onSeek={handleTimeChange}
           timed={timedLyrics}
@@ -229,16 +247,33 @@ export default function PlayerBar() {
         <PlayerQueue
           currentSongId={song.id}
           onClose={closeQueue}
+          onReorder={reorderQueue}
           onSelect={(index) => playQueueItem(index)}
           queue={queue}
         />
       )}
 
+      {error?.startsWith("This audio format") ? (
+        <div
+          className="fixed bottom-[168px] left-1/2 z-[80] w-[min(92vw,520px)] -translate-x-1/2 rounded-xl border border-amber-300/20 bg-zinc-950 p-4 shadow-2xl md:bottom-32 md:left-[calc(50%+40px)]"
+          role="alert"
+        >
+          <p className="font-semibold text-white">
+            This audio format isn’t supported
+          </p>
+          <p className="mt-1 text-sm leading-5 text-zinc-400">
+            This device can’t decode this track. Try another track or convert
+            the file to a supported audio format.
+          </p>
+        </div>
+      ) : null}
+
       <PlayerFooter
-        admin={session?.role === "admin"}
+        albumCover={effectiveSong.album_object.cover_url}
         albumId={effectiveSong.album_object.id || album.id}
+        albumName={effectiveSong.album_object.name || album.name}
         artistId={effectiveSong.artist_object.id || artist.id}
-        artistName={effectiveArtist}
+        artistName={displayArtist}
         audioPreset={audioPreset}
         audioPresets={audioPresets}
         cover={cover}
@@ -250,6 +285,7 @@ export default function PlayerBar() {
         onNext={next}
         onOpenFullscreen={() => {
           setLyricsOpen(false);
+          setQueueOpen(false);
           setFullscreenOpen(true);
         }}
         onPrevious={previous}
@@ -265,7 +301,7 @@ export default function PlayerBar() {
         queueOpen={queueOpen}
         slowedReverb={slowedReverb}
         songId={castItem?.song_id || song.id}
-        title={effectiveTitle}
+        title={displayTitle}
         volume={effectiveVolume}
       />
     </>

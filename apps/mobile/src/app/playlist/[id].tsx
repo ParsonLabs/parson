@@ -2,6 +2,7 @@ import {
   deletePlaylist,
   getPlaylist,
   removeSongFromPlaylist,
+  reorderPlaylistSongs,
   updatePlaylist,
 } from "@parson/music-sdk";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -11,6 +12,7 @@ import {
   MoreHorizontal,
   Pencil,
   Play,
+  Shuffle,
   Trash2,
 } from "lucide-react-native";
 import { useState } from "react";
@@ -27,10 +29,14 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { ActionDrawer, DrawerAction } from "@/components/action-drawer";
-import { Artwork } from "@/components/artwork";
+import { PlaylistCover } from "@/components/playlist-cover";
 import { Screen, SongRow } from "@/components/music-ui";
 import { palette } from "@/constants/colors";
 import { usePlayer } from "@/providers/player-provider";
+import {
+  immediateBorderlessPressFeedback,
+  immediatePressFeedback,
+} from "@/lib/press-feedback";
 import { formatCollectionDuration } from "@/lib/format";
 
 export default function PlaylistScreen() {
@@ -113,12 +119,30 @@ export default function PlaylistScreen() {
       setSavingEdit(false);
     }
   };
+  const moveSong = async (index: number, offset: -1 | 1) => {
+    const target = index + offset;
+    if (target < 0 || target >= data.songs.length) return;
+    const previous = data;
+    const songs = [...data.songs];
+    [songs[index], songs[target]] = [songs[target]!, songs[index]!];
+    client.setQueryData<typeof data>(["playlist", id], { ...data, songs });
+    try {
+      await reorderPlaylistSongs(
+        data.id,
+        songs.map((song) => song.id),
+      );
+      void client.invalidateQueries({ queryKey: ["playlist", id] });
+    } catch {
+      client.setQueryData(["playlist", id], previous);
+    }
+  };
   const duration = formatCollectionDuration(data.total_duration);
   return (
     <Screen>
       <SafeAreaView edges={["top"]} style={{ flex: 1 }}>
         <View style={styles.nav}>
           <Pressable
+            {...immediateBorderlessPressFeedback}
             accessibilityLabel="Back"
             accessibilityRole="button"
             hitSlop={12}
@@ -127,6 +151,7 @@ export default function PlaylistScreen() {
             <ArrowLeft color="white" />
           </Pressable>
           <Pressable
+            {...immediateBorderlessPressFeedback}
             accessibilityLabel="More playlist actions"
             accessibilityRole="button"
             hitSlop={12}
@@ -137,14 +162,11 @@ export default function PlaylistScreen() {
         </View>
         <ScrollView contentContainerStyle={{ paddingBottom: 130 }}>
           <View style={styles.hero}>
-            <Artwork
-              path={
-                data.cover_image ?? data.cover_songs[0]?.album_object?.cover_url
-              }
+            <PlaylistCover
+              override={data.cover_image}
+              songs={data.cover_songs}
               size={240}
-              rounded={10}
             />
-            <Text style={styles.type}>PLAYLIST</Text>
             <Text style={styles.title}>{data.name}</Text>
             {data.description ? (
               <Text style={styles.description}>{data.description}</Text>
@@ -152,17 +174,30 @@ export default function PlaylistScreen() {
             <Text style={styles.meta}>
               {data.song_count} songs, {duration}
             </Text>
-            <Pressable
-              accessibilityLabel="Play playlist"
-              accessibilityRole="button"
-              disabled={!data.songs.length}
-              style={styles.play}
-              onPress={() =>
-                data.songs[0] && player.playSong(data.songs[0], data.songs)
-              }
-            >
-              <Play color="black" fill="black" size={28} />
-            </Pressable>
+            <View style={styles.playActions}>
+              <Pressable
+                {...immediatePressFeedback}
+                accessibilityLabel="Play playlist"
+                accessibilityRole="button"
+                disabled={!data.songs.length}
+                style={styles.play}
+                onPress={() =>
+                  data.songs[0] && player.playSong(data.songs[0], data.songs)
+                }
+              >
+                <Play color="black" fill="black" size={28} />
+              </Pressable>
+              <Pressable
+                {...immediateBorderlessPressFeedback}
+                accessibilityLabel={`Shuffle ${data.name}`}
+                accessibilityRole="button"
+                disabled={!data.songs.length}
+                style={styles.shuffle}
+                onPress={() => player.playShuffled(data.songs)}
+              >
+                <Shuffle color={palette.secondary} size={21} />
+              </Pressable>
+            </View>
           </View>
           {!data.songs.length ? (
             <View style={styles.empty}>
@@ -178,6 +213,12 @@ export default function PlaylistScreen() {
               song={song}
               queue={data.songs}
               index={index}
+              onMoveDown={
+                index < data.songs.length - 1
+                  ? () => void moveSong(index, 1)
+                  : undefined
+              }
+              onMoveUp={index > 0 ? () => void moveSong(index, -1) : undefined}
               onRemove={() => void removeSong(song.id)}
             />
           ))}
@@ -193,6 +234,14 @@ export default function PlaylistScreen() {
             onPress={() => {
               setMenu(false);
               if (data.songs[0]) player.playSong(data.songs[0], data.songs);
+            }}
+          />
+          <DrawerAction
+            icon={Shuffle}
+            label="Shuffle"
+            onPress={() => {
+              setMenu(false);
+              player.playShuffled(data.songs);
             }}
           />
           <DrawerAction
@@ -288,14 +337,7 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
   },
   hero: { padding: 20, alignItems: "flex-start" },
-  type: {
-    color: palette.secondary,
-    fontSize: 11,
-    fontWeight: "800",
-    letterSpacing: 1.2,
-    marginTop: 22,
-  },
-  title: { color: "white", fontSize: 32, fontWeight: "900", marginTop: 5 },
+  title: { color: "white", fontSize: 32, fontWeight: "900", marginTop: 22 },
   description: { color: palette.secondary, marginTop: 8, lineHeight: 20 },
   meta: { color: palette.secondary, marginTop: 8 },
   play: {
@@ -305,7 +347,20 @@ const styles = StyleSheet.create({
     backgroundColor: "white",
     alignItems: "center",
     justifyContent: "center",
+  },
+  playActions: {
+    width: "100%",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
     marginTop: 20,
+  },
+  shuffle: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    alignItems: "center",
+    justifyContent: "center",
   },
   editForm: { padding: 10, gap: 10 },
   input: {

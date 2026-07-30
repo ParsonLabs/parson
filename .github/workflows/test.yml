@@ -5,13 +5,13 @@ on:
   workflow_call:
     inputs:
       release:
-        description: Build the desktop and server release artifact set.
+        description: Build the desktop release package set.
         type: boolean
         default: false
   workflow_dispatch:
     inputs:
       release:
-        description: Build the desktop and server release artifact set.
+        description: Build the desktop release package set.
         type: boolean
         default: false
 
@@ -45,7 +45,7 @@ jobs:
       - name: Check repository formatting
         if: inputs.release != true
         run: bun run format:check
-      - name: Check desktop and server release formatting
+      - name: Check desktop release formatting
         if: inputs.release
         run: |
           bunx prettier --check \
@@ -180,18 +180,6 @@ jobs:
         run: node node_modules/electron/install.js
       - name: Build embedded web UI
         run: bun --filter parson-music-web build
-      - name: Build and verify Windows server update assets
-        if: matrix.arch == 'x64'
-        shell: pwsh
-        run: |
-          $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
-          $arguments = @{
-            Version = $version
-            SkipWebBuild = $true
-          }
-          .\crates\windows-server\package.ps1 @arguments
-          .\crates\windows-server\verify-update-assets.ps1 -Version $version
-          .\crates\windows-server\test-updater.ps1
       - name: Build native Windows release
         run: bun --filter parson-music-desktop desktop:build
       - name: Verify Windows package license payload
@@ -214,16 +202,6 @@ jobs:
               throw "Windows package is missing $relativePath."
             }
           }
-          if ("${{ matrix.arch }}" -eq "x64") {
-            $archive = Get-ChildItem artifacts\windows-server -Filter *.zip |
-              Select-Object -First 1
-            $entries = tar -tf $archive.FullName
-            foreach ($name in @("LICENSE", "THIRD_PARTY_NOTICES.md")) {
-              if ($entries -notcontains $name) {
-                throw "$($archive.Name) is missing $name."
-              }
-            }
-          }
       - name: Upload Windows installer and portable executable
         uses: actions/upload-artifact@v6
         with:
@@ -231,10 +209,6 @@ jobs:
           path: |
             target/release/bundle/electron/Parson_*-setup.exe
             target/release/bundle/electron/Parson_*-portable.exe
-            artifacts/windows-server/ParsonMusicServer-*-win-x64.zip
-            artifacts/windows-server/ParsonMusicServer.exe
-            artifacts/windows-server/ParsonMusicServer.exe.sha256
-            artifacts/windows-server/windows-server-update.json
           if-no-files-found: error
 
   macos-packages:

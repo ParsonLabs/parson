@@ -1,6 +1,6 @@
 "use client";
 
-import { electronWindowControls } from "@/lib/desktop/bridge";
+import { desktopPlatform, electronWindowControls } from "@/lib/desktop/bridge";
 import { Copy, Minus, Square, X } from "lucide-react";
 import { useEffect, useState } from "react";
 
@@ -10,11 +10,18 @@ export function DesktopWindowControls() {
   const [maximized, setMaximized] = useState(false);
 
   useEffect(() => {
-    const next = electronWindowControls();
-    if (!next) return;
-    setControls(next);
-    void next.isMaximized().then(setMaximized);
-    next.watchMaximized(setMaximized);
+    let active = true;
+    void desktopPlatform().then((platform) => {
+      if (!active || platform === "macos") return;
+      const next = electronWindowControls();
+      if (!next) return;
+      setControls(next);
+      void next.isMaximized().then(setMaximized);
+      next.watchMaximized(setMaximized);
+    });
+    return () => {
+      active = false;
+    };
   }, []);
 
   if (!controls) return null;

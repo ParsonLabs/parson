@@ -360,6 +360,26 @@ fn drain_server_events() {
     };
     while let Ok(status) = receiver.try_recv() {
         tracing::info!(?status, "server host state changed");
+        if let ServerStatus::Failed(detail) = &status {
+            let migration_failed = detail.to_ascii_lowercase().contains("migration")
+                || detail.to_ascii_lowercase().contains("database update")
+                || detail.to_ascii_lowercase().contains("schema");
+            show_message(
+                if migration_failed {
+                    "Parson database update failed"
+                } else {
+                    "Parson host unavailable"
+                },
+                &format!(
+                    "{}\n\nDetails: {detail}",
+                    if migration_failed {
+                        "Parson could not update its library database. Your music files were not changed. Open Logs from the Parson tray menu before trying again."
+                    } else {
+                        "The Parson music service could not start. Your library was not changed. Open Logs from the tray menu, then choose Restart."
+                    }
+                ),
+            );
+        }
         if let Some(model) = MODEL.get()
             && let Ok(mut model) = model.lock()
         {
@@ -450,7 +470,12 @@ fn drain_update_events(hwnd: HWND) {
             UpdateEvent::Failed(error) => {
                 set_update_status(UpdateStatus::Failed);
                 tracing::error!(%error, "update failed");
-                show_message("Parson for Windows Updater", &error);
+                show_message(
+                    "Parson update failed",
+                    &format!(
+                        "Parson could not download or install the update. The current version is still installed and your library was not changed.\n\nDetails: {error}"
+                    ),
+                );
             }
             UpdateEvent::Ready { version, path } => {
                 let target = std::env::current_exe();
@@ -464,7 +489,12 @@ fn drain_update_events(hwnd: HWND) {
                     }
                     Err(error) => {
                         set_update_status(UpdateStatus::Failed);
-                        show_message("Parson for Windows Updater", &error);
+                        show_message(
+                            "Parson update failed",
+                            &format!(
+                                "Parson could not install the verified update. The current version is still installed and your library was not changed.\n\nDetails: {error}"
+                            ),
+                        );
                     }
                 }
             }

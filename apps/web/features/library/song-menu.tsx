@@ -18,6 +18,7 @@ import {
   ListEnd,
   ListPlus,
   Loader2,
+  Pause,
   Play,
   Plus,
   RefreshCw,
@@ -27,7 +28,11 @@ import {
 import Link from "next/link";
 import { useState } from "react";
 import { toast } from "sonner";
-import { songMenuQueueItem } from "./song-menu-state";
+import {
+  songMenuEntityLinkVisibility,
+  songMenuQueueItem,
+  type SongMenuContext,
+} from "./song-menu-state";
 
 type SongMenuProps = {
   children: React.ReactNode;
@@ -38,8 +43,9 @@ type SongMenuProps = {
   album_id: string;
   album_name: string;
   album_cover?: string;
-  context?: "default" | "home" | "artist";
+  context?: SongMenuContext;
   onRemoveFromPlaylist?: () => void;
+  removeFromPlaylistLabel?: string;
 };
 
 export default function SongMenu({
@@ -53,11 +59,13 @@ export default function SongMenu({
   album_cover,
   context = "default",
   onRemoveFromPlaylist,
+  removeFromPlaylistLabel = "Remove from playlist",
 }: SongMenuProps) {
   const player = usePlayer();
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
+  const entityLinks = songMenuEntityLinkVisibility(context);
   const playlists = useQuery({
     queryKey: ["playlists"],
     queryFn: getPlaylists,
@@ -93,6 +101,10 @@ export default function SongMenu({
   };
 
   const play = () => {
+    if (context === "player") {
+      player.togglePlayPause();
+      return;
+    }
     const item = queueItem();
     player.setQueue([item]);
     player.setCurrentSongIndex(0);
@@ -113,19 +125,17 @@ export default function SongMenu({
   return (
     <>
       <ContextMenu onOpenChange={setOpen}>
-        <ContextMenuTrigger
-          aria-description="Right-click or long press for song actions"
-          asChild
-          title="Right-click or long press for song actions"
-        >
-          {children}
-        </ContextMenuTrigger>
+        <ContextMenuTrigger asChild>{children}</ContextMenuTrigger>
         <ContextMenuContent className="w-56">
           <ContextMenuItem onSelect={play}>
-            <Play className="h-4 w-4 fill-current" />
-            Play
+            {context === "player" && player.isPlaying ? (
+              <Pause className="h-4 w-4 fill-current" />
+            ) : (
+              <Play className="h-4 w-4 fill-current" />
+            )}
+            {context === "player" && player.isPlaying ? "Pause" : "Play"}
           </ContextMenuItem>
-          {context === "default" && (
+          {(context === "default" || context === "album") && (
             <ContextMenuItem onSelect={playNext}>
               <ListPlus className="h-4 w-4" />
               Play next
@@ -137,13 +147,15 @@ export default function SongMenu({
               Add to queue
             </ContextMenuItem>
           )}
-          <ContextMenuItem asChild>
-            <Link href={`/album?id=${album_id}`}>
-              <Disc3 className="h-4 w-4" />
-              View album
-            </Link>
-          </ContextMenuItem>
-          {context !== "artist" && (
+          {entityLinks.album && (
+            <ContextMenuItem asChild>
+              <Link href={`/album?id=${album_id}`}>
+                <Disc3 className="h-4 w-4" />
+                View album
+              </Link>
+            </ContextMenuItem>
+          )}
+          {entityLinks.artist && (
             <ContextMenuItem asChild>
               <Link href={`/artist?id=${artist_id}`}>
                 <UserRound className="h-4 w-4" />
@@ -200,7 +212,7 @@ export default function SongMenu({
               onSelect={onRemoveFromPlaylist}
             >
               <X className="h-4 w-4" />
-              Remove from playlist
+              {removeFromPlaylistLabel}
             </ContextMenuItem>
           )}
         </ContextMenuContent>

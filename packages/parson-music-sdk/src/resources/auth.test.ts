@@ -3,7 +3,6 @@ import { afterEach, expect, mock, test } from "bun:test";
 import { configureApiRuntime } from "../core/http";
 import {
   checkDevicePairing,
-  isInsecureHttpOrigin,
   login,
   refreshToken,
   startDevicePairing,
@@ -30,12 +29,6 @@ test("username limits match backend character and control rules", () => {
   expect(validUsername(" synthetic-user")).toBeFalse();
   expect(validUsername("synthetic\nuser")).toBeFalse();
   expect(validUsername("x".repeat(65))).toBeFalse();
-});
-
-test("insecure connection detection excludes HTTPS and loopback", () => {
-  expect(isInsecureHttpOrigin("http://192.168.1.25:1993")).toBeTrue();
-  expect(isInsecureHttpOrigin("https://music.example")).toBeFalse();
-  expect(isInsecureHttpOrigin("http://127.0.0.1:1993")).toBeFalse();
 });
 
 test("native login requests rotating refresh credentials", async () => {

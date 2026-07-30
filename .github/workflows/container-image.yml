@@ -4,8 +4,16 @@ on:
   push:
     branches:
       - nightly
-    tags:
-      - "v*"
+  workflow_call:
+    inputs:
+      version:
+        description: Container version tag. Defaults to the branch or tag name.
+        type: string
+        default: ""
+      publish_latest:
+        description: Also publish the latest tag.
+        type: boolean
+        default: false
   workflow_dispatch:
 
 concurrency:
@@ -42,24 +50,43 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Resolve immutable image coordinates
+        id: image
+        shell: bash
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+        run: |
+          version="${RELEASE_VERSION:-${GITHUB_REF_NAME#v}}"
+          {
+            echo "version=$version"
+            echo "tags<<EOF"
+            echo "ghcr.io/parsonlabs/parson:${version}-${{ matrix.arch }}"
+            echo "ghcr.io/parsonlabs/parson:sha-${GITHUB_SHA::7}-${{ matrix.arch }}"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
       - name: Build and push architecture image
         uses: docker/build-push-action@v7
         with:
           context: .
           push: true
-          tags: |
-            ghcr.io/parsonlabs/parson:${{ github.ref_name }}-${{ matrix.arch }}
-            ghcr.io/parsonlabs/parson:sha-${{ github.sha }}-${{ matrix.arch }}
+          tags: ${{ steps.image.outputs.tags }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
           platforms: linux/${{ matrix.arch }}
 
   publish_manifest:
     name: Multi-architecture manifest
-    needs: publish_architecture
+    needs:
+      - publish_architecture
+      - scan_architecture
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
+      artifact-metadata: write
+      attestations: write
+      contents: read
+      id-token: write
       packages: write
     steps:
       - name: Set up Docker Buildx
@@ -71,10 +98,74 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Publish shared image tags
+        id: manifest
+        env:
+          PUBLISH_LATEST: ${{ inputs.publish_latest }}
+          RELEASE_VERSION: ${{ inputs.version }}
         run: |
+          version="${RELEASE_VERSION:-${GITHUB_REF_NAME#v}}"
           short_sha="${GITHUB_SHA::7}"
+          image="ghcr.io/parsonlabs/parson"
+          tags=(
+            --tag "${image}:${version}"
+            --tag "${image}:sha-${short_sha}"
+          )
+          if [[ "$PUBLISH_LATEST" == "true" ]]; then
+            tags+=(--tag "${image}:latest")
+          fi
           docker buildx imagetools create \
-            --tag "ghcr.io/parsonlabs/parson:${GITHUB_REF_NAME}" \
-            --tag "ghcr.io/parsonlabs/parson:sha-${short_sha}" \
-            "ghcr.io/parsonlabs/parson:${GITHUB_REF_NAME}-amd64" \
-            "ghcr.io/parsonlabs/parson:${GITHUB_REF_NAME}-arm64"
+            "${tags[@]}" \
+            "${image}:${version}-amd64" \
+            "${image}:${version}-arm64"
+          digest="sha256:$(
+            docker buildx imagetools inspect --raw "${image}:${version}" |
+              sha256sum |
+              cut -d ' ' -f 1
+          )"
+          {
+            echo "image=$image"
+            echo "digest=$digest"
+          } >> "$GITHUB_OUTPUT"
+      - name: Attest server image provenance
+        uses: actions/attest@v4
+        with:
+          subject-name: ${{ steps.manifest.outputs.image }}
+          subject-digest: ${{ steps.manifest.outputs.digest }}
+          push-to-registry: true
+
+  scan_architecture:
+    name: Scan release container (${{ matrix.arch }})
+    needs: publish_architecture
+    strategy:
+      fail-fast: false
+      matrix:
+        arch:
+          - amd64
+          - arm64
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Resolve release image
+        id: image
+        shell: bash
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+        run: |
+          version="${RELEASE_VERSION:-${GITHUB_REF_NAME#v}}"
+          echo "ref=ghcr.io/parsonlabs/parson:${version}-${{ matrix.arch }}" >> "$GITHUB_OUTPUT"
+      - name: Scan the exact release image
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: ${{ steps.image.outputs.ref }}
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: 1

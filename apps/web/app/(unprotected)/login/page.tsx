@@ -17,7 +17,6 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [selectedLibrary, setSelectedLibrary] = useState("");
-  const [libraryAddress, setLibraryAddress] = useState("");
 
   useEffect(() => {
     const name = new URLSearchParams(window.location.search)
@@ -25,12 +24,6 @@ export default function LoginPage() {
       ?.trim();
     if (!name) return;
     setSelectedLibrary(name);
-    try {
-      const configured = window.localStorage.getItem("server_url");
-      setLibraryAddress(configured ? new URL(configured).host : "");
-    } catch {
-      setLibraryAddress("");
-    }
   }, []);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -68,8 +61,8 @@ export default function LoginPage() {
           <h1 className="text-3xl font-bold tracking-tight">
             {selectedLibrary ? `Sign in to ${selectedLibrary}` : "Welcome back"}
           </h1>
-          {libraryAddress && (
-            <p className="mt-2 text-sm text-zinc-500">{libraryAddress}</p>
+          {selectedLibrary && (
+            <p className="mt-2 text-sm text-zinc-500">{window.location.host}</p>
           )}
         </div>
         <Input

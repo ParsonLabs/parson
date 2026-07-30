@@ -12,6 +12,7 @@ import {
   refreshToken,
   register,
   type SetupStatus,
+  validPasswordLength,
 } from "@parson/music-sdk";
 import { Folder, Loader2 } from "lucide-react";
 import Link from "next/link";
@@ -202,7 +203,9 @@ export default function SetupFlow() {
           <Button
             className="mt-2 bg-white text-black hover:bg-zinc-200"
             disabled={
-              creatingAccount || !username.trim() || password.length < 8
+              creatingAccount ||
+              !username.trim() ||
+              !validPasswordLength(password)
             }
             type="submit"
           >

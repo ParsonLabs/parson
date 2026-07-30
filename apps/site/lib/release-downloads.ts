@@ -14,6 +14,4 @@ export const releaseDownloads = {
   linuxArm64Deb: `${releaseBase}/Parson_${releaseVersion}_arm64.deb`,
   macX64Dmg: `${releaseBase}/Parson_${releaseVersion}_x64.dmg`,
   macArm64Dmg: `${releaseBase}/Parson_${releaseVersion}_arm64.dmg`,
-  windowsServer: `${releaseBase}/ParsonMusicServer-${releaseVersion}-win-x64.zip`,
-  checksums: `${releaseBase}/SHA256SUMS`,
 } as const;

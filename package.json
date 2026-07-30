@@ -34,6 +34,7 @@
     "uuid": "11.1.1"
   },
   "patchedDependencies": {
-    "react-native-audio-api@0.13.2": "apps/mobile/patches/react-native-audio-api@0.13.2.patch"
+    "react-native-audio-api@0.13.2": "apps/mobile/patches/react-native-audio-api@0.13.2.patch",
+    "minimatch@8.0.7": "patches/minimatch@8.0.7.patch"
   }
 }

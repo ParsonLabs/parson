@@ -13,11 +13,13 @@ import {
   removeLibraryRoot,
 } from "./library";
 import { findLyrics, getCachedLyrics } from "./lyrics";
+import { signImagePath } from "./images";
 import {
   addAlbumToPlaylist,
   addSongsToPlaylist,
   createPlaylist,
   removeSongFromPlaylist,
+  reorderPlaylistSongs,
 } from "./playlists";
 import {
   editAlbumMetadata,
@@ -87,6 +89,21 @@ test("folder suggestions use the bounded setup endpoint", async () => {
 
   expect(await getLibrarySuggestions()).toEqual(suggestions);
   expect(get).toHaveBeenCalledWith("/setup/suggestions", { timeout: 4_000 });
+});
+
+test("lock-screen artwork requests a path-bound signed image URL", async () => {
+  const post = spyOn(api, "post").mockResolvedValue({
+    data: { expiresAt: 123, signature: "signed" },
+    status: 200,
+    headers: new Headers(),
+  } as never);
+  expect(await signImagePath("/music/Album/cover.jpg")).toEqual({
+    expiresAt: 123,
+    signature: "signed",
+  });
+  expect(post).toHaveBeenCalledWith("/media/images/sign", {
+    path: "/music/Album/cover.jpg",
+  });
 });
 
 test("library roots are removed through the admin library endpoint", async () => {
@@ -344,6 +361,19 @@ test("playlist path identifiers are URL encoded", async () => {
   expect(remove).toHaveBeenCalledWith(
     "/playlists/7/tracks/folder%2Fsong%20%3F%231",
   );
+});
+
+test("playlist reordering sends the complete ordered track list", async () => {
+  const patch = spyOn(api, "patch").mockResolvedValue({
+    data: undefined,
+    status: 204,
+    headers: new Headers(),
+  } as never);
+  await reorderPlaylistSongs(7, ["song-c", "song-a", "song-b"]);
+
+  expect(patch).toHaveBeenCalledWith("/playlists/7/tracks/order", {
+    song_ids: ["song-c", "song-a", "song-b"],
+  });
 });
 
 test("playlist batch adds deduplicate tracks into one request", async () => {

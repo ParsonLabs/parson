@@ -15,9 +15,5 @@ export function shouldDismissPlayerOverlayForLink(
 ) {
   const current = new URL(currentHref);
   const destination = new URL(destinationHref, current);
-  if (current.origin !== destination.origin) return false;
-  return shouldDismissPlayerOverlay(
-    playerRouteIdentity(current.pathname, current.search.slice(1)),
-    playerRouteIdentity(destination.pathname, destination.search.slice(1)),
-  );
+  return current.origin === destination.origin;
 }

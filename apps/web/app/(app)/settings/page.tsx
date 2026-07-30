@@ -8,12 +8,14 @@ import UserForm from "@/features/settings/user-form";
 import { useSession } from "@/features/account/session-provider";
 import { useState } from "react";
 import ServerConnectionPanel from "@/features/server/server-connection-panel";
+import DataSettings from "@/features/settings/data-settings";
 
 const settingsTabs = [
   "account",
   "playback",
   "library",
   "devices",
+  "data",
   "users",
   "advanced",
 ] as const;
@@ -24,6 +26,7 @@ const labels: Record<SettingsTab, string> = {
   playback: "Playback",
   library: "Library",
   devices: "Connections",
+  data: "Data",
   users: "Users",
   advanced: "Advanced",
 };
@@ -34,7 +37,7 @@ export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState<SettingsTab>("account");
   const availableTabs = isAdmin
     ? settingsTabs
-    : (["account", "playback", "devices"] as const);
+    : (["account", "playback", "devices", "data"] as const);
 
   return (
     <div className="mx-auto w-full max-w-[1000px] px-5 py-9 pb-36 sm:px-7">
@@ -67,6 +70,7 @@ export default function SettingsPage() {
             <BitrateForm initialBitrate={session?.bitrate ?? 0} />
           )}
           {activeTab === "devices" && <ServerConnectionPanel />}
+          {activeTab === "data" && <DataSettings isAdmin={isAdmin} />}
           {isAdmin && activeTab === "library" && <LibrarySettings />}
           {isAdmin && activeTab === "users" && <UserForm />}
           {isAdmin && activeTab === "advanced" && <AdvancedSettings />}

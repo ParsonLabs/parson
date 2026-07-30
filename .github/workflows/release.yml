@@ -1,0 +1,167 @@
+name: Publish Stable Release
+
+on:
+  push:
+    branches:
+      - stable
+
+permissions:
+  artifact-metadata: write
+  attestations: write
+  contents: write
+  actions: read
+  id-token: write
+  packages: write
+
+concurrency:
+  group: publish-stable-v1.0.0
+  cancel-in-progress: false
+
+env:
+  RELEASE_VERSION: 1.0.0
+  RELEASE_TAG: v1.0.0
+
+jobs:
+  validate:
+    name: Validate release version
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+      - name: Match version 1.0.0 to every public package
+        id: version
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [[ "$GITHUB_REF_NAME" != "stable" ]]; then
+            echo "Stable releases must run from the stable branch." >&2
+            exit 1
+          fi
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            echo "Release $RELEASE_TAG already exists; v1.0.0 is immutable." >&2
+            exit 1
+          fi
+          node <<'NODE'
+          const fs = require("node:fs");
+          const expected = process.env.RELEASE_VERSION;
+          const packages = [
+            ["package.json", (value) => value.version],
+            ["apps/desktop/package.json", (value) => value.version],
+            ["apps/mobile/package.json", (value) => value.version],
+            ["apps/mobile/app.json", (value) => value.expo.version],
+            ["apps/site/package.json", (value) => value.version],
+            ["apps/web/package.json", (value) => value.version],
+            ["packages/parson-music-sdk/package.json", (value) => value.version],
+            ["packages/typescript-config/package.json", (value) => value.version],
+          ];
+          for (const [path, readVersion] of packages) {
+            const actual = readVersion(JSON.parse(fs.readFileSync(path, "utf8")));
+            if (actual !== expected) {
+              throw new Error(`${path}: expected ${expected}, found ${actual}`);
+            }
+          }
+          NODE
+          while IFS= read -r manifest; do
+            actual="$(sed -n 's/^version = "\([^"]*\)"/\1/p' "$manifest" | head -1)"
+            if [[ "$actual" != "$RELEASE_VERSION" ]]; then
+              echo "$manifest: expected $RELEASE_VERSION, found ${actual:-no package version}" >&2
+              exit 1
+            fi
+          done < <(find crates -mindepth 2 -maxdepth 2 -name Cargo.toml -print | sort)
+          echo "version=$RELEASE_VERSION" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: Build release packages
+    needs: validate
+    uses: ./.github/workflows/test.yml
+    with:
+      release: true
+
+  container:
+    name: Publish release container
+    needs:
+      - validate
+      - build
+    uses: ./.github/workflows/container-image.yml
+    with:
+      version: 1.0.0
+      publish_latest: true
+
+  release:
+    name: Publish immutable GitHub release
+    needs:
+      - validate
+      - build
+      - container
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - name: Generate third-party notices
+        run: node tools/generate-third-party-notices.cjs
+      - name: Download release packages
+        uses: actions/download-artifact@v6
+        with:
+          pattern: parson-*
+          path: artifacts
+          merge-multiple: true
+      - name: Verify exact release package set
+        env:
+          VERSION: ${{ needs.validate.outputs.version }}
+        run: |
+          cp LICENSE THIRD_PARTY_NOTICES.md artifacts/
+          require_count() {
+            local expected="$1"
+            local pattern="$2"
+            local actual
+            actual="$(find artifacts -maxdepth 1 -type f -name "$pattern" | wc -l)"
+            if [[ "$actual" -ne "$expected" ]]; then
+              echo "Expected $expected file(s) matching $pattern, found $actual." >&2
+              exit 1
+            fi
+          }
+          require_count 2 "Parson_${VERSION}_*.AppImage"
+          require_count 2 "Parson_${VERSION}_*.deb"
+          require_count 2 "Parson_${VERSION}_*-setup.exe"
+          require_count 2 "Parson_${VERSION}_*-portable.exe"
+          require_count 2 "Parson_${VERSION}_*.dmg"
+          require_count 2 "Parson_${VERSION}_*.zip"
+          require_count 1 "ParsonMusicServer-${VERSION}-win-x64.zip"
+          require_count 1 "ParsonMusicServer.exe"
+          require_count 1 "ParsonMusicServer.exe.sha256"
+          require_count 1 "windows-server-update.json"
+          require_count 1 "LICENSE"
+          require_count 1 "THIRD_PARTY_NOTICES.md"
+          require_count 18 "*"
+          find artifacts -maxdepth 1 -type f -print0 |
+            sort -z |
+            xargs -0 sha256sum |
+            sed 's#  artifacts/#  #' > "$RUNNER_TEMP/SHA256SUMS"
+          mv "$RUNNER_TEMP/SHA256SUMS" artifacts/SHA256SUMS
+      - name: Attest release package provenance
+        uses: actions/attest@v4
+        with:
+          subject-path: |
+            artifacts/*.AppImage
+            artifacts/*.deb
+            artifacts/*.dmg
+            artifacts/*.exe
+            artifacts/*.zip
+            artifacts/*.json
+            artifacts/*.sha256
+            artifacts/SHA256SUMS
+      - name: Publish stable release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mapfile -d '' packages < <(find artifacts -maxdepth 1 -type f -print0 | sort -z)
+          gh release create "$RELEASE_TAG" "${packages[@]}" \
+            --target "$GITHUB_SHA" \
+            --title "Parson ${{ needs.validate.outputs.version }}" \
+            --generate-notes

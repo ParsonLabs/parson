@@ -26,10 +26,9 @@ Desktop apps include everything needed to run your library.
 | Linux x64   | [AppImage](https://github.com/ParsonLabs/Parson/releases/download/v1.0.0/Parson_1.0.0_x86_64.AppImage) · [Debian package](https://github.com/ParsonLabs/Parson/releases/download/v1.0.0/Parson_1.0.0_amd64.deb)           |
 | Linux ARM64 | [AppImage](https://github.com/ParsonLabs/Parson/releases/download/v1.0.0/Parson_1.0.0_arm64.AppImage) · [Debian package](https://github.com/ParsonLabs/Parson/releases/download/v1.0.0/Parson_1.0.0_arm64.deb)            |
 | macOS       | [Intel DMG](https://github.com/ParsonLabs/Parson/releases/download/v1.0.0/Parson_1.0.0_x64.dmg) · [Apple Silicon DMG](https://github.com/ParsonLabs/Parson/releases/download/v1.0.0/Parson_1.0.0_arm64.dmg)               |
-| Server      | [Windows x64 ZIP](https://github.com/ParsonLabs/Parson/releases/download/v1.0.0/ParsonMusicServer-1.0.0-win-x64.zip) · `ghcr.io/parsonlabs/parson:1.0.0`                                                                  |
+| Server      | `ghcr.io/parsonlabs/parson:1.0.0`                                                                                                                                                                                         |
 
-[Checksums](https://github.com/ParsonLabs/Parson/releases/download/v1.0.0/SHA256SUMS)
-and build provenance are included with the release.
+Build provenance is included with the release.
 
 ## Docker
 

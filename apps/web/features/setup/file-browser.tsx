@@ -14,6 +14,7 @@ import { useRouter } from "next/navigation";
 import { createExclusiveOperations, parentDirectory } from "./setup-state";
 import { FileBrowserView, type Directory } from "./file-browser-view";
 import { hasDesktopBridge, selectMusicFolder } from "@/lib/desktop/bridge";
+import { libraryFailureKind, type FailureKind } from "@/lib/failure-state";
 
 export default function FileBrowser({
   actionLabel,
@@ -45,6 +46,7 @@ export default function FileBrowser({
     null,
   );
   const [indexMessage, setIndexMessage] = useState<string | null>(null);
+  const [indexFailure, setIndexFailure] = useState<FailureKind | null>(null);
   const [directoryError, setDirectoryError] = useState(false);
   const [showHidden, setShowHidden] = useState(false);
   const [desktopBridgeAvailable, setDesktopBridgeAvailable] = useState(false);
@@ -99,6 +101,7 @@ export default function FileBrowser({
     await mutations.current.run(async () => {
       setIsIndexing(true);
       setIndexMessage(null);
+      setIndexFailure(null);
       setIndexReport(null);
 
       try {
@@ -122,8 +125,11 @@ export default function FileBrowser({
         if (unavailable?.state === "indexing") {
           setIndexMessage("Indexing is already in progress.");
         } else {
-          setIndexMessage(
-            "Couldn’t index this folder. Choose another or try again.",
+          const detail =
+            unavailable?.message ||
+            (error instanceof Error ? error.message : null);
+          setIndexFailure(
+            detail ? libraryFailureKind(detail) : "library_folder_unavailable",
           );
         }
       } finally {
@@ -177,6 +183,7 @@ export default function FileBrowser({
       directoryError={directoryError}
       disabled={disabled}
       indexMessage={indexMessage}
+      indexFailure={indexFailure}
       indexReport={indexReport}
       isIndexing={isIndexing}
       isRefreshing={isRefreshingCurrent}

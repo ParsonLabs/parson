@@ -8,7 +8,18 @@ use actix_web::{Error, HttpMessage};
 use std::time::Instant;
 
 const REQUEST_ID_HEADER: &str = "x-request-id";
-const CONTENT_SECURITY_POLICY: &str = "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: http: https:; media-src 'self' blob: http: https:; font-src 'self' data:; connect-src 'self' http: https: ws: wss:";
+const CONTENT_SECURITY_POLICY: &str = "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: http: https:; media-src 'self' blob: http: https:; font-src 'self' data:; connect-src 'self'";
+
+pub fn content_security_policy(nonce: Option<&str>) -> String {
+    match nonce {
+        Some(nonce) => CONTENT_SECURITY_POLICY.replacen(
+            "script-src 'self'",
+            &format!("script-src 'self' 'nonce-{nonce}'"),
+            1,
+        ),
+        None => CONTENT_SECURITY_POLICY.to_string(),
+    }
+}
 
 #[derive(Clone, Debug)]
 pub struct RequestId(pub String);
@@ -50,10 +61,15 @@ pub async fn request_context<B: MessageBody>(
             .headers_mut()
             .insert(header::HeaderName::from_static(REQUEST_ID_HEADER), value);
     }
-    response.headers_mut().insert(
-        header::CONTENT_SECURITY_POLICY,
-        HeaderValue::from_static(CONTENT_SECURITY_POLICY),
-    );
+    if !response
+        .headers()
+        .contains_key(header::CONTENT_SECURITY_POLICY)
+    {
+        response.headers_mut().insert(
+            header::CONTENT_SECURITY_POLICY,
+            HeaderValue::from_static(CONTENT_SECURITY_POLICY),
+        );
+    }
     response.headers_mut().insert(
         header::X_CONTENT_TYPE_OPTIONS,
         HeaderValue::from_static("nosniff"),

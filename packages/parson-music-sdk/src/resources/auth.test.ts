@@ -1,13 +1,41 @@
 import { afterEach, expect, mock, test } from "bun:test";
 
 import { configureApiRuntime } from "../core/http";
-import { login, refreshToken } from "./auth";
+import {
+  checkDevicePairing,
+  isInsecureHttpOrigin,
+  login,
+  refreshToken,
+  startDevicePairing,
+  validPasswordLength,
+  validUsername,
+} from "./auth";
 
 const originalFetch = globalThis.fetch;
 
 afterEach(() => {
   globalThis.fetch = originalFetch;
   configureApiRuntime(null);
+});
+
+test("password limits count Unicode characters rather than UTF-16 bytes", () => {
+  expect(validPasswordLength("🔐".repeat(8))).toBeTrue();
+  expect(validPasswordLength("🔐".repeat(2))).toBeFalse();
+  expect(validPasswordLength("x".repeat(257))).toBeFalse();
+});
+
+test("username limits match backend character and control rules", () => {
+  expect(validUsername("synthetic-user")).toBeTrue();
+  expect(validUsername("Δ".repeat(64))).toBeTrue();
+  expect(validUsername(" synthetic-user")).toBeFalse();
+  expect(validUsername("synthetic\nuser")).toBeFalse();
+  expect(validUsername("x".repeat(65))).toBeFalse();
+});
+
+test("insecure connection detection excludes HTTPS and loopback", () => {
+  expect(isInsecureHttpOrigin("http://192.168.1.25:1993")).toBeTrue();
+  expect(isInsecureHttpOrigin("https://music.example")).toBeFalse();
+  expect(isInsecureHttpOrigin("http://127.0.0.1:1993")).toBeFalse();
 });
 
 test("native login requests rotating refresh credentials", async () => {
@@ -48,4 +76,32 @@ test("native refresh sends only the explicit refresh bearer", async () => {
   });
 
   expect(response.access_token).toBe("next-access-token");
+});
+
+test("device pairing start and polling never send an existing account token", async () => {
+  configureApiRuntime({
+    getAccessToken: () => "existing-account-token",
+    getServerUrl: () => "https://music.test",
+  });
+  const requests: string[] = [];
+  globalThis.fetch = mock(async (input, init) => {
+    requests.push(String(input));
+    expect(new Headers(init?.headers).has("authorization")).toBeFalse();
+    if (String(input).endsWith("/auth/pairing/start")) {
+      return Response.json({
+        pairingId: "pairing-id",
+        secret: "poll-secret",
+        code: "123456",
+        expiresIn: 180,
+      });
+    }
+    return Response.json({ status: false, pending: true }, { status: 202 });
+  }) as typeof fetch;
+
+  const pairing = await startDevicePairing("Pixel");
+  const status = await checkDevicePairing(pairing.pairingId, pairing.secret);
+
+  expect(pairing.code).toBe("123456");
+  expect(status.pending).toBeTrue();
+  expect(requests).toHaveLength(2);
 });

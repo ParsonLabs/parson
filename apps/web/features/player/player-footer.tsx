@@ -1,19 +1,12 @@
 "use client";
 
-import SongEditor from "@/features/library/song-editor";
 import FavoriteButton from "@/features/library/favorite-button";
-import {
-  ContextMenu,
-  ContextMenuContent,
-  ContextMenuItem,
-  ContextMenuTrigger,
-} from "@/components/ui/context-menu";
+import SongMenu from "@/features/library/song-menu";
 import {
   AudioLines,
   Check,
   Ellipsis,
   ListMusic,
-  LockKeyhole,
   Maximize2,
   MicVocal,
 } from "lucide-react";
@@ -30,8 +23,9 @@ import {
 import { CastOutputButton } from "./cast-output";
 
 export function PlayerFooter({
-  admin,
+  albumCover,
   albumId,
+  albumName,
   artistId,
   artistName,
   audioPreset,
@@ -60,8 +54,9 @@ export function PlayerFooter({
   title,
   volume,
 }: {
-  admin: boolean;
+  albumCover?: string;
   albumId: string;
+  albumName: string;
   artistId: string;
   artistName: string;
   audioPreset: AudioPresetId;
@@ -91,141 +86,138 @@ export function PlayerFooter({
   volume: number;
 }) {
   return (
-    <ContextMenu>
-      <ContextMenuTrigger asChild>
-        <footer className="fixed bottom-[80px] left-2 right-2 z-50 isolate overflow-visible rounded-[14px] border border-white/10 bg-[#080808] px-3 py-2 text-white shadow-[0_20px_70px_rgba(0,0,0,0.72)] md:bottom-4 md:left-[calc(50%+40px)] md:right-auto md:w-[min(900px,calc(100vw-112px))] md:-translate-x-1/2 md:rounded-[24px] md:px-4 md:py-4 md:pl-5 md:pr-3">
-          <button
-            aria-label={`Open now playing: ${title}`}
-            className="absolute inset-0 z-20 rounded-[14px] md:hidden"
-            onClick={onOpenFullscreen}
-            type="button"
+    <SongMenu
+      album_cover={albumCover}
+      album_id={albumId}
+      album_name={albumName}
+      artist_id={artistId}
+      artist_name={artistName}
+      context="player"
+      song_id={songId}
+      song_name={title}
+    >
+      <footer className="fixed bottom-[80px] left-2 right-2 z-50 isolate overflow-visible rounded-[14px] border border-white/10 bg-[#080808] px-3 py-2 text-white shadow-[0_20px_70px_rgba(0,0,0,0.72)] md:bottom-4 md:left-[calc(50%+40px)] md:right-auto md:w-[min(900px,calc(100vw-112px))] md:-translate-x-1/2 md:rounded-[24px] md:px-4 md:py-4 md:pl-5 md:pr-3">
+        <button
+          aria-label={`Open now playing: ${title}`}
+          className="absolute inset-0 z-20 rounded-[14px] md:hidden"
+          onClick={onOpenFullscreen}
+          type="button"
+        />
+        <div className="relative z-10 grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-3 lg:grid-cols-[minmax(0,1fr)_300px_minmax(0,1fr)] lg:gap-x-4">
+          <TrackInfo
+            albumId={albumId}
+            artistId={artistId}
+            artistName={artistName}
+            cover={cover}
+            songId={songId}
+            title={title}
           />
-          <div className="relative z-10 grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-3 lg:grid-cols-[minmax(0,1fr)_300px_minmax(0,1fr)] lg:gap-x-4">
-            <TrackInfo
-              albumId={albumId}
-              artistId={artistId}
-              artistName={artistName}
-              cover={cover}
-              songId={songId}
-              title={title}
+          <section className="relative z-30 flex min-w-0 flex-col items-center gap-1.5 lg:w-[300px]">
+            <PlaybackControls
+              compact
+              isPlaying={isPlaying}
+              onNext={onNext}
+              onPrevious={onPrevious}
+              onToggle={onTogglePlayback}
             />
-            <section className="relative z-30 flex min-w-0 flex-col items-center gap-1.5 lg:w-[300px]">
-              <PlaybackControls
-                compact
-                isPlaying={isPlaying}
-                onNext={onNext}
-                onPrevious={onPrevious}
-                onToggle={onTogglePlayback}
-              />
-              <Timeline
-                className="hidden w-full md:flex"
-                currentTime={currentTime}
-                duration={duration}
-                onChange={onSeek}
-                playbackRate={playbackRate}
-              />
-            </section>
-            <section className="relative z-30 flex items-center justify-end gap-1.5 lg:justify-self-end">
-              <span className="hidden md:inline" data-player-queue-trigger>
-                <ActionButton
-                  active={queueOpen}
-                  label="Queue"
-                  onClick={onOpenQueue}
-                >
-                  <ListMusic className="h-4 w-4" />
-                </ActionButton>
-              </span>
-              <div className="hidden sm:block">
-                <ActionButton
-                  active={lyricsOpen}
-                  label="Lyrics"
-                  onClick={onToggleLyrics}
-                >
-                  <MicVocal className="h-4 w-4" />
-                </ActionButton>
-              </div>
-              <div className="hidden sm:block">
-                <ActionButton
-                  active={slowedReverb}
-                  label="Sound"
-                  onClick={onToggleSound}
-                >
-                  <AudioLines className="h-4 w-4" />
-                </ActionButton>
-              </div>
-              <div className="hidden sm:block">
-                <VolumeControl
-                  muted={muted}
-                  onChange={onVolumeChange}
-                  onToggleMute={onToggleMute}
-                  volume={volume}
-                />
-              </div>
-              <div className="group/more relative">
-                <button
-                  aria-label="More controls"
-                  className="flex h-8 w-8 items-center justify-center rounded-full text-zinc-400 hover:bg-white/10 hover:text-white"
-                  type="button"
-                >
-                  <Ellipsis className="h-5 w-5" />
-                </button>
-                <div className="absolute bottom-full right-0 z-[80] hidden w-52 pb-3 group-hover/more:block group-focus-within/more:block">
-                  <div className="max-h-[min(360px,calc(100vh-120px))] overflow-y-auto rounded-xl border border-white/10 bg-black p-1.5 shadow-2xl">
-                    <CastOutputButton menuItem />
-                    <div className="my-1.5 h-px bg-white/10" />
-                    <div className="px-3 pb-1.5 pt-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
-                      Sound
-                    </div>
-                    {audioPresets.map((preset) => (
-                      <button
-                        key={preset.id}
-                        aria-pressed={audioPreset === preset.id}
-                        className={`flex h-9 w-full items-center gap-3 rounded-lg px-3 text-left text-sm ${audioPreset === preset.id ? "bg-white text-black" : "text-zinc-300 hover:bg-white/10 hover:text-white"}`}
-                        onClick={() => onSelectPreset(preset.id)}
-                        type="button"
-                      >
-                        <Check
-                          className={`h-4 w-4 ${audioPreset === preset.id ? "opacity-100" : "opacity-0"}`}
-                        />
-                        {preset.label}
-                      </button>
-                    ))}
-                    <div className="my-1.5 h-px bg-white/10" />
-                    <button
-                      className="flex h-9 w-full items-center gap-3 rounded-lg px-3 text-left text-sm text-zinc-300 hover:bg-white/10 hover:text-white"
-                      onClick={onOpenFullscreen}
-                      type="button"
-                    >
-                      <Maximize2 className="h-4 w-4" />
-                      Fullscreen
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </section>
-          </div>
-          <div className="relative z-10 hidden md:block">
             <Timeline
-              className="mt-2 flex w-full md:hidden"
+              className="hidden w-full md:flex"
               currentTime={currentTime}
               duration={duration}
               onChange={onSeek}
               playbackRate={playbackRate}
             />
-          </div>
-        </footer>
-      </ContextMenuTrigger>
-      <ContextMenuContent className="w-52 bg-black text-white">
-        {admin ? (
-          <SongEditor song_id={songId} />
-        ) : (
-          <ContextMenuItem disabled>
-            <LockKeyhole className="h-4 w-4" />
-            Metadata editing requires admin
-          </ContextMenuItem>
-        )}
-      </ContextMenuContent>
-    </ContextMenu>
+          </section>
+          <section className="relative z-30 flex items-center justify-end gap-1.5 lg:justify-self-end">
+            <span className="hidden md:inline" data-player-queue-trigger>
+              <ActionButton
+                active={queueOpen}
+                label="Queue"
+                onClick={onOpenQueue}
+              >
+                <ListMusic className="h-4 w-4" />
+              </ActionButton>
+            </span>
+            <div className="hidden sm:block">
+              <ActionButton
+                active={lyricsOpen}
+                label="Lyrics"
+                onClick={onToggleLyrics}
+              >
+                <MicVocal className="h-4 w-4" />
+              </ActionButton>
+            </div>
+            <div className="hidden sm:block">
+              <ActionButton
+                active={slowedReverb}
+                label="Sound"
+                onClick={onToggleSound}
+              >
+                <AudioLines className="h-4 w-4" />
+              </ActionButton>
+            </div>
+            <div className="hidden sm:block">
+              <VolumeControl
+                muted={muted}
+                onChange={onVolumeChange}
+                onToggleMute={onToggleMute}
+                volume={volume}
+              />
+            </div>
+            <div className="group/more relative">
+              <button
+                aria-label="More controls"
+                className="flex h-8 w-8 items-center justify-center rounded-full text-zinc-400 hover:bg-white/10 hover:text-white"
+                type="button"
+              >
+                <Ellipsis className="h-5 w-5" />
+              </button>
+              <div className="absolute bottom-full right-0 z-[80] hidden w-52 pb-3 group-hover/more:block group-focus-within/more:block">
+                <div className="max-h-[min(360px,calc(100vh-120px))] overflow-y-auto rounded-xl border border-white/10 bg-black p-1.5 shadow-2xl">
+                  <CastOutputButton menuItem />
+                  <div className="my-1.5 h-px bg-white/10" />
+                  <div className="px-3 pb-1.5 pt-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
+                    Sound
+                  </div>
+                  {audioPresets.map((preset) => (
+                    <button
+                      key={preset.id}
+                      aria-pressed={audioPreset === preset.id}
+                      className={`flex h-9 w-full items-center gap-3 rounded-lg px-3 text-left text-sm ${audioPreset === preset.id ? "bg-white text-black" : "text-zinc-300 hover:bg-white/10 hover:text-white"}`}
+                      onClick={() => onSelectPreset(preset.id)}
+                      type="button"
+                    >
+                      <Check
+                        className={`h-4 w-4 ${audioPreset === preset.id ? "opacity-100" : "opacity-0"}`}
+                      />
+                      {preset.label}
+                    </button>
+                  ))}
+                  <div className="my-1.5 h-px bg-white/10" />
+                  <button
+                    className="flex h-9 w-full items-center gap-3 rounded-lg px-3 text-left text-sm text-zinc-300 hover:bg-white/10 hover:text-white"
+                    onClick={onOpenFullscreen}
+                    type="button"
+                  >
+                    <Maximize2 className="h-4 w-4" />
+                    Fullscreen
+                  </button>
+                </div>
+              </div>
+            </div>
+          </section>
+        </div>
+        <div className="relative z-10 hidden md:block">
+          <Timeline
+            className="mt-2 flex w-full md:hidden"
+            currentTime={currentTime}
+            duration={duration}
+            onChange={onSeek}
+            playbackRate={playbackRate}
+          />
+        </div>
+      </footer>
+    </SongMenu>
   );
 }
 

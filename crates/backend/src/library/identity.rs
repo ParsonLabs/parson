@@ -4,17 +4,41 @@ use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use regex::Regex;
 use sha2::{Digest, Sha256};
+use unicode_normalization::{UnicodeNormalization, char::is_combining_mark};
 
 static TRAILING_DISC_REGEX: OnceLock<Regex> = OnceLock::new();
 static BRACKETED_DISC_REGEX: OnceLock<Regex> = OnceLock::new();
 
 pub fn normalize_artist_identity(name: &str) -> String {
-    let normalized = normalize_identity_text(name);
+    let accent_folded = fold_artist_diacritics(name);
+    let normalized = normalize_identity_text(&accent_folded);
     if matches!(normalized.as_str(), "va" | "v a" | "various") {
         "various artists".to_string()
     } else {
         normalized
     }
+}
+
+fn fold_artist_diacritics(value: &str) -> String {
+    let mut folded = String::with_capacity(value.len());
+    for character in value
+        .nfkd()
+        .filter(|character| !is_combining_mark(*character))
+    {
+        for lower in character.to_lowercase() {
+            match lower {
+                'æ' => folded.push_str("ae"),
+                'œ' => folded.push_str("oe"),
+                'ß' => folded.push_str("ss"),
+                'ø' => folded.push('o'),
+                'ð' => folded.push('d'),
+                'þ' => folded.push_str("th"),
+                'ł' => folded.push('l'),
+                _ => folded.push(lower),
+            }
+        }
+    }
+    folded
 }
 
 pub fn normalize_album_identity(name: &str) -> String {
@@ -144,7 +168,9 @@ pub fn hash_normalized_album(normalized_name: &str, normalized_artist: &str) -> 
 
 #[cfg(test)]
 mod tests {
-    use super::{hash_album, hash_artist, hash_song, normalize_album_identity};
+    use super::{
+        hash_album, hash_artist, hash_song, normalize_album_identity, normalize_artist_identity,
+    };
 
     #[test]
     fn artist_hash_is_stable_for_same_name() {
@@ -169,6 +195,42 @@ mod tests {
         let full = "Various Artists".to_string();
 
         assert_eq!(hash_artist(&shorthand), hash_artist(&full));
+    }
+
+    #[test]
+    fn artist_identity_folds_accent_and_unicode_composition_variants() {
+        let plain = "Lumina Vale";
+        let precomposed = "Lúmina Vale";
+        let decomposed = "Lu\u{301}mina Vale";
+
+        assert_eq!(normalize_artist_identity(plain), "lumina vale");
+        assert_eq!(
+            normalize_artist_identity(precomposed),
+            normalize_artist_identity(plain)
+        );
+        assert_eq!(
+            normalize_artist_identity(decomposed),
+            normalize_artist_identity(plain)
+        );
+        assert_eq!(hash_artist(precomposed), hash_artist(plain));
+        assert_eq!(hash_artist(decomposed), hash_artist(plain));
+    }
+
+    #[test]
+    fn accent_equivalent_artists_share_all_catalog_identity_derivations() {
+        let accented = "Æther Ørn";
+        let plain = "Aether Orn";
+
+        assert_eq!(normalize_artist_identity(accented), "aether orn");
+        assert_eq!(hash_artist(accented), hash_artist(plain));
+        assert_eq!(
+            hash_album("Synthetic Horizon", accented),
+            hash_album("Synthetic Horizon", plain)
+        );
+        assert_eq!(
+            hash_song("Invented Signal", accented, "Synthetic Horizon", 1),
+            hash_song("Invented Signal", plain, "Synthetic Horizon", 1)
+        );
     }
 
     #[test]

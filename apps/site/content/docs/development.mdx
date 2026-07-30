@@ -30,7 +30,7 @@ Open `http://localhost:3000`. The embedded production API/UI origin is `http://l
 | `crates/backend`            | Rust music server, indexer, database, API, discovery, lyrics, and playback state |
 | `crates/windows-server`     | Native Windows notification-area server host and updater                         |
 | `apps/web`                  | Next.js web UI embedded by native/server releases                                |
-| `apps/desktop`              | Shared Linux and Windows Electron shell and native packaging                     |
+| `apps/desktop`              | Shared Linux, macOS, and Windows Electron shell and native packaging             |
 | `apps/mobile`               | Expo/React Native client for Android and iOS                                     |
 | `packages/parson-music-sdk` | Typed TypeScript API client                                                      |
 | `apps/site`                 | The Parson website and documentation                                             |
@@ -54,7 +54,7 @@ Parson follows Semantic Versioning. Maintainers build and verify platform artifa
 - `/api/v1` remains a compatibility alias for existing clients.
 - `/.well-known/parson` exposes `protocolVersion` and capabilities for client negotiation.
 
-The TypeScript SDK is the practical API reference today. There is no separately versioned OpenAPI publication in Parson 1.0.x. Clients should check the discovery protocol version and ignore unknown JSON fields for forward compatibility.
+The TypeScript SDK is the practical API reference. Parson does not publish a separate OpenAPI specification. Clients should check the discovery protocol version and ignore unknown JSON fields for forward compatibility.
 
 ## Licensing
 

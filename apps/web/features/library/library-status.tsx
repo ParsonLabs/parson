@@ -1,9 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { AlertCircle, Loader2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { LibraryReadiness } from "@parson/music-sdk";
+import FailureState from "@/components/app/failure-state";
+import { libraryFailureKind } from "@/lib/failure-state";
 
 interface LibraryStatusProps {
   readiness: LibraryReadiness;
@@ -49,9 +51,20 @@ export default function LibraryStatus({
   readiness,
   onRetry,
 }: LibraryStatusProps) {
+  if (readiness.state === "failed") {
+    return (
+      <div className="flex min-h-[70vh] items-center justify-center px-6">
+        <FailureState
+          detail={readiness.message}
+          href="/settings"
+          kind={libraryFailureKind(readiness.message)}
+        />
+      </div>
+    );
+  }
+
   const copy = copyByState[readiness.state];
   const isIndexing = readiness.state === "indexing";
-  const isFailed = readiness.state === "failed";
   const isEmpty = readiness.state === "no_library_indexed";
 
   return (
@@ -62,8 +75,6 @@ export default function LibraryStatus({
             <div className="mt-1 flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white/10">
               {isIndexing ? (
                 <Loader2 className="h-5 w-5 animate-spin text-zinc-400" />
-              ) : isFailed ? (
-                <AlertCircle className="h-5 w-5 text-zinc-300" />
               ) : null}
             </div>
           )}

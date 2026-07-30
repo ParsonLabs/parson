@@ -1,6 +1,6 @@
 "use client";
 
-type DesktopPlatform = "windows" | "linux";
+type DesktopPlatform = "linux" | "macos" | "windows";
 
 declare global {
   interface Window {
@@ -13,6 +13,7 @@ declare global {
         toggleMaximize(): Promise<boolean>;
         watchMaximized(callback: (maximized: boolean) => void): void;
       };
+      watchPowerResume(callback: () => void): () => void;
     };
   }
 }
@@ -29,6 +30,11 @@ export function hasDesktopBridge(): boolean {
 export function electronWindowControls() {
   if (typeof window === "undefined") return null;
   return window.__PARSON_ELECTRON__?.windowControls ?? null;
+}
+
+export function watchDesktopPowerResume(callback: () => void) {
+  if (typeof window === "undefined") return () => {};
+  return window.__PARSON_ELECTRON__?.watchPowerResume(callback) ?? (() => {});
 }
 
 export async function desktopPlatform(): Promise<DesktopPlatform | null> {

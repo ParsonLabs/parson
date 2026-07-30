@@ -1,6 +1,6 @@
 services:
   parson-music:
-    image: ghcr.io/parsonlabs/parson:nightly
+    image: ghcr.io/parsonlabs/parson:1.0.0
     # Host networking lets mDNS discovery reach phones and computers on the
     # physical LAN. With bridge networking, direct http://nas-address:1993
     # connections still work but Nearby discovery may not.

@@ -7,7 +7,7 @@ type ButtonVariant =
 type ButtonSize = "default" | "sm" | "lg" | "icon";
 
 const variants: Record<ButtonVariant, string> = {
-  default: "bg-zinc-800 text-zinc-100 hover:bg-zinc-700",
+  default: "bg-white text-black hover:bg-zinc-200",
   destructive: "bg-red-600 text-white hover:bg-red-500",
   outline:
     "border border-zinc-700 bg-zinc-800 text-zinc-100 hover:bg-zinc-700 hover:text-white",

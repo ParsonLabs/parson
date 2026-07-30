@@ -104,7 +104,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - name: Download release packages
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@v8
         with:
           pattern: parson-*
           path: artifacts
@@ -139,7 +139,7 @@ jobs:
           require_count 2 "Parson_${VERSION}_*.zip"
           require_count 12 "*"
       - name: Attest release package provenance
-        uses: actions/attest@v4
+        uses: actions/attest@v4.2.0
         with:
           subject-path: |
             artifacts/*.AppImage

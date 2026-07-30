@@ -14,6 +14,9 @@ const Slider = React.forwardRef<
       className,
       "aria-label": ariaLabel,
       "aria-labelledby": ariaLabelledBy,
+      "aria-describedby": ariaDescribedBy,
+      "aria-keyshortcuts": ariaKeyShortcuts,
+      "aria-valuetext": ariaValueText,
       ...props
     },
     ref,
@@ -37,8 +40,11 @@ const Slider = React.forwardRef<
         />
       </SliderPrimitive.Track>
       <SliderPrimitive.Thumb
+        aria-describedby={ariaDescribedBy}
+        aria-keyshortcuts={ariaKeyShortcuts}
         aria-label={ariaLabel}
         aria-labelledby={ariaLabelledBy}
+        aria-valuetext={ariaValueText}
         data-slot="slider-thumb"
         className="block h-5 w-5 rounded-full border-2 border-zinc-100 bg-black ring-offset-black transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-zinc-400 focus-visible:ring-offset-1 disabled:pointer-events-none disabled:opacity-50"
       />

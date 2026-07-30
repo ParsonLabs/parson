@@ -5,6 +5,7 @@ import PlayIcon from "@/components/icons/play";
 import { Slider } from "@/components/ui/slider";
 import { SkipBack, SkipForward, Volume2, VolumeX } from "lucide-react";
 import { useEffect, useState, type ReactNode, type WheelEvent } from "react";
+import { formatPlaybackTime, timelineValueText } from "./player-controls-state";
 
 function ControlTooltip({ children }: { children: ReactNode }) {
   return (
@@ -96,11 +97,16 @@ export function Timeline({
   return (
     <div className={`${className} items-center gap-2`}>
       <span className="w-8 text-right font-mono text-[9px] text-zinc-400">
-        {formatTime(currentTime / safePlaybackRate)}
+        {formatPlaybackTime(currentTime / safePlaybackRate)}
       </span>
       <Slider
         aria-label="Playback position"
-        className="flex-1 [&_[data-slot=slider-range]]:bg-white [&_[data-slot=slider-thumb]]:h-2.5 [&_[data-slot=slider-thumb]]:w-2.5 [&_[data-slot=slider-thumb]]:border-0 [&_[data-slot=slider-thumb]]:bg-white [&_[data-slot=slider-thumb]]:opacity-0 [&_[data-slot=slider-track]]:h-1 [&_[data-slot=slider-track]]:bg-white/15 [&:hover_[data-slot=slider-thumb]]:opacity-100"
+        aria-keyshortcuts="ArrowLeft ArrowRight Home End"
+        aria-valuetext={timelineValueText(
+          currentTime / safePlaybackRate,
+          duration / safePlaybackRate,
+        )}
+        className="flex-1 cursor-pointer before:absolute before:-inset-y-3 before:inset-x-0 before:content-[''] [&_[data-slot=slider-range]]:bg-white [&_[data-slot=slider-thumb]]:h-2.5 [&_[data-slot=slider-thumb]]:w-2.5 [&_[data-slot=slider-thumb]]:border-0 [&_[data-slot=slider-thumb]]:bg-white [&_[data-slot=slider-thumb]]:opacity-0 [&_[data-slot=slider-track]]:h-1 [&_[data-slot=slider-track]]:bg-white/15 [&:focus-within_[data-slot=slider-thumb]]:opacity-100 [&:hover_[data-slot=slider-thumb]]:opacity-100"
         max={duration || 100}
         min={0}
         onValueChange={([value]) =>
@@ -109,7 +115,7 @@ export function Timeline({
         value={[Math.min(currentTime, duration || currentTime)]}
       />
       <span className="w-8 font-mono text-[9px] text-zinc-400">
-        {formatTime(duration / safePlaybackRate)}
+        {formatPlaybackTime(duration / safePlaybackRate)}
       </span>
     </div>
   );
@@ -231,11 +237,4 @@ function IconButton({
       {children}
     </button>
   );
-}
-
-function formatTime(time: number) {
-  if (!Number.isFinite(time) || time <= 0) return "0:00";
-  const minutes = Math.floor(time / 60);
-  const seconds = Math.floor(time % 60);
-  return `${minutes}:${seconds.toString().padStart(2, "0")}`;
 }

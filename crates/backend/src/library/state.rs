@@ -133,8 +133,8 @@ pub struct LibraryCache {
     pub image_paths: HashSet<PathBuf>,
 }
 
-// Version 4 stores JSON in the existing zstd envelope.
-const CATALOG_CACHE_SCHEMA_VERSION: u32 = 4;
+// Version 7 stores accent-folded identities and primary-track appearance relationships.
+const CATALOG_CACHE_SCHEMA_VERSION: u32 = 7;
 const MAX_DECOMPRESSED_CATALOG_CACHE_BYTES: u64 = 512 * 1024 * 1024;
 static CACHE_PERSIST_REQUEST: AtomicU64 = AtomicU64::new(0);
 static CACHE_PERSIST_LOCK: OnceLock<StdMutex<()>> = OnceLock::new();

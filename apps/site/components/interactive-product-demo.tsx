@@ -1,11 +1,14 @@
 "use client";
 
 import {
+  AudioLines,
   ArrowLeft,
   ArrowRight,
   ChevronLeft,
   ChevronRight,
   Clock3,
+  Disc3,
+  Ellipsis,
   FolderOpen,
   Globe2,
   HardDrive,
@@ -15,13 +18,17 @@ import {
   ListMusic,
   MicVocal,
   Minus,
+  Music2,
   Pause,
   Play,
+  Plus,
   Search,
   Settings,
+  Shuffle,
   SkipBack,
   SkipForward,
   Square,
+  UserRound,
   Volume2,
   VolumeX,
   X,
@@ -125,6 +132,41 @@ const tracks = [
   ["Homeward", "5:02", 302],
 ] as const;
 
+type Playlist = {
+  id: string;
+  name: string;
+  description?: string;
+  album: Album;
+  trackIndexes: number[];
+  liked?: boolean;
+};
+
+const playlists: Playlist[] = [
+  {
+    id: "liked",
+    name: "Liked Songs",
+    album: albums[0],
+    trackIndexes: [0, 2, 4, 6, 8],
+    liked: true,
+  },
+  {
+    id: "late-night-drives",
+    name: "Late Night Drives",
+    description: "Quiet roads, city lights, and the long way home.",
+    album: albums[1],
+    trackIndexes: [1, 2, 3, 5, 7, 8],
+  },
+  {
+    id: "weekend-listening",
+    name: "Weekend Listening",
+    description: "An easy mix for slow mornings and open windows.",
+    album: albums[2],
+    trackIndexes: [0, 1, 4, 5, 6],
+  },
+];
+
+type LibrarySection = "albums" | "songs" | "artists" | "playlists";
+
 const lyricTimes = [0, 18, 36, 54, 72, 90, 108, 126, 144, 162, 180, 200];
 
 function formatTime(value: number) {
@@ -140,7 +182,8 @@ type View =
   | { name: "library" }
   | { name: "settings" }
   | { name: "artist"; artist: string }
-  | { name: "album"; album: Album };
+  | { name: "album"; album: Album }
+  | { name: "playlist"; playlist: Playlist };
 
 function BrandMark() {
   return (
@@ -157,7 +200,8 @@ type InteractiveProductDemoProps = {
   initialQuery?: string;
   initialTime?: number;
   initialTrackIndex?: number;
-  initialView?: "album" | "artist" | "home" | "library" | "settings";
+  initialView?:
+    "album" | "artist" | "home" | "library" | "playlist" | "settings";
 };
 
 export default function InteractiveProductDemo({
@@ -180,8 +224,12 @@ export default function InteractiveProductDemo({
       ? { name: "album", album: initialAlbum }
       : initialView === "artist"
         ? { name: "artist", artist: initialAlbum.artist }
-        : { name: initialView };
+        : initialView === "playlist"
+          ? { name: "playlist", playlist: playlists[1] }
+          : { name: initialView };
   const [view, setView] = useState<View>(initialViewState);
+  const [librarySection, setLibrarySection] =
+    useState<LibrarySection>("albums");
   const [query, setQuery] = useState(initialQuery);
   const [playing, setPlaying] = useState(initialPlaying);
   const [currentAlbum, setCurrentAlbum] = useState(initialAlbum);
@@ -193,6 +241,7 @@ export default function InteractiveProductDemo({
   const [currentTime, setCurrentTime] = useState(initialTime);
   const [liked, setLiked] = useState(false);
   const [muted, setMuted] = useState(false);
+  const [soundEnabled, setSoundEnabled] = useState(false);
   const [showMacWindowControls, setShowMacWindowControls] = useState(false);
   const trackDuration = tracks[currentTrackIndex][2];
 
@@ -210,9 +259,10 @@ export default function InteractiveProductDemo({
     setQuery("");
     setView({ name: "home" });
   };
-  const openLibrary = () => {
+  const openLibrary = (section: LibrarySection = "albums") => {
     closePanels();
     setQuery("");
+    setLibrarySection(section);
     setView({ name: "library" });
   };
   const openSettings = () => {
@@ -230,6 +280,11 @@ export default function InteractiveProductDemo({
     setQuery("");
     setView({ name: "album", album });
   };
+  const openPlaylist = (playlist: Playlist) => {
+    closePanels();
+    setQuery("");
+    setView({ name: "playlist", playlist });
+  };
   const playAlbum = (album: Album) => {
     setCurrentAlbum(album);
     setCurrentTrackIndex(0);
@@ -244,6 +299,12 @@ export default function InteractiveProductDemo({
     setPlaying(true);
   };
   const selectQueueTrack = (index: number) => {
+    setCurrentTrackIndex(index);
+    setCurrentTime(0);
+    setPlaying(true);
+  };
+  const playTrack = (album: Album, index: number) => {
+    setCurrentAlbum(album);
     setCurrentTrackIndex(index);
     setCurrentTime(0);
     setPlaying(true);
@@ -332,7 +393,7 @@ export default function InteractiveProductDemo({
           <button
             className={view.name === "library" ? "active" : ""}
             type="button"
-            onClick={openLibrary}
+            onClick={() => openLibrary()}
             title="Library"
             aria-label="Library"
             aria-current={view.name === "library" ? "page" : undefined}
@@ -408,9 +469,13 @@ export default function InteractiveProductDemo({
           />
         ) : view.name === "library" ? (
           <LibraryView
+            section={librarySection}
+            onSectionChange={setLibrarySection}
             onAlbum={openAlbum}
             onArtist={openArtist}
             onPlay={playAlbum}
+            onPlaylist={openPlaylist}
+            onTrack={playTrack}
           />
         ) : view.name === "settings" ? (
           <SettingsView />
@@ -421,12 +486,20 @@ export default function InteractiveProductDemo({
             onBack={goHome}
             onPlay={playAlbum}
           />
-        ) : (
+        ) : view.name === "album" ? (
           <AlbumView
             album={view.album}
             onArtist={openArtist}
             onBack={() => openArtist(view.album.artist)}
             onPlay={playAlbum}
+          />
+        ) : (
+          <PlaylistView
+            playlist={view.playlist}
+            onArtist={openArtist}
+            onBack={() => openLibrary("playlists")}
+            onPlay={playAlbum}
+            onTrack={playTrack}
           />
         )}
       </div>
@@ -459,6 +532,7 @@ export default function InteractiveProductDemo({
         queueOpen={queueOpen}
         liked={liked}
         muted={muted}
+        soundEnabled={soundEnabled}
         currentTime={currentTime}
         trackDuration={trackDuration}
         trackTitle={tracks[currentTrackIndex][0]}
@@ -475,6 +549,7 @@ export default function InteractiveProductDemo({
           setQueueOpen((value) => !value);
         }}
         onToggleMute={() => setMuted((value) => !value)}
+        onToggleSound={() => setSoundEnabled((value) => !value)}
         onArtist={openArtist}
         onAlbum={openAlbum}
       />
@@ -513,48 +588,146 @@ function HomeView({ onAlbum, onArtist, onPlay }: DemoActions) {
   );
 }
 
-function LibraryView({ onAlbum, onArtist, onPlay }: DemoActions) {
+function LibraryView({
+  section,
+  onSectionChange,
+  onAlbum,
+  onArtist,
+  onPlay,
+  onPlaylist,
+  onTrack,
+}: DemoActions & {
+  section: LibrarySection;
+  onSectionChange: (section: LibrarySection) => void;
+  onPlaylist: (playlist: Playlist) => void;
+  onTrack: (album: Album, index: number) => void;
+}) {
   const artists = [
     { name: "Mira Sol", detail: "7 releases", artwork: albums[0].artwork },
     { name: "North Arcade", detail: "2 albums", artwork: albums[2].artwork },
+  ];
+  const tabs: Array<{
+    id: LibrarySection;
+    label: string;
+    Icon: typeof Disc3;
+  }> = [
+    { id: "albums", label: "Albums", Icon: Disc3 },
+    { id: "songs", label: "Songs", Icon: Music2 },
+    { id: "artists", label: "Artists", Icon: UserRound },
+    { id: "playlists", label: "Playlists", Icon: ListMusic },
   ];
 
   return (
     <div className="demo-route demo-library-view">
       <h3>Library</h3>
-      <section className="demo-library-artists">
-        <h4>Artists</h4>
-        <div>
-          {artists.map((artist) => (
+      <div className="demo-library-tabs">
+        <div role="tablist" aria-label="Library views">
+          {tabs.map(({ id, label, Icon }) => (
             <button
-              key={artist.name}
+              className={section === id ? "active" : ""}
+              key={id}
+              onClick={() => onSectionChange(id)}
+              role="tab"
+              aria-selected={section === id}
               type="button"
-              onClick={() => onArtist(artist.name)}
             >
-              <img src={artist.artwork} alt="" />
-              <span>
-                <b>{artist.name}</b>
-                <small>{artist.detail}</small>
-              </span>
-              <ArrowRight />
+              <Icon />
+              {label}
             </button>
           ))}
         </div>
-      </section>
-      <section className="demo-library-albums">
-        <h4>Albums</h4>
-        <div className="demo-search-grid">
-          {albums.slice(0, 8).map((album) => (
-            <MediaCard
-              key={album.id}
-              album={album}
-              onAlbum={onAlbum}
-              onArtist={onArtist}
-              onPlay={onPlay}
-            />
+        {section === "playlists" && (
+          <button
+            className="demo-new-playlist"
+            type="button"
+            onClick={() => onPlaylist(playlists[1])}
+          >
+            <Plus /> New playlist
+          </button>
+        )}
+      </div>
+
+      {section === "albums" && (
+        <section className="demo-library-albums">
+          <div className="demo-search-grid">
+            {albums.slice(0, 8).map((album) => (
+              <MediaCard
+                key={album.id}
+                album={album}
+                onAlbum={onAlbum}
+                onArtist={onArtist}
+                onPlay={onPlay}
+              />
+            ))}
+          </div>
+        </section>
+      )}
+
+      {section === "songs" && (
+        <section className="demo-library-songs">
+          <ol>
+            {tracks.map(([title, duration], index) => {
+              const album = albums[index % 3];
+              return (
+                <li key={title}>
+                  <button
+                    type="button"
+                    onClick={() => onTrack(album, index)}
+                    aria-label={`Play ${title}`}
+                  >
+                    <span>{index + 1}</span>
+                    <img src={album.artwork} alt="" />
+                    <span>
+                      <b>{title}</b>
+                      <small>{album.artist}</small>
+                    </span>
+                    <span>{album.artist}</span>
+                    <time>{duration}</time>
+                  </button>
+                </li>
+              );
+            })}
+          </ol>
+        </section>
+      )}
+
+      {section === "artists" && (
+        <section className="demo-library-artists">
+          <div>
+            {artists.map((artist) => (
+              <button
+                key={artist.name}
+                type="button"
+                onClick={() => onArtist(artist.name)}
+              >
+                <img src={artist.artwork} alt="" />
+                <span>
+                  <b>{artist.name}</b>
+                  <small>{artist.detail}</small>
+                </span>
+                <ArrowRight />
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {section === "playlists" && (
+        <section className="demo-library-playlists">
+          {playlists.map((playlist) => (
+            <button
+              key={playlist.id}
+              type="button"
+              onClick={() => onPlaylist(playlist)}
+              aria-label={`Open ${playlist.name}`}
+            >
+              <PlaylistArtwork playlist={playlist} compact />
+              <b>{playlist.name}</b>
+              <ChevronRight />
+            </button>
           ))}
-        </div>
-      </section>
+        </section>
+      )}
     </div>
   );
 }
@@ -694,12 +867,11 @@ function AlbumView({
       <div className="demo-album-hero">
         <img src={album.artwork} alt="" />
         <div>
-          <p>{album.type}</p>
           <h3>{album.title}</h3>
           <button type="button" onClick={() => onArtist(album.artist)}>
             {album.artist}
           </button>
-          <span> - {tracks.length} songs, 19 min</span>
+          <span> • {tracks.length} songs, 19 min</span>
         </div>
       </div>
       <div className="demo-album-actions">
@@ -729,6 +901,126 @@ function AlbumView({
             <time>{duration}</time>
           </li>
         ))}
+      </ol>
+    </div>
+  );
+}
+
+function PlaylistArtwork({
+  compact = false,
+  playlist,
+}: {
+  compact?: boolean;
+  playlist: Playlist;
+}) {
+  if (playlist.liked) {
+    return (
+      <span
+        className={`demo-playlist-artwork demo-liked-artwork${compact ? " compact" : ""}`}
+        aria-hidden="true"
+      >
+        <Heart />
+      </span>
+    );
+  }
+  const covers = [
+    playlist.album.artwork,
+    albums[2].artwork,
+    albums[4].artwork,
+    albums[7].artwork,
+  ];
+  return (
+    <span
+      className={`demo-playlist-artwork${compact ? " compact" : ""}`}
+      aria-hidden="true"
+    >
+      {covers.map((cover, index) => (
+        <img src={cover} alt="" key={`${cover}-${index}`} />
+      ))}
+    </span>
+  );
+}
+
+function PlaylistView({
+  playlist,
+  onArtist,
+  onBack,
+  onPlay,
+  onTrack,
+}: Pick<DemoActions, "onArtist" | "onPlay"> & {
+  playlist: Playlist;
+  onBack: () => void;
+  onTrack: (album: Album, index: number) => void;
+}) {
+  const totalSeconds = playlist.trackIndexes.reduce(
+    (sum, index) => sum + tracks[index][2],
+    0,
+  );
+  const totalMinutes = Math.round(totalSeconds / 60);
+
+  return (
+    <div className="demo-route demo-playlist-view">
+      <button className="demo-back" type="button" onClick={onBack}>
+        <ArrowLeft /> Playlists
+      </button>
+      <div className="demo-playlist-hero">
+        <PlaylistArtwork playlist={playlist} />
+        <div>
+          <h3>{playlist.name}</h3>
+          {playlist.description && <p>{playlist.description}</p>}
+          <span>
+            {playlist.trackIndexes.length} songs · {totalMinutes} min
+          </span>
+        </div>
+      </div>
+      <div className="demo-album-actions demo-playlist-actions">
+        <button
+          type="button"
+          onClick={() => onPlay(playlist.album)}
+          aria-label={`Play ${playlist.name}`}
+        >
+          <Play />
+        </button>
+        <button
+          className="demo-shuffle"
+          type="button"
+          onClick={() =>
+            onTrack(
+              playlist.album,
+              playlist.trackIndexes[playlist.trackIndexes.length - 1],
+            )
+          }
+          aria-label={`Shuffle ${playlist.name}`}
+        >
+          <Shuffle />
+        </button>
+        <button
+          className="demo-playlist-options"
+          type="button"
+          aria-label={`More options for ${playlist.name}`}
+        >
+          <Ellipsis />
+        </button>
+      </div>
+      <ol className="demo-track-list demo-playlist-track-list">
+        {playlist.trackIndexes.map((trackIndex, position) => {
+          const [title, duration] = tracks[trackIndex];
+          const album = albums[(trackIndex + position) % albums.length];
+          return (
+            <li key={title} onDoubleClick={() => onTrack(album, trackIndex)}>
+              <span>{position + 1}</span>
+              <img src={album.artwork} alt="" />
+              <span>
+                <b>{title}</b>
+                <button type="button" onClick={() => onArtist(album.artist)}>
+                  {album.artist}
+                </button>
+              </span>
+              <span>{album.title}</span>
+              <time>{duration}</time>
+            </li>
+          );
+        })}
       </ol>
     </div>
   );
@@ -820,9 +1112,7 @@ function MediaCard({
       >
         {album.title}
       </button>
-      {hideArtist ? (
-        <span className="demo-card-subtitle">{album.type}</span>
-      ) : (
+      {!hideArtist && (
         <button
           className="demo-card-subtitle"
           type="button"
@@ -981,6 +1271,7 @@ function DemoPlayer({
   queueOpen,
   liked,
   muted,
+  soundEnabled,
   currentTime,
   trackDuration,
   trackTitle,
@@ -991,6 +1282,7 @@ function DemoPlayer({
   onToggleLyrics,
   onToggleQueue,
   onToggleMute,
+  onToggleSound,
   onArtist,
   onAlbum,
 }: {
@@ -1000,6 +1292,7 @@ function DemoPlayer({
   queueOpen: boolean;
   liked: boolean;
   muted: boolean;
+  soundEnabled: boolean;
   currentTime: number;
   trackDuration: number;
   trackTitle: string;
@@ -1010,6 +1303,7 @@ function DemoPlayer({
   onToggleLyrics: () => void;
   onToggleQueue: () => void;
   onToggleMute: () => void;
+  onToggleSound: () => void;
   onArtist: (artist: string) => void;
   onAlbum: (album: Album) => void;
 }) {
@@ -1094,6 +1388,16 @@ function DemoPlayer({
           <MicVocal />
         </button>
         <button
+          className={soundEnabled ? "active" : ""}
+          type="button"
+          aria-label="Sound"
+          aria-pressed={soundEnabled}
+          title="Sound"
+          onClick={onToggleSound}
+        >
+          <AudioLines />
+        </button>
+        <button
           className={muted ? "active" : ""}
           type="button"
           aria-label={muted ? "Unmute" : "Mute"}
@@ -1102,6 +1406,9 @@ function DemoPlayer({
           onClick={onToggleMute}
         >
           {muted ? <VolumeX /> : <Volume2 />}
+        </button>
+        <button type="button" aria-label="More controls" title="More controls">
+          <Ellipsis />
         </button>
       </div>
     </footer>

@@ -5,6 +5,8 @@ import { Checkbox } from "@/components/ui/checkbox";
 import type { LibraryIndexReport } from "@parson/music-sdk";
 import { ChevronRight, Folder, FolderUp, Loader2 } from "lucide-react";
 import { parentDirectory } from "./setup-state";
+import FailureState from "@/components/app/failure-state";
+import type { FailureKind } from "@/lib/failure-state";
 
 export interface Directory {
   name: string;
@@ -18,6 +20,7 @@ export function FileBrowserView({
   directoryError,
   disabled,
   indexMessage,
+  indexFailure,
   indexReport,
   isIndexing,
   isRefreshing,
@@ -36,6 +39,7 @@ export function FileBrowserView({
   directoryError: boolean;
   disabled: boolean;
   indexMessage: string | null;
+  indexFailure: FailureKind | null;
   indexReport: LibraryIndexReport | null;
   isIndexing: boolean;
   isRefreshing: boolean;
@@ -86,8 +90,12 @@ export function FileBrowserView({
           <div className="h-80 overflow-y-auto">
             {directoryError ? (
               <div className="flex h-full flex-col items-center justify-center gap-3 px-5 text-center">
-                <p className="text-sm text-zinc-400">
-                  This folder could not be opened.
+                <p className="text-base font-semibold text-white">
+                  Music folder unavailable
+                </p>
+                <p className="max-w-sm text-sm leading-6 text-zinc-400">
+                  Parson can’t open this folder. Reconnect its drive, check
+                  permissions, or choose a different location.
                 </p>
                 <button
                   type="button"
@@ -136,6 +144,13 @@ export function FileBrowserView({
             )}
           </div>
         )}
+        {indexFailure ? (
+          <FailureState
+            className="mt-4 max-w-none"
+            kind={indexFailure}
+            onAction={onRetry}
+          />
+        ) : null}
       </div>
       <div className="flex flex-wrap items-center justify-end gap-3 border-t border-white/10 bg-white/[0.025] px-6 py-4">
         {!setupMode && (

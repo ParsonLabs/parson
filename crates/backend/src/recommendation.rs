@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 
 use diesel::deserialize::QueryableByName;
 use diesel::prelude::*;
-use diesel::sql_types::{BigInt, Double, Nullable, Text};
+use diesel::sql_types::{BigInt, Double, Integer, Nullable, Text};
 use serde::{Deserialize, Serialize};
 
 use crate::library::state::LibraryCache;
@@ -14,6 +14,8 @@ const MAX_TRANSITIONS: i64 = 80;
 const RECENT_EXCLUSION_COUNT: i64 = 40;
 const MAX_PLAYBACK_EVENTS_PER_USER: i64 = 20_000;
 const MAX_LISTEN_HISTORY_PER_USER: i64 = 20_000;
+const MAX_SEARCH_PROFILE_TRACKS: i64 = 500;
+const MAX_SEARCH_AFFINITY_BOOST: f64 = 10.0;
 /// Maximum events accepted before ordered retention runs.
 const RETENTION_BATCH_SIZE: i32 = 256;
 const MAX_EVENT_REFERENCE_CHARACTERS: usize = 160;
@@ -42,6 +44,12 @@ pub struct RankedCandidate {
     pub song_id: String,
     pub score: f64,
     pub reason: String,
+}
+
+#[derive(Clone, Debug)]
+pub struct SearchAffinity {
+    pub song_id: String,
+    pub score: f32,
 }
 
 #[derive(QueryableByName)]
@@ -98,6 +106,14 @@ struct PreviousSongRow {
 
 #[derive(QueryableByName)]
 struct CountRow {
+    #[diesel(sql_type = BigInt)]
+    count: i64,
+}
+
+#[derive(QueryableByName)]
+struct HistoryCountRow {
+    #[diesel(sql_type = Text)]
+    song_id: String,
     #[diesel(sql_type = BigInt)]
     count: i64,
 }
@@ -571,6 +587,92 @@ fn normalized_recording_key(value: &str) -> String {
         .join(" ")
 }
 
+pub fn search_affinities(
+    user_id: i32,
+    pool: &DbPool,
+) -> Result<Vec<SearchAffinity>, Box<dyn std::error::Error>> {
+    let mut connection = pool.get()?;
+    let preferences = diesel::sql_query(
+        "SELECT song_id,
+                preference_score / (1.0 + MAX(0.0, julianday('now') - julianday(last_positive_at)) / 180.0)
+                  AS preference_score
+         FROM user_track_preference
+         WHERE user_id = ? AND preference_score > 0
+         ORDER BY preference_score DESC, last_positive_at DESC, song_id ASC LIMIT ?",
+    )
+    .bind::<Integer, _>(user_id)
+    .bind::<BigInt, _>(MAX_SEARCH_PROFILE_TRACKS)
+    .load::<TrackPreferenceRow>(&mut connection)?;
+    let favorites = diesel::sql_query(
+        "SELECT song_id FROM favorite_song
+         WHERE user_id = ?
+         ORDER BY added_at DESC, song_id ASC LIMIT ?",
+    )
+    .bind::<Integer, _>(user_id)
+    .bind::<BigInt, _>(MAX_SEARCH_PROFILE_TRACKS)
+    .load::<SongIdRow>(&mut connection)?;
+    let playlist_tracks = diesel::sql_query(
+        "SELECT track.b AS song_id
+         FROM _playlist_to_song track
+         JOIN _playlist_to_user membership ON membership.a = track.a
+         WHERE membership.b = ?
+         GROUP BY track.b
+         ORDER BY MAX(track.date_added) DESC, track.b ASC LIMIT ?",
+    )
+    .bind::<Integer, _>(user_id)
+    .bind::<BigInt, _>(MAX_SEARCH_PROFILE_TRACKS)
+    .load::<SongIdRow>(&mut connection)?;
+    // Imported catalogs may have listen history without derived preference rows.
+    let history = diesel::sql_query(
+        "SELECT song_id, COUNT(*) AS count
+         FROM listen_history_item
+         WHERE user_id = ?
+         GROUP BY song_id
+         ORDER BY count DESC, MAX(listened_at) DESC, song_id ASC LIMIT ?",
+    )
+    .bind::<Integer, _>(user_id)
+    .bind::<BigInt, _>(MAX_SEARCH_PROFILE_TRACKS)
+    .load::<HistoryCountRow>(&mut connection)?;
+
+    let mut scores = HashMap::<String, f64>::new();
+    let mut preference_ids = HashSet::new();
+    for row in preferences {
+        preference_ids.insert(row.song_id.clone());
+        // One ordinary play is a nudge. Repeated or deliberate actions
+        // approach, but never exceed, the five-point profile budget.
+        let boost = 5.0 * (1.0 - (-row.preference_score.max(0.0) / 12.0).exp());
+        scores.insert(row.song_id, boost);
+    }
+    for row in favorites {
+        *scores.entry(row.song_id).or_default() += 5.0;
+    }
+    for row in playlist_tracks {
+        *scores.entry(row.song_id).or_default() += 3.0;
+    }
+    for row in history {
+        if !preference_ids.contains(&row.song_id) {
+            let legacy_boost = ((row.count.max(0) as f64).ln_1p() * 0.8).min(2.0);
+            *scores.entry(row.song_id).or_default() += legacy_boost;
+        }
+    }
+
+    let mut affinities = scores
+        .into_iter()
+        .filter(|(_, score)| *score > 0.0)
+        .map(|(song_id, score)| SearchAffinity {
+            song_id,
+            score: score.min(MAX_SEARCH_AFFINITY_BOOST) as f32,
+        })
+        .collect::<Vec<_>>();
+    affinities.sort_by(|left, right| {
+        right
+            .score
+            .total_cmp(&left.score)
+            .then_with(|| left.song_id.cmp(&right.song_id))
+    });
+    Ok(affinities)
+}
+
 pub fn recommend(
     user_id: i32,
     seed_song_id: Option<&str>,
@@ -663,9 +765,62 @@ pub fn recommend(
         }
     }
 
+    let legacy_history = diesel::sql_query(
+        "SELECT history.song_id, COUNT(*) AS count
+         FROM listen_history_item history
+         WHERE history.user_id = ?
+           AND NOT EXISTS (
+             SELECT 1 FROM user_track_preference preference
+             WHERE preference.user_id = history.user_id
+               AND preference.song_id = history.song_id
+           )
+         GROUP BY history.song_id
+         ORDER BY count DESC, MAX(history.listened_at) DESC, history.song_id ASC LIMIT ?",
+    )
+    .bind::<Integer, _>(user_id)
+    .bind::<BigInt, _>(MAX_PROFILE_TRACKS)
+    .load::<HistoryCountRow>(&mut connection)?;
+    for history in legacy_history {
+        let score = (history.count.max(0) as f64).ln_1p() * 5.0;
+        add_candidate(
+            &mut candidates,
+            &history.song_id,
+            score.min(16.0),
+            "listen_history",
+        );
+    }
+
+    let favorites = diesel::sql_query(
+        "SELECT song_id FROM favorite_song
+         WHERE user_id = ?
+         ORDER BY added_at DESC, song_id ASC LIMIT ?",
+    )
+    .bind::<Integer, _>(user_id)
+    .bind::<BigInt, _>(MAX_PROFILE_TRACKS)
+    .load::<SongIdRow>(&mut connection)?;
+    for favorite in favorites {
+        add_candidate(&mut candidates, &favorite.song_id, 18.0, "favorite");
+    }
+
+    let playlist_tracks = diesel::sql_query(
+        "SELECT track.b AS song_id
+         FROM _playlist_to_song track
+         JOIN _playlist_to_user membership ON membership.a = track.a
+         WHERE membership.b = ?
+         GROUP BY track.b
+         ORDER BY MAX(track.date_added) DESC, track.b ASC LIMIT ?",
+    )
+    .bind::<Integer, _>(user_id)
+    .bind::<BigInt, _>(MAX_PROFILE_TRACKS)
+    .load::<SongIdRow>(&mut connection)?;
+    for track in playlist_tracks {
+        add_candidate(&mut candidates, &track.song_id, 14.0, "playlist_membership");
+    }
+
     let artist_preferences = diesel::sql_query(
         "SELECT artist_id,
                 (positive_weight - negative_weight * 1.5)
+                / 3.0
                 / (1.0 + MAX(0.0, julianday('now') - julianday(last_positive_at)) / 90.0) AS score
          FROM user_artist_preference WHERE user_id = ? AND positive_weight > negative_weight
          ORDER BY score DESC, artist_id ASC LIMIT ?",
@@ -680,7 +835,7 @@ pub fn recommend(
                     add_candidate(
                         &mut candidates,
                         song_id,
-                        artist.score.clamp(1.0, 18.0),
+                        artist.score.clamp(0.0, 10.0),
                         "artist_affinity",
                     );
                 }
@@ -691,6 +846,7 @@ pub fn recommend(
     let genre_preferences = diesel::sql_query(
         "SELECT genre,
                 (positive_weight - negative_weight * 1.5)
+                / 4.0
                 / (1.0 + MAX(0.0, julianday('now') - julianday(last_positive_at)) / 90.0) AS score
          FROM user_genre_preference WHERE user_id = ? AND positive_weight > negative_weight
          ORDER BY score DESC, genre ASC LIMIT 12",
@@ -704,7 +860,7 @@ pub fn recommend(
                     add_candidate(
                         &mut candidates,
                         song_id,
-                        genre.score.clamp(1.0, 12.0),
+                        genre.score.clamp(0.0, 8.0),
                         "genre_affinity",
                     );
                 }
@@ -715,6 +871,7 @@ pub fn recommend(
     let album_preferences = diesel::sql_query(
         "SELECT album_id,
                 (positive_weight - negative_weight * 1.5)
+                / 3.0
                 / (1.0 + MAX(0.0, julianday('now') - julianday(last_positive_at)) / 90.0) AS score
          FROM user_album_preference WHERE user_id = ? AND positive_weight > negative_weight
          ORDER BY score DESC, album_id ASC LIMIT 20",
@@ -727,7 +884,7 @@ pub fn recommend(
                 add_candidate(
                     &mut candidates,
                     &song.id,
-                    album.score.clamp(1.0, 10.0),
+                    album.score.clamp(0.0, 8.0),
                     "album_affinity",
                 );
             }
@@ -747,11 +904,21 @@ pub fn recommend(
     .collect::<HashSet<_>>();
 
     let event_count = diesel::sql_query(
-        "SELECT COUNT(*) AS count FROM playback_event
-         WHERE user_id = ? AND event_type IN
-           ('manual_selection', 'qualified_play', 'completed', 'manual_queue_add', 'playlist_add')",
+        "SELECT
+           (SELECT COUNT(*) FROM playback_event
+            WHERE user_id = ? AND event_type IN
+              ('manual_selection', 'qualified_play', 'completed', 'manual_queue_add', 'playlist_add'))
+           + (SELECT COUNT(*) FROM favorite_song WHERE user_id = ?)
+           + (SELECT COUNT(*)
+              FROM _playlist_to_song track
+              JOIN _playlist_to_user membership ON membership.a = track.a
+              WHERE membership.b = ?)
+           + (SELECT COUNT(*) FROM listen_history_item WHERE user_id = ?) AS count",
     )
-    .bind::<diesel::sql_types::Integer, _>(user_id)
+    .bind::<Integer, _>(user_id)
+    .bind::<Integer, _>(user_id)
+    .bind::<Integer, _>(user_id)
+    .bind::<Integer, _>(user_id)
     .get_result::<CountRow>(&mut connection)?
     .count;
 
@@ -784,6 +951,11 @@ fn rank_candidates(
             if candidate.sources.len() > 1 {
                 candidate.score += ((candidate.sources.len() - 1) as f64) * 5.0;
             }
+            if let Some((_, album_id)) = cache.song_map.get(&song_id)
+                && let Some(album) = cache.album(album_id)
+            {
+                candidate.score *= recommendation_release_weight(&album.primary_type);
+            }
             let reason = if candidate.sources.contains("transition") {
                 "follows your listening"
             } else if candidate.sources.contains("playlist_cooccurrence") {
@@ -792,6 +964,10 @@ fn rank_candidates(
                 "from this artist"
             } else if candidate.sources.contains("seed_genre") {
                 "fits this session"
+            } else if candidate.sources.contains("favorite") {
+                "from your liked songs"
+            } else if candidate.sources.contains("playlist_membership") {
+                "from your playlists"
             } else if candidate.sources.contains("artist_affinity") {
                 "from an artist you play"
             } else {
@@ -821,6 +997,14 @@ fn rank_candidates(
     });
 
     ranked
+}
+
+fn recommendation_release_weight(primary_type: &str) -> f64 {
+    match primary_type.trim().to_ascii_lowercase().as_str() {
+        "album" => 1.15,
+        "remix" => 0.7,
+        _ => 1.0,
+    }
 }
 
 fn select_candidates(
@@ -906,8 +1090,9 @@ mod tests {
     use std::sync::Arc;
 
     use super::{
-        CountRow, MAX_LISTEN_HISTORY_PER_USER, MAX_PLAYBACK_EVENTS_PER_USER, PlaybackEventRequest,
-        normalized_recording_key, prune_playback_history, record_playback_event,
+        CandidateScore, CountRow, MAX_LISTEN_HISTORY_PER_USER, MAX_PLAYBACK_EVENTS_PER_USER,
+        PlaybackEventRequest, normalized_recording_key, prune_playback_history, rank_candidates,
+        recommend, record_playback_event, search_affinities,
     };
     use crate::domain::{Album, Artist, Song};
     use crate::library::search::SearchIndex;
@@ -947,6 +1132,342 @@ mod tests {
             songs_by_genre: HashMap::new(),
             image_paths: HashSet::new(),
         }
+    }
+
+    fn release_ranking_cache() -> LibraryCache {
+        let release_types = [
+            ("album-song", "album-release", "Album"),
+            ("ep-song", "ep-release", "EP"),
+            ("remix-song", "remix-release", "Remix"),
+            ("strong-remix-song", "strong-remix-release", "Remix"),
+        ];
+        let albums = release_types
+            .iter()
+            .map(|(song_id, album_id, release_type)| Album {
+                id: (*album_id).into(),
+                name: format!("{release_type} Release"),
+                primary_type: (*release_type).into(),
+                songs: vec![Song {
+                    id: (*song_id).into(),
+                    name: format!("{release_type} Recording"),
+                    ..Song::default()
+                }],
+                ..Album::default()
+            })
+            .collect::<Vec<_>>();
+        let artist = Artist {
+            id: "artist".into(),
+            name: "Artist".into(),
+            albums,
+            ..Artist::default()
+        };
+        let artists = Arc::new(vec![artist]);
+        let song_map = release_types
+            .iter()
+            .map(|(song_id, album_id, _)| {
+                (
+                    (*song_id).to_string(),
+                    ("artist".to_string(), (*album_id).to_string()),
+                )
+            })
+            .collect::<HashMap<_, _>>();
+        let album_positions = release_types
+            .iter()
+            .enumerate()
+            .map(|(index, (_, album_id, _))| ((*album_id).to_string(), (0, index as u32)))
+            .collect::<HashMap<_, _>>();
+        let song_positions = release_types
+            .iter()
+            .enumerate()
+            .map(|(index, (song_id, _, _))| ((*song_id).to_string(), (0, index as u32, 0)))
+            .collect::<HashMap<_, _>>();
+        LibraryCache {
+            search_index: SearchIndex::build(&artists).expect("test search index"),
+            artists,
+            song_map,
+            album_genres: HashMap::new(),
+            artist_positions: HashMap::from([("artist".into(), 0)]),
+            album_positions,
+            song_positions,
+            songs_flat: release_types
+                .iter()
+                .map(|(song_id, _, _)| (*song_id).to_string())
+                .collect(),
+            songs_by_artist: HashMap::new(),
+            songs_by_genre: HashMap::new(),
+            image_paths: HashSet::new(),
+        }
+    }
+
+    fn candidate(score: f64) -> CandidateScore {
+        CandidateScore {
+            score,
+            sources: HashSet::from(["artist_affinity"]),
+        }
+    }
+
+    fn recommendation_pool() -> crate::persistence::connection::DbPool {
+        use diesel::r2d2::{ConnectionManager, Pool};
+
+        let manager = ConnectionManager::<diesel::sqlite::SqliteConnection>::new(":memory:");
+        let pool = Arc::new(Pool::builder().max_size(1).build(manager).unwrap());
+        pool.get()
+            .expect("recommendation connection")
+            .batch_execute(
+                "CREATE TABLE track_transition (
+                   user_id INTEGER, from_song_id TEXT, to_song_id TEXT,
+                   positive_count INTEGER, skip_count INTEGER
+                 );
+                 CREATE TABLE user_track_preference (
+                   user_id INTEGER, song_id TEXT, preference_score REAL,
+                   last_positive_at DATETIME, last_played_at DATETIME
+                 );
+                 CREATE TABLE _playlist_to_song (
+                   a TEXT, b TEXT, position INTEGER,
+                   date_added DATETIME DEFAULT CURRENT_TIMESTAMP
+                 );
+                 CREATE TABLE _playlist_to_user (a TEXT, b INTEGER);
+                 CREATE TABLE user_artist_preference (
+                   user_id INTEGER, artist_id TEXT, positive_weight REAL,
+                   negative_weight REAL, last_positive_at DATETIME
+                 );
+                 CREATE TABLE user_genre_preference (
+                   user_id INTEGER, genre TEXT, positive_weight REAL,
+                   negative_weight REAL, last_positive_at DATETIME
+                 );
+                 CREATE TABLE user_album_preference (
+                   user_id INTEGER, album_id TEXT, positive_weight REAL,
+                   negative_weight REAL, last_positive_at DATETIME
+                 );
+                 CREATE TABLE favorite_song (
+                   user_id INTEGER, song_id TEXT, added_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                 );
+                 CREATE TABLE listen_history_item (
+                   user_id INTEGER, song_id TEXT, listened_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                 );
+                 CREATE TABLE playback_event (user_id INTEGER, event_type TEXT);",
+            )
+            .expect("recommendation schema");
+        pool
+    }
+
+    fn recommendation_cache() -> LibraryCache {
+        let mut cache = release_ranking_cache();
+        cache
+            .songs_by_artist
+            .insert("artist".into(), vec![0, 1, 2, 3]);
+        cache
+    }
+
+    #[test]
+    fn recommendations_handle_fresh_sparse_deleted_and_multi_user_profiles() {
+        let pool = recommendation_pool();
+        let cache = recommendation_cache();
+
+        assert!(
+            recommend(1, None, &cache, &pool, 10)
+                .expect("fresh recommendation")
+                .is_empty()
+        );
+        let seeded = recommend(1, Some("album-song"), &cache, &pool, 10)
+            .expect("sparse seeded recommendation");
+        assert!(!seeded.is_empty());
+        assert!(
+            seeded
+                .iter()
+                .all(|candidate| candidate.song_id != "album-song")
+        );
+
+        pool.get()
+            .expect("profile fixture connection")
+            .batch_execute(
+                "INSERT INTO playback_event VALUES
+                   (1, 'manual_selection'), (2, 'manual_selection');
+                 INSERT INTO user_track_preference
+                   (user_id, song_id, preference_score, last_positive_at)
+                 VALUES
+                   (1, 'deleted-song', 40, CURRENT_TIMESTAMP),
+                   (1, 'album-song', 30, CURRENT_TIMESTAMP);",
+            )
+            .expect("profile fixtures");
+
+        let first_user = recommend(1, None, &cache, &pool, 10).expect("first user recommendation");
+        assert!(
+            first_user
+                .iter()
+                .any(|candidate| candidate.song_id == "album-song")
+        );
+        assert!(
+            first_user
+                .iter()
+                .all(|candidate| candidate.song_id != "deleted-song")
+        );
+        assert!(
+            recommend(2, None, &cache, &pool, 10)
+                .expect("second user recommendation")
+                .is_empty(),
+            "one user's affinity must not leak into another user's queue"
+        );
+    }
+
+    #[test]
+    fn search_affinity_uses_likes_and_repeat_listening_as_bounded_nudges() {
+        let pool = recommendation_pool();
+        pool.get()
+            .expect("search affinity fixture connection")
+            .batch_execute(
+                "INSERT INTO user_track_preference
+                   (user_id, song_id, preference_score, last_positive_at)
+                 VALUES
+                   (1, 'played-once', 3, CURRENT_TIMESTAMP),
+                   (1, 'played-often', 36, CURRENT_TIMESTAMP),
+                   (1, 'liked-and-played', 36, CURRENT_TIMESTAMP);
+                 INSERT INTO favorite_song (user_id, song_id) VALUES
+                   (1, 'liked-only'), (1, 'liked-and-played');
+                 INSERT INTO _playlist_to_user (a, b) VALUES ('playlist-1', 1);
+                 INSERT INTO _playlist_to_song (a, b) VALUES
+                   ('playlist-1', 'playlist-only');
+                 INSERT INTO listen_history_item (user_id, song_id) VALUES
+                   (1, 'legacy-history'), (1, 'legacy-history'),
+                   (1, 'legacy-history'), (1, 'legacy-history');",
+            )
+            .expect("search affinity fixtures");
+
+        let affinities = search_affinities(1, &pool).expect("search affinities");
+        let scores = affinities
+            .into_iter()
+            .map(|affinity| (affinity.song_id, affinity.score))
+            .collect::<HashMap<_, _>>();
+
+        assert!(scores["played-once"] > 0.5 && scores["played-once"] < 2.0);
+        assert!(scores["played-often"] > scores["played-once"]);
+        assert!(scores["played-often"] < 5.0);
+        assert_eq!(scores["liked-only"], 5.0);
+        assert_eq!(scores["playlist-only"], 3.0);
+        assert!(scores["liked-and-played"] > scores["liked-only"]);
+        assert!(scores["liked-and-played"] <= 10.0);
+        assert!(scores["legacy-history"] > 0.0 && scores["legacy-history"] < 2.0);
+        assert!(
+            search_affinities(2, &pool)
+                .expect("other user's search affinities")
+                .is_empty(),
+            "search personalization signals must remain scoped to their user"
+        );
+    }
+
+    #[test]
+    fn a_liked_song_can_seed_a_fresh_generated_queue() {
+        let pool = recommendation_pool();
+        let cache = recommendation_cache();
+        pool.get()
+            .expect("liked queue fixture connection")
+            .batch_execute(
+                "INSERT INTO favorite_song (user_id, song_id)
+                 VALUES (3, 'album-song');",
+            )
+            .expect("liked queue fixture");
+
+        let ranked = recommend(3, None, &cache, &pool, 10).expect("liked queue");
+        assert_eq!(ranked[0].song_id, "album-song");
+        assert_eq!(ranked[0].reason, "from your liked songs");
+    }
+
+    #[test]
+    fn a_playlist_song_can_seed_a_fresh_generated_queue() {
+        let pool = recommendation_pool();
+        let cache = recommendation_cache();
+        pool.get()
+            .expect("playlist queue fixture connection")
+            .batch_execute(
+                "INSERT INTO _playlist_to_user (a, b) VALUES ('playlist-5', 5);
+                 INSERT INTO _playlist_to_song (a, b)
+                 VALUES ('playlist-5', 'album-song');",
+            )
+            .expect("playlist queue fixture");
+
+        let ranked = recommend(5, None, &cache, &pool, 10).expect("playlist queue");
+        assert_eq!(ranked[0].song_id, "album-song");
+        assert_eq!(ranked[0].reason, "from your playlists");
+    }
+
+    #[test]
+    fn one_completed_listen_does_not_fan_out_across_the_whole_artist() {
+        let pool = recommendation_pool();
+        let cache = recommendation_cache();
+        pool.get()
+            .expect("single listen fixture connection")
+            .batch_execute(
+                "INSERT INTO playback_event VALUES (4, 'completed');
+                 INSERT INTO user_track_preference
+                   (user_id, song_id, preference_score, last_positive_at, last_played_at)
+                 VALUES (4, 'album-song', 7, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
+                 INSERT INTO user_artist_preference
+                   (user_id, artist_id, positive_weight, negative_weight, last_positive_at)
+                 VALUES (4, 'artist', 7, 0, CURRENT_TIMESTAMP);
+                 INSERT INTO user_album_preference
+                   (user_id, album_id, positive_weight, negative_weight, last_positive_at)
+                 VALUES (4, 'album-release', 7, 0, CURRENT_TIMESTAMP);",
+            )
+            .expect("single listen fixtures");
+
+        assert!(
+            recommend(4, None, &cache, &pool, 10)
+                .expect("single listen queue")
+                .is_empty(),
+            "one listen must not fill the queue with broad artist affinity"
+        );
+    }
+
+    #[test]
+    fn legacy_history_needs_repetition_before_it_seeds_a_queue() {
+        let pool = recommendation_pool();
+        let cache = recommendation_cache();
+        pool.get()
+            .expect("legacy history fixture connection")
+            .batch_execute(
+                "INSERT INTO listen_history_item (user_id, song_id) VALUES
+                   (6, 'album-song'), (6, 'album-song'), (6, 'album-song'),
+                   (6, 'album-song'), (6, 'album-song'), (6, 'album-song'),
+                   (6, 'album-song'),
+                   (7, 'album-song');",
+            )
+            .expect("legacy history fixtures");
+
+        let repeated = recommend(6, None, &cache, &pool, 10).expect("repeat history queue");
+        assert_eq!(repeated[0].song_id, "album-song");
+        assert!(
+            recommend(7, None, &cache, &pool, 10)
+                .expect("single history queue")
+                .is_empty(),
+            "one imported listen must remain below the queue threshold"
+        );
+    }
+
+    #[test]
+    fn generated_queue_favours_albums_and_reduces_remix_emphasis() {
+        let cache = release_ranking_cache();
+        let ranked = rank_candidates(
+            HashMap::from([
+                ("album-song".into(), candidate(20.0)),
+                ("ep-song".into(), candidate(20.0)),
+                ("remix-song".into(), candidate(20.0)),
+                ("strong-remix-song".into(), candidate(40.0)),
+            ]),
+            None,
+            HashSet::new(),
+            &cache,
+        );
+
+        assert_eq!(
+            ranked
+                .iter()
+                .map(|candidate| candidate.song_id.as_str())
+                .collect::<Vec<_>>(),
+            ["strong-remix-song", "album-song", "ep-song", "remix-song"]
+        );
+        assert_eq!(ranked[1].score, 23.0);
+        assert_eq!(ranked[2].score, 20.0);
+        assert_eq!(ranked[3].score, 14.0);
     }
 
     #[test]

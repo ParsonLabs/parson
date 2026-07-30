@@ -14,6 +14,7 @@ type AlbumCardProps = {
   album_name: string;
   album_cover: string;
   first_release_date: string;
+  typeLabel?: "Album";
 };
 
 export default function AlbumCard({
@@ -22,6 +23,7 @@ export default function AlbumCard({
   album_id,
   album_name,
   album_cover,
+  typeLabel,
 }: AlbumCardProps) {
   const albumCoverURL =
     !album_cover || album_cover.length === 0
@@ -66,6 +68,7 @@ export default function AlbumCard({
 
           {artist_name && (
             <p className="min-w-0 text-sm leading-5 text-zinc-500">
+              {typeLabel && <span>{typeLabel} · </span>}
               <Link
                 className="pointer-events-auto relative z-10 truncate hover:text-white hover:underline"
                 href={`/artist?id=${artist_id}`}

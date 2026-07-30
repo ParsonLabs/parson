@@ -45,6 +45,7 @@ export default async function ShowcasePage({
           parameters.view === "album" ||
           parameters.view === "artist" ||
           parameters.view === "library" ||
+          parameters.view === "playlist" ||
           parameters.view === "settings"
             ? parameters.view
             : "home"

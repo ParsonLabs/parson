@@ -24,22 +24,6 @@ export function validUsername(value: string): boolean {
   );
 }
 
-export function isInsecureHttpOrigin(origin: string): boolean {
-  try {
-    const url = new URL(origin);
-    if (url.protocol !== "http:") return false;
-    const hostname = url.hostname.toLowerCase();
-    return !(
-      hostname === "localhost" ||
-      hostname === "::1" ||
-      hostname === "[::1]" ||
-      hostname.startsWith("127.")
-    );
-  } catch {
-    return false;
-  }
-}
-
 export interface AuthResponse {
   status: boolean;
   access_token?: string;

@@ -63,13 +63,13 @@ describe("player overlay navigation state", () => {
     ).toBe(true);
   });
 
-  test("ignores same-page and external links", () => {
+  test("dismisses for same-page navigation but ignores external links", () => {
     expect(
       shouldDismissPlayerOverlayForLink(
         "http://127.0.0.1:1993/album?id=album-1",
         "/album?id=album-1",
       ),
-    ).toBe(false);
+    ).toBe(true);
     expect(
       shouldDismissPlayerOverlayForLink(
         "http://127.0.0.1:1993/",

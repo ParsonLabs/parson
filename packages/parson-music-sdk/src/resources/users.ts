@@ -1,5 +1,6 @@
 import api from "../core/http";
 import type { LibrarySong, ListenHistoryItem, User } from "../domain/types";
+import type { AuthResponse } from "./auth";
 
 export interface SettingsUser {
   id: number;
@@ -12,6 +13,10 @@ export async function getUsers(): Promise<SettingsUser[]> {
   return Array.isArray(response.data) ? response.data : [];
 }
 
+export async function deleteUser(userId: number): Promise<void> {
+  await api.delete(`/users/${userId}`);
+}
+
 export async function changePassword(
   currentPassword: string,
   newPassword: string,
@@ -20,6 +25,24 @@ export async function changePassword(
     current_password: currentPassword,
     new_password: newPassword,
   });
+  return response.data;
+}
+
+export async function changeUsername(
+  username: string,
+  currentPassword: string,
+  options: { native?: boolean } = {},
+): Promise<AuthResponse> {
+  const response = await api.patch<AuthResponse>(
+    "/users/me/username",
+    {
+      current_password: currentPassword,
+      username,
+    },
+    {
+      headers: options.native ? { "X-Parson-Client": "native" } : undefined,
+    },
+  );
   return response.data;
 }
 

@@ -101,3 +101,12 @@ export async function removeSongFromPlaylist(
 ): Promise<void> {
   await api.delete(`/playlists/${id}/tracks/${encodeURIComponent(songId)}`);
 }
+
+export async function reorderPlaylistSongs(
+  id: number,
+  songIds: string[],
+): Promise<void> {
+  await api.patch(`/playlists/${id}/tracks/order`, {
+    song_ids: songIds,
+  });
+}

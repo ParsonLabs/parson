@@ -1,4 +1,4 @@
-import { deleteCookie, getCookie } from "cookies-next";
+import { deleteCookie } from "cookies-next";
 import { jwtDecode } from "jwt-decode";
 
 const MAX_RETRY_ATTEMPTS = 1;
@@ -8,6 +8,7 @@ const REFRESH_THRESHOLD_SECONDS = 30;
 
 export interface ApiRuntimeAdapter {
   getAccessToken?: () => string | null;
+  getCredentials?: () => RequestCredentials;
   getServerUrl?: () => string | null;
   onAccessToken?: (token: string) => void;
   onUnauthorized?: () => void;
@@ -17,9 +18,8 @@ export interface ApiRuntimeAdapter {
 let runtimeAdapter: ApiRuntimeAdapter | null = null;
 
 /**
- * Supplies host-specific storage to the universal SDK. Browser callers keep
- * using cookies and localStorage by default; native clients can provide their
- * hydrated secure-storage values without browser shims.
+ * Supplies host-specific storage to the universal SDK. Browser callers use
+ * same-origin HttpOnly cookies; native clients provide SecureStore values.
  */
 export const configureApiRuntime = (adapter: ApiRuntimeAdapter | null) => {
   runtimeAdapter = adapter;
@@ -83,31 +83,19 @@ export const normalizeApiBaseURL = (
 
 export const getApiBaseURL = (): string => {
   const runtimeServerUrl = runtimeAdapter?.getServerUrl?.() ?? null;
-  let storedServerUrl: string | null = null;
-  if (runtimeServerUrl) {
-    storedServerUrl = runtimeServerUrl;
-  } else {
-    try {
-      storedServerUrl = globalThis.localStorage?.getItem("server_url") ?? null;
-    } catch {}
-  }
   let origin: string | undefined;
   try {
     origin = globalThis.location?.origin;
   } catch {}
-  return normalizeApiBaseURL(storedServerUrl, origin);
+  return normalizeApiBaseURL(runtimeServerUrl, origin);
 };
 
 export const getAccessToken = (): string | null => {
-  const runtimeToken = runtimeAdapter?.getAccessToken?.() ?? null;
-  if (runtimeToken) return runtimeToken;
-  try {
-    const token = getCookie("plm_accessToken");
-    return token ? String(token) : null;
-  } catch {
-    return null;
-  }
+  return runtimeAdapter?.getAccessToken?.() ?? null;
 };
+
+const getDefaultCredentials = (): RequestCredentials =>
+  runtimeAdapter?.getCredentials?.() ?? "include";
 
 const redirectToLogin = () => {
   if (runtimeAdapter?.onUnauthorized) {
@@ -250,18 +238,23 @@ export const tokenFromRefreshResponse = (
 ): string | null =>
   response.ok && data?.access_token ? data.access_token : null;
 
-const refreshAccessToken = async (): Promise<string | null> => {
+interface RefreshResult {
+  succeeded: boolean;
+  token: string | null;
+}
+
+const refreshAuthentication = async (): Promise<RefreshResult> => {
   if (runtimeAdapter?.refreshAccessToken) {
     const token = await runtimeAdapter.refreshAccessToken();
     if (token) runtimeAdapter.onAccessToken?.(token);
-    return token;
+    return { succeeded: Boolean(token), token };
   }
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), TIMEOUT_MS);
   try {
     const response = await fetch(resolveURL("/auth/refresh", {}), {
       method: "POST",
-      credentials: "include",
+      credentials: getDefaultCredentials(),
       signal: controller.signal,
     });
 
@@ -273,23 +266,27 @@ const refreshAccessToken = async (): Promise<string | null> => {
     const refreshedToken = tokenFromRefreshResponse(response, data);
     if (refreshedToken) {
       runtimeAdapter?.onAccessToken?.(refreshedToken);
-      return refreshedToken;
+      return { succeeded: true, token: refreshedToken };
+    }
+    if (response.ok && data?.status) {
+      // Browsers rotate credentials exclusively through HttpOnly cookies.
+      return { succeeded: true, token: null };
     }
 
     if (response.status === 401 || response.status === 403) redirectToLogin();
-    return null;
+    return { succeeded: false, token: null };
   } catch (error) {
     console.error("Token refresh failed:", error);
-    return null;
+    return { succeeded: false, token: null };
   } finally {
     clearTimeout(timeout);
   }
 };
 
-let refreshPromise: Promise<string | null> | null = null;
+let refreshPromise: Promise<RefreshResult> | null = null;
 
-const getFreshAccessToken = async (): Promise<string | null> => {
-  refreshPromise ??= refreshAccessToken().finally(() => {
+const refreshOnce = async (): Promise<RefreshResult> => {
+  refreshPromise ??= refreshAuthentication().finally(() => {
     refreshPromise = null;
   });
 
@@ -346,8 +343,8 @@ export const getFreshAuthorizationHeaders = async (): Promise<
     const currentTime = Math.floor(Date.now() / 1000);
 
     if (decoded.exp && decoded.exp - currentTime < REFRESH_THRESHOLD_SECONDS) {
-      const newToken = await getFreshAccessToken();
-      headers.Authorization = `Bearer ${newToken ?? accessToken}`;
+      const refresh = await refreshOnce();
+      headers.Authorization = `Bearer ${refresh.token ?? accessToken}`;
       return headers;
     }
   } catch (error) {
@@ -395,7 +392,7 @@ const request = async <T = any>(
       ...requestInit,
       body,
       headers,
-      credentials: config.credentials ?? "include",
+      credentials: config.credentials ?? getDefaultCredentials(),
       signal: composed.signal,
     });
     const data = await parseResponse<T>(
@@ -415,14 +412,17 @@ const request = async <T = any>(
     if (
       shouldAttemptAuthRefresh(url, response.status, config._retryCount ?? 0)
     ) {
-      const newToken = await getFreshAccessToken();
-      if (newToken) {
+      const refresh = await refreshOnce();
+      if (refresh.succeeded) {
+        const retryHeaders = new Headers(headers);
+        if (refresh.token) {
+          retryHeaders.set("Authorization", `Bearer ${refresh.token}`);
+        } else {
+          retryHeaders.delete("Authorization");
+        }
         return request<T>(path, {
           ...config,
-          headers: {
-            ...Object.fromEntries(headers.entries()),
-            Authorization: `Bearer ${newToken}`,
-          },
+          headers: Object.fromEntries(retryHeaders.entries()),
           _retryCount: (config._retryCount ?? 0) + 1,
         });
       }

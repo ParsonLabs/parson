@@ -1,3 +1,4 @@
+use std::collections::{HashMap, HashSet};
 use std::error::Error;
 use std::path::Path;
 use std::sync::Arc;
@@ -7,6 +8,7 @@ use diesel::prelude::*;
 use diesel::sql_types::{BigInt, Integer, Nullable, Text};
 use serde::Serialize;
 
+use crate::library::identity::normalize_artist_identity;
 use crate::library::indexer::{
     enrich_library_to_database_with_cancellation,
     index_available_library_to_database_with_cancellation,
@@ -115,6 +117,7 @@ pub struct LocalCatalogArtist {
     pub name: String,
     pub artwork_path: String,
     pub album_count: usize,
+    pub appearance_count: usize,
     pub song_count: usize,
 }
 
@@ -124,6 +127,59 @@ pub struct LocalArtistDetail {
     pub artist: LocalCatalogArtist,
     pub albums: Vec<LocalCatalogAlbum>,
     pub songs: Vec<LocalCatalogSong>,
+}
+
+fn catalog_artist_appearance_counts(artists: &[crate::domain::Artist]) -> HashMap<String, usize> {
+    let known_ids = artists
+        .iter()
+        .map(|artist| artist.id.as_str())
+        .collect::<HashSet<_>>();
+    let ids_by_name = artists
+        .iter()
+        .map(|artist| (normalize_artist_identity(&artist.name), artist.id.as_str()))
+        .collect::<HashMap<_, _>>();
+    let mut counts = HashMap::<String, usize>::new();
+
+    for album in artists.iter().flat_map(|artist| &artist.albums) {
+        for song in &album.songs {
+            let mut credited_ids = song
+                .contributing_artist_ids
+                .iter()
+                .map(String::as_str)
+                .filter(|id| known_ids.contains(id))
+                .collect::<HashSet<_>>();
+            for name in &song.contributing_artists {
+                if let Some(id) = ids_by_name.get(&normalize_artist_identity(name)) {
+                    credited_ids.insert(id);
+                }
+            }
+            for id in credited_ids {
+                *counts.entry(id.to_string()).or_default() += 1;
+            }
+        }
+    }
+
+    counts
+}
+
+fn sort_catalog_artists(artists: &mut [LocalCatalogArtist]) {
+    artists.sort_by(|left, right| {
+        let rank = |artist: &LocalCatalogArtist| {
+            if artist.album_count > 0 || artist.song_count > 0 {
+                0
+            } else if artist.appearance_count > 0 {
+                1
+            } else {
+                2
+            }
+        };
+        rank(left).cmp(&rank(right)).then_with(|| {
+            left.name
+                .to_lowercase()
+                .cmp(&right.name.to_lowercase())
+                .then_with(|| left.id.cmp(&right.id))
+        })
+    });
 }
 
 fn catalog_album_page(
@@ -417,18 +473,24 @@ impl LocalApp {
                 .message
                 .unwrap_or_else(|| "The local library is not ready.".into())
         })?;
-        Ok(cache
+        let appearance_counts = catalog_artist_appearance_counts(&cache.artists);
+        let mut artists = cache
             .artists
             .iter()
-            .skip(offset)
-            .take(limit.clamp(1, 200))
             .map(|artist| LocalCatalogArtist {
                 id: artist.id.clone(),
                 name: artist.name.clone(),
                 artwork_path: artist.icon_url.clone(),
                 album_count: artist.albums.len(),
+                appearance_count: appearance_counts.get(&artist.id).copied().unwrap_or(0),
                 song_count: artist.albums.iter().map(|album| album.songs.len()).sum(),
             })
+            .collect::<Vec<_>>();
+        sort_catalog_artists(&mut artists);
+        Ok(artists
+            .into_iter()
+            .skip(offset)
+            .take(limit.clamp(1, 200))
             .collect())
     }
 
@@ -441,11 +503,16 @@ impl LocalApp {
         let artist = cache
             .artist(id)
             .ok_or_else(|| "The selected artist is no longer in the local library.".to_string())?;
+        let appearance_count = catalog_artist_appearance_counts(&cache.artists)
+            .get(id)
+            .copied()
+            .unwrap_or(0);
         let summary = LocalCatalogArtist {
             id: artist.id.clone(),
             name: artist.name.clone(),
             artwork_path: artist.icon_url.clone(),
             album_count: artist.albums.len(),
+            appearance_count,
             song_count: artist.albums.iter().map(|album| album.songs.len()).sum(),
         };
         let albums = artist
@@ -841,8 +908,11 @@ impl From<LocalPlaylistRow> for LocalPlaylist {
 mod tests {
     use std::sync::Arc;
 
-    use super::{AppError, await_index_worker, catalog_album_page, catalog_visible_album_count};
-    use crate::domain::{Album, Artist};
+    use super::{
+        AppError, LocalCatalogArtist, await_index_worker, catalog_album_page,
+        catalog_artist_appearance_counts, catalog_visible_album_count, sort_catalog_artists,
+    };
+    use crate::domain::{Album, Artist, Song};
     use crate::library::state::{LibraryLifecycle, LibraryReadinessState};
 
     fn catalog_artist(name: &str, albums: &[(&str, &str)]) -> Artist {
@@ -891,6 +961,75 @@ mod tests {
         let page = catalog_album_page(&artists, 0, 10);
         assert_eq!(page.len(), 2);
         assert_eq!(catalog_visible_album_count(&artists), 2);
+    }
+
+    #[test]
+    fn appearance_counts_measure_featured_songs_without_duplicate_credits() {
+        let guest = Artist {
+            id: "guest".into(),
+            name: "Guest Artist".into(),
+            featured_on_album_ids: vec!["album-primary".into()],
+            ..Artist::default()
+        };
+        let primary = Artist {
+            id: "primary".into(),
+            name: "Primary Artist".into(),
+            albums: vec![Album {
+                id: "album-primary".into(),
+                songs: vec![
+                    Song {
+                        contributing_artists: vec!["Guest Artist".into()],
+                        contributing_artist_ids: vec!["guest".into(), "guest".into()],
+                        ..Song::default()
+                    },
+                    Song {
+                        contributing_artist_ids: vec!["guest".into()],
+                        ..Song::default()
+                    },
+                ],
+                ..Album::default()
+            }],
+            ..Artist::default()
+        };
+
+        let counts = catalog_artist_appearance_counts(&[guest, primary]);
+        assert_eq!(counts.get("guest"), Some(&2));
+        assert_eq!(counts.get("primary"), None);
+    }
+
+    #[test]
+    fn catalog_artists_put_primary_artists_before_appearance_only_artists() {
+        let artist = |name: &str, album_count, appearance_count, song_count| LocalCatalogArtist {
+            id: name.to_lowercase(),
+            name: name.into(),
+            artwork_path: String::new(),
+            album_count,
+            appearance_count,
+            song_count,
+        };
+        let mut artists = vec![
+            artist("Zeta Guest", 0, 2, 0),
+            artist("Empty", 0, 0, 0),
+            artist("Beta Primary", 1, 0, 10),
+            artist("Alpha Guest", 0, 1, 0),
+            artist("Alpha Primary", 1, 3, 8),
+        ];
+
+        sort_catalog_artists(&mut artists);
+
+        assert_eq!(
+            artists
+                .iter()
+                .map(|artist| artist.name.as_str())
+                .collect::<Vec<_>>(),
+            vec![
+                "Alpha Primary",
+                "Beta Primary",
+                "Alpha Guest",
+                "Zeta Guest",
+                "Empty"
+            ]
+        );
     }
 
     #[actix_web::test]

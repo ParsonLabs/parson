@@ -7,20 +7,18 @@ description: Downloads, requirements, updates, removal, and application data.
 
 Choose the file for your platform and architecture.
 
-| Platform                | Architecture  | Download                                                                                                                                 |
-| ----------------------- | ------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| Windows installer       | x64           | [Parson_1.0.0_x64-setup.exe](https://github.com/ParsonLabs/Parson/releases/download/v1.0.0/Parson_1.0.0_x64-setup.exe)                   |
-| Windows installer       | ARM64         | [Parson_1.0.0_arm64-setup.exe](https://github.com/ParsonLabs/Parson/releases/download/v1.0.0/Parson_1.0.0_arm64-setup.exe)               |
-| Linux AppImage          | x64           | [Parson_1.0.0_x86_64.AppImage](https://github.com/ParsonLabs/Parson/releases/download/v1.0.0/Parson_1.0.0_x86_64.AppImage)               |
-| Linux AppImage          | ARM64         | [Parson_1.0.0_arm64.AppImage](https://github.com/ParsonLabs/Parson/releases/download/v1.0.0/Parson_1.0.0_arm64.AppImage)                 |
-| Linux Debian package    | x64           | [Parson_1.0.0_amd64.deb](https://github.com/ParsonLabs/Parson/releases/download/v1.0.0/Parson_1.0.0_amd64.deb)                           |
-| Linux Debian package    | ARM64         | [Parson_1.0.0_arm64.deb](https://github.com/ParsonLabs/Parson/releases/download/v1.0.0/Parson_1.0.0_arm64.deb)                           |
-| macOS disk image        | Intel x64     | [Parson_1.0.0_x64.dmg](https://github.com/ParsonLabs/Parson/releases/download/v1.0.0/Parson_1.0.0_x64.dmg)                               |
-| macOS disk image        | Apple Silicon | [Parson_1.0.0_arm64.dmg](https://github.com/ParsonLabs/Parson/releases/download/v1.0.0/Parson_1.0.0_arm64.dmg)                           |
-| Windows headless server | x64           | [ParsonMusicServer-1.0.0-win-x64.zip](https://github.com/ParsonLabs/Parson/releases/download/v1.0.0/ParsonMusicServer-1.0.0-win-x64.zip) |
+| Platform             | Architecture  | Download                                                                                                                   |
+| -------------------- | ------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| Windows installer    | x64           | [Parson_1.0.0_x64-setup.exe](https://github.com/ParsonLabs/Parson/releases/download/v1.0.0/Parson_1.0.0_x64-setup.exe)     |
+| Windows installer    | ARM64         | [Parson_1.0.0_arm64-setup.exe](https://github.com/ParsonLabs/Parson/releases/download/v1.0.0/Parson_1.0.0_arm64-setup.exe) |
+| Linux AppImage       | x64           | [Parson_1.0.0_x86_64.AppImage](https://github.com/ParsonLabs/Parson/releases/download/v1.0.0/Parson_1.0.0_x86_64.AppImage) |
+| Linux AppImage       | ARM64         | [Parson_1.0.0_arm64.AppImage](https://github.com/ParsonLabs/Parson/releases/download/v1.0.0/Parson_1.0.0_arm64.AppImage)   |
+| Linux Debian package | x64           | [Parson_1.0.0_amd64.deb](https://github.com/ParsonLabs/Parson/releases/download/v1.0.0/Parson_1.0.0_amd64.deb)             |
+| Linux Debian package | ARM64         | [Parson_1.0.0_arm64.deb](https://github.com/ParsonLabs/Parson/releases/download/v1.0.0/Parson_1.0.0_arm64.deb)             |
+| macOS disk image     | Intel x64     | [Parson_1.0.0_x64.dmg](https://github.com/ParsonLabs/Parson/releases/download/v1.0.0/Parson_1.0.0_x64.dmg)                 |
+| macOS disk image     | Apple Silicon | [Parson_1.0.0_arm64.dmg](https://github.com/ParsonLabs/Parson/releases/download/v1.0.0/Parson_1.0.0_arm64.dmg)             |
 
-[Download SHA256SUMS](https://github.com/ParsonLabs/Parson/releases/download/v1.0.0/SHA256SUMS)
-or view [all releases](https://github.com/ParsonLabs/Parson/releases).
+View [all releases](https://github.com/ParsonLabs/Parson/releases).
 
 ## Requirements
 
@@ -62,9 +60,9 @@ web player in a current browser.
 
 ## Update behavior
 
-The Windows notification-area host has **Check and install updates**. It downloads the official manifest and installer from Parson's GitHub releases, verifies the declared size and SHA-256 digest, stops the server, replaces it, and relaunches it. If replacement fails, it restores the previous executable.
-
-Updates do not replace your music or intentionally clear Parson data. Database migrations can make older application versions unable to read newer data; see [Updates and migrations](/docs/updates-and-migrations).
+Updates do not replace your music or intentionally clear Parson data. Database
+migrations can make older application versions unable to read newer data; see
+[Updates and migrations](/docs/updates-and-migrations).
 
 ## Uninstall
 

@@ -1,21 +1,64 @@
 ---
 title: Download and install
-description: Requirements, updates, removal, and where the Windows app keeps its data.
+description: Downloads, requirements, updates, removal, and application data.
 ---
+
+## Downloads
+
+Choose the file for your platform and architecture.
+
+| Platform                | Architecture  | Download                                                                                                                                 |
+| ----------------------- | ------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| Windows installer       | x64           | [Parson_1.0.0_x64-setup.exe](https://github.com/ParsonLabs/Parson/releases/download/v1.0.0/Parson_1.0.0_x64-setup.exe)                   |
+| Windows installer       | ARM64         | [Parson_1.0.0_arm64-setup.exe](https://github.com/ParsonLabs/Parson/releases/download/v1.0.0/Parson_1.0.0_arm64-setup.exe)               |
+| Linux AppImage          | x64           | [Parson_1.0.0_x86_64.AppImage](https://github.com/ParsonLabs/Parson/releases/download/v1.0.0/Parson_1.0.0_x86_64.AppImage)               |
+| Linux AppImage          | ARM64         | [Parson_1.0.0_arm64.AppImage](https://github.com/ParsonLabs/Parson/releases/download/v1.0.0/Parson_1.0.0_arm64.AppImage)                 |
+| Linux Debian package    | x64           | [Parson_1.0.0_amd64.deb](https://github.com/ParsonLabs/Parson/releases/download/v1.0.0/Parson_1.0.0_amd64.deb)                           |
+| Linux Debian package    | ARM64         | [Parson_1.0.0_arm64.deb](https://github.com/ParsonLabs/Parson/releases/download/v1.0.0/Parson_1.0.0_arm64.deb)                           |
+| macOS disk image        | Intel x64     | [Parson_1.0.0_x64.dmg](https://github.com/ParsonLabs/Parson/releases/download/v1.0.0/Parson_1.0.0_x64.dmg)                               |
+| macOS disk image        | Apple Silicon | [Parson_1.0.0_arm64.dmg](https://github.com/ParsonLabs/Parson/releases/download/v1.0.0/Parson_1.0.0_arm64.dmg)                           |
+| Windows headless server | x64           | [ParsonMusicServer-1.0.0-win-x64.zip](https://github.com/ParsonLabs/Parson/releases/download/v1.0.0/ParsonMusicServer-1.0.0-win-x64.zip) |
+
+[Download SHA256SUMS](https://github.com/ParsonLabs/Parson/releases/download/v1.0.0/SHA256SUMS)
+or view [all releases](https://github.com/ParsonLabs/Parson/releases).
 
 ## Requirements
 
-| App                | Requirement                                                                 |
-| ------------------ | --------------------------------------------------------------------------- |
-| Parson for Windows | 64-bit Windows 10 version 2004 (build 19041) or newer; Windows 11 supported |
-| Parson for Android | Android 8.0 (API 26) or newer                                               |
-| Web player         | A current browser that can reach the Parson host                            |
+| App                | Requirement                                                          |
+| ------------------ | -------------------------------------------------------------------- |
+| Parson for Windows | Windows 10 version 2004 (build 19041) or newer; Windows 11 supported |
+| Parson for Linux   | x64 or ARM64; glibc 2.35+ (Ubuntu 22.04+, Debian 12+, or equivalent) |
+| Parson for macOS   | macOS 12 Monterey or newer; Intel or Apple Silicon                   |
+| Web player         | A current browser that can reach the Parson host                     |
 
 Windows includes Electron's Chromium runtime, matching the Linux desktop rendering and audio surface. Some audio formats may need FFmpeg available to the server when they cannot be played directly by the client.
 
 ## Install on Windows
 
-Download the latest signed installer from the official Parson release page, open it, and follow the Windows installation prompt. The Windows app contains both the music server and player; no separate server install is needed.
+Choose the x64 installer for Intel/AMD computers or ARM64 for Windows on ARM.
+Open the installer and follow the Windows installation prompt. The
+Windows app contains both the music server and player; no separate server
+install is needed.
+
+## Install on Linux
+
+Download the AppImage for your architecture, make it executable, and run it:
+
+```bash
+chmod +x Parson_1.0.0_x86_64.AppImage
+./Parson_1.0.0_x86_64.AppImage
+```
+
+The Debian package is available for systems that prefer package installation.
+
+## Install on macOS
+
+Choose Apple Silicon for M-series Macs or Intel x64 for Intel Macs. Open the
+DMG, drag Parson to Applications, and open it. macOS may ask you to confirm
+opening an application downloaded outside the App Store.
+
+Parson does not publish Android or iPhone packages. Those devices can use the
+web player in a current browser.
 
 ## Update behavior
 
@@ -25,16 +68,24 @@ Updates do not replace your music or intentionally clear Parson data. Database m
 
 ## Uninstall
 
-Uninstall Parson from **Settings → Apps → Installed apps**. Your music files are never owned by Parson and remain where they are.
+On Windows, uninstall Parson from **Settings → Apps → Installed apps**. On
+macOS, quit Parson and move it from **Applications** to the Trash. On Linux,
+remove the Debian package or delete the AppImage and its desktop integration.
+Your music files are never owned by Parson and remain where they are.
 
-Application data may remain so a reinstall can recover the library and accounts. Remove `%LOCALAPPDATA%\Parson` separately only when you intend to erase Parson's database, accounts, playlists, likes, history, lyrics cache, settings, logs, and cached artwork.
+Application data remains so a reinstall can recover the library and accounts.
+Remove the platform-specific data directory below only when you intend to erase
+Parson's database, accounts, playlists, likes, history, lyrics cache, settings,
+logs, and cached artwork.
 
 ## Application data
 
-The default Windows location is:
+Default locations are:
 
 ```text
-%LOCALAPPDATA%\Parson
+Windows: %LOCALAPPDATA%\Parson
+macOS:   ~/Library/Application Support/Parson
+Linux:   ~/.local/share/Parson
 ```
 
 Important subfolders are `Database`, `Cache`, `Secrets`, `Logs`, `Discovery`, and `Updates`. `PARSON_DATA_DIR` can move the whole data directory in advanced installations.

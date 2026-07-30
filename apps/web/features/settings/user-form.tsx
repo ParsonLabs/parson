@@ -17,24 +17,39 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { getUsers, register } from "@parson/music-sdk";
+import {
+  deleteUser,
+  getUsers,
+  register,
+  validPasswordLength,
+} from "@parson/music-sdk";
 import { useQuery } from "@tanstack/react-query";
-import { Loader2, Plus, UserRound } from "lucide-react";
+import { Loader2, Plus, Trash2, UserRound } from "lucide-react";
 import { useRef, useState, type FormEvent } from "react";
 import { toast } from "sonner";
+import { useSession } from "@/features/account/session-provider";
 
 export default function UserForm() {
+  const { session } = useSession();
   const [open, setOpen] = useState(false);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [role, setRole] = useState<"admin" | "user">("user");
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<
+    Awaited<ReturnType<typeof getUsers>>[number] | null
+  >(null);
   const requestInFlight = useRef(false);
   const users = useQuery({ queryKey: ["settings-users"], queryFn: getUsers });
 
   const createUser = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (requestInFlight.current) return;
+    if (!validPasswordLength(password)) {
+      toast("Password must contain between 8 and 256 characters.");
+      return;
+    }
     requestInFlight.current = true;
     setSaving(true);
     try {
@@ -99,6 +114,20 @@ export default function UserForm() {
                   {user.role === "admin" ? "Administrator" : "Listener"}
                 </p>
               </div>
+              <Button
+                aria-label={`Delete ${user.username}`}
+                disabled={String(user.id) === session?.sub}
+                onClick={() => setDeleteTarget(user)}
+                size="icon"
+                title={
+                  String(user.id) === session?.sub
+                    ? "You cannot delete your current account"
+                    : `Delete ${user.username}`
+                }
+                variant="ghost"
+              >
+                <Trash2 />
+              </Button>
             </div>
           ))
         ) : (
@@ -169,6 +198,56 @@ export default function UserForm() {
               </Button>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={Boolean(deleteTarget)}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen && !deleting) setDeleteTarget(null);
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete {deleteTarget?.username}?</DialogTitle>
+            <DialogDescription>
+              Parson creates a safety backup first, then permanently removes
+              this account, its listening data, favorites, and owned playlists.
+              Music files are not changed.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2">
+            <Button
+              disabled={deleting}
+              onClick={() => setDeleteTarget(null)}
+              variant="outline"
+            >
+              Cancel
+            </Button>
+            <Button
+              disabled={deleting || !deleteTarget}
+              onClick={() => {
+                if (!deleteTarget) return;
+                const target = deleteTarget;
+                setDeleting(true);
+                void deleteUser(target.id)
+                  .then(async () => {
+                    setDeleteTarget(null);
+                    await users.refetch();
+                    toast.success(`${target.username} was deleted.`);
+                  })
+                  .catch(() => {
+                    toast.error(
+                      "The user could not be deleted. Parson always keeps at least one administrator.",
+                    );
+                  })
+                  .finally(() => setDeleting(false));
+              }}
+              variant="destructive"
+            >
+              {deleting ? "Deleting…" : "Delete user"}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

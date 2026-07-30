@@ -484,10 +484,13 @@ pub fn classify_release_details(evidence: &ReleaseEvidence<'_>) -> ReleaseClassi
     // user-facing title that remains after those suffixes are removed.
     let album = searchable(&analyze_release_title(evidence.album_name).display_title);
     let artist = searchable(evidence.album_artist);
+    // Only directory components are release-hierarchy evidence. Including the
+    // filename lets one track named "(Remix)" or "(Live)" reclassify an
+    // otherwise ordinary album.
     let path = evidence
         .paths
         .iter()
-        .map(|value| searchable(value))
+        .map(|value| searchable(release_directory(value)))
         .collect::<Vec<_>>()
         .join(" ");
     let track_count = evidence.track_titles.len();
@@ -548,17 +551,41 @@ pub fn classify_release_details(evidence: &ReleaseEvidence<'_>) -> ReleaseClassi
     let rarity_tracks = matching_tracks(evidence.track_titles, RARITY_TERMS);
     let acapella_tracks = matching_tracks(evidence.track_titles, ACAPELLA_TERMS);
     let bonus_tracks = matching_tracks(evidence.track_titles, BONUS_TERMS);
-    score_track_share(&mut scores, "Remix", remix_tracks, track_count, 150);
-    score_track_share(&mut scores, "Live", live_tracks, track_count, 55);
+    let standalone_remix_tracks = standalone_variant_tracks(evidence.track_titles, REMIX_TERMS);
+    let standalone_live_tracks = standalone_variant_tracks(evidence.track_titles, LIVE_TERMS);
+    let standalone_rarity_tracks = standalone_variant_tracks(evidence.track_titles, RARITY_TERMS);
+    let standalone_acapella_tracks =
+        standalone_variant_tracks(evidence.track_titles, ACAPELLA_TERMS);
+    let standalone_bonus_tracks = standalone_variant_tracks(evidence.track_titles, BONUS_TERMS);
+    score_track_share(
+        &mut scores,
+        "Remix",
+        standalone_remix_tracks,
+        track_count,
+        150,
+    );
+    score_track_share(&mut scores, "Live", standalone_live_tracks, track_count, 55);
     score_track_share(
         &mut scores,
         "Demos & Rarities",
-        rarity_tracks,
+        standalone_rarity_tracks,
         track_count,
         60,
     );
-    score_track_share(&mut scores, "Acapella", acapella_tracks, track_count, 60);
-    score_track_share(&mut scores, "Bonus Audio", bonus_tracks, track_count, 300);
+    score_track_share(
+        &mut scores,
+        "Acapella",
+        standalone_acapella_tracks,
+        track_count,
+        60,
+    );
+    score_track_share(
+        &mut scores,
+        "Bonus Audio",
+        standalone_bonus_tracks,
+        track_count,
+        300,
+    );
     for (release_type, count) in [
         ("remix", remix_tracks),
         ("live", live_tracks),
@@ -572,12 +599,28 @@ pub fn classify_release_details(evidence: &ReleaseEvidence<'_>) -> ReleaseClassi
             ));
         }
     }
+    for (label, total, standalone) in [
+        ("remix", remix_tracks, standalone_remix_tracks),
+        ("live", live_tracks, standalone_live_tracks),
+        ("rarity", rarity_tracks, standalone_rarity_tracks),
+        ("acapella", acapella_tracks, standalone_acapella_tracks),
+        ("bonus", bonus_tracks, standalone_bonus_tracks),
+    ] {
+        if standalone < total {
+            reasons.push(format!(
+                "{}/{} {label} variants have a standard counterpart on the same release",
+                total - standalone,
+                total
+            ));
+        }
+    }
 
     if track_count > 0 && track_count <= 3 {
         let has_non_single_evidence = title_implies_non_single(&album)
             || score_for(&scores, "Soundtrack") >= 200
             || score_for(&scores, "Promotional") >= 150
-            || score_for(&scores, "Bootleg") >= 150;
+            || score_for(&scores, "Bootleg") >= 150
+            || score_for(&scores, "Remix") >= 120;
         if has_complete_duration && total_duration >= 1_800.0 {
             add(&mut scores, "Album", 180);
             reasons.push("runtime exceeds thirty minutes despite a short track list".to_string());
@@ -601,7 +644,32 @@ pub fn classify_release_details(evidence: &ReleaseEvidence<'_>) -> ReleaseClassi
             add(&mut scores, "EP", 12);
         }
         let sole_base_title = sole_base_track_title(evidence.track_titles);
-        if sole_base_title.as_deref() == Some(album.as_str()) && remix_tracks * 2 <= track_count {
+        let base_title_count = evidence
+            .track_titles
+            .iter()
+            .map(|title| base_track_title(title))
+            .collect::<std::collections::HashSet<_>>()
+            .len();
+        let companion_variant_package =
+            compact_companion_variant_package(evidence.track_titles, BONUS_TERMS);
+        let is_compact_remix_bundle = track_count >= 4
+            && ((sole_base_title.is_some()
+                && (remix_tracks > 0 || score_for(&scores, "Remix") >= 120))
+                || (base_title_count <= 2 && remix_tracks * 2 >= track_count));
+        if is_compact_remix_bundle {
+            add(&mut scores, "Remix", 220);
+            reasons.push(
+                "a compact release contains alternate mixes of one lead recording".to_string(),
+            );
+        } else if companion_variant_package {
+            add(&mut scores, "Single", 300);
+            reasons.push(
+                "a compact release pairs one or two lead recordings with companion variants"
+                    .to_string(),
+            );
+        } else if sole_base_title.as_deref() == Some(album.as_str())
+            && remix_tracks * 2 <= track_count
+        {
             add(&mut scores, "Single", 300);
             reasons.push("all tracks are versions of the title recording".to_string());
         } else if remix_tracks * 2 >= track_count && sole_base_title.is_some() {
@@ -949,6 +1017,40 @@ fn matching_tracks(titles: &[String], terms: &[&str]) -> usize {
         .count()
 }
 
+fn standalone_variant_tracks(titles: &[String], terms: &[&str]) -> usize {
+    let standard_recordings = titles
+        .iter()
+        .filter(|title| !matches_phrase(&searchable(title), terms))
+        .map(|title| base_track_title(title))
+        .collect::<std::collections::HashSet<_>>();
+
+    titles
+        .iter()
+        .filter(|title| matches_phrase(&searchable(title), terms))
+        .filter(|title| !standard_recordings.contains(&base_track_title(title)))
+        .count()
+}
+
+fn compact_companion_variant_package(titles: &[String], terms: &[&str]) -> bool {
+    let standard_recordings = titles
+        .iter()
+        .filter(|title| !matches_phrase(&searchable(title), terms))
+        .map(|title| base_track_title(title))
+        .collect::<std::collections::HashSet<_>>();
+    if standard_recordings.is_empty() || standard_recordings.len() > 2 {
+        return false;
+    }
+
+    let variants = titles
+        .iter()
+        .filter(|title| matches_phrase(&searchable(title), terms))
+        .collect::<Vec<_>>();
+    !variants.is_empty()
+        && variants
+            .iter()
+            .all(|title| standard_recordings.contains(&base_track_title(title)))
+}
+
 fn sole_base_track_title(titles: &[String]) -> Option<String> {
     let titles = titles
         .iter()
@@ -960,6 +1062,26 @@ fn sole_base_track_title(titles: &[String]) -> Option<String> {
 fn base_track_title(title: &str) -> String {
     let before_qualifier = title.split(['(', '[']).next().unwrap_or(title).trim();
     searchable(before_qualifier)
+}
+
+fn release_directory(path: &str) -> &str {
+    let path = std::path::Path::new(path);
+    let is_audio_file = path
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .is_some_and(|extension| {
+            [
+                "aac", "aiff", "alac", "flac", "m4a", "mp3", "ogg", "opus", "wav",
+            ]
+            .contains(&extension.to_ascii_lowercase().as_str())
+        });
+    if is_audio_file {
+        path.parent()
+            .and_then(std::path::Path::to_str)
+            .unwrap_or(path.as_os_str().to_str().unwrap_or_default())
+    } else {
+        path.as_os_str().to_str().unwrap_or_default()
+    }
 }
 
 fn score_track_share(
@@ -975,8 +1097,6 @@ fn score_track_share(
     let share = matching as f64 / total as f64;
     if share >= 0.5 {
         add(scores, release_type, maximum);
-    } else if matching >= 3 && share >= 0.25 {
-        add(scores, release_type, maximum / 2);
     }
 }
 
@@ -1369,8 +1489,12 @@ mod tests {
 
     #[test]
     fn a_few_bonus_remixes_do_not_reclassify_a_deluxe_album() {
-        let mut tracks = vec!["Harbor Lights"; 12];
-        tracks.extend(["Harbor Lights (Club Mix)", "Harbor Lights (Vocal Remix)"]);
+        let mut tracks = vec!["Harbor Lights"; 9];
+        tracks.extend([
+            "Harbor Lights (Club Mix)",
+            "Harbor Lights (Vocal Remix)",
+            "Harbor Lights (Dub)",
+        ]);
         assert_eq!(
             classify(
                 "Twin Horizons (Deluxe)",
@@ -1378,6 +1502,30 @@ mod tests {
                 "C:/Music/Twin Horizons Deluxe/01.mp3",
                 &tracks,
             ),
+            "Album"
+        );
+    }
+
+    #[test]
+    fn a_companion_remix_disc_does_not_reclassify_the_complete_album() {
+        let mut titles = (1..=12)
+            .map(|index| format!("Studio Recording {index}"))
+            .collect::<Vec<_>>();
+        titles.extend((1..=12).map(|index| format!("Studio Recording {index} (Club Remix)")));
+        let paths = titles
+            .iter()
+            .map(|title| format!("C:/Music/Aster Vale/Parallel Lines/{title}.flac"))
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            classify_release(&ReleaseEvidence {
+                album_name: "Parallel Lines",
+                album_artist: "Aster Vale",
+                paths: &paths,
+                track_titles: &titles,
+                track_durations: &[],
+                genres: &[],
+            }),
             "Album"
         );
     }
@@ -1524,6 +1672,15 @@ mod tests {
     fn short_plain_releases_remain_singles_but_mix_bundles_use_track_makeup() {
         assert_eq!(
             classify(
+                "Lead Recording",
+                "Artist",
+                "C:/Music/Artist/Lead Recording/01.flac",
+                &["Lead Recording (Club Remix)"],
+            ),
+            "Remix"
+        );
+        assert_eq!(
+            classify(
                 "Lead Song",
                 "Artist",
                 "C:/Music/Artist/3 Remix/Lead Song Remix/01.mp3",
@@ -1558,12 +1715,12 @@ mod tests {
                     "Lead Song (Extended Mix)",
                 ],
             ),
-            "Single"
+            "Remix"
         );
     }
 
     #[test]
-    fn title_version_packages_are_singles_and_dvd_companions_are_eps() {
+    fn alternate_version_packages_are_remixes_and_dvd_companions_are_eps() {
         assert_eq!(
             classify(
                 "Lead Song",
@@ -1577,7 +1734,7 @@ mod tests {
                     "Lead Song (Extended Version)",
                 ],
             ),
-            "Single"
+            "Remix"
         );
         assert_eq!(
             classify(
@@ -1640,6 +1797,72 @@ mod tests {
                 ],
             ),
             "Bonus Audio"
+        );
+    }
+
+    #[test]
+    fn companion_instrumentals_keep_compact_releases_in_the_single_family() {
+        assert_eq!(
+            classify(
+                "Silver Current",
+                "Aster Vale",
+                "C:/Music/Aster Vale/Silver Current/01.flac",
+                &["Silver Current", "Silver Current (Instrumental)"],
+            ),
+            "Single"
+        );
+        assert_eq!(
+            classify(
+                "Silver Current / Northern Signal",
+                "Aster Vale",
+                "C:/Music/Aster Vale/Silver Current - Northern Signal/01.flac",
+                &[
+                    "Silver Current",
+                    "Northern Signal",
+                    "Silver Current (Instrumental)",
+                    "Northern Signal (Instrumental)",
+                ],
+            ),
+            "Single"
+        );
+    }
+
+    #[test]
+    fn track_filenames_do_not_act_as_release_folder_categories() {
+        let titles = [
+            "First Light",
+            "Second Wind",
+            "Open Water",
+            "Northern Line",
+            "Quiet Harbor",
+            "Glass Horizon",
+            "After Midnight",
+            "First Light (Remix)",
+        ]
+        .into_iter()
+        .map(str::to_string)
+        .collect::<Vec<_>>();
+        let paths = titles
+            .iter()
+            .enumerate()
+            .map(|(index, title)| {
+                format!(
+                    "C:/Music/Aster Vale/Open Water/{:02}. {title}.flac",
+                    index + 1
+                )
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            classify_release(&ReleaseEvidence {
+                album_name: "Open Water",
+                album_artist: "Aster Vale",
+                paths: &paths,
+                track_titles: &titles,
+                track_durations: &[],
+                genres: &[],
+            }),
+            "Album"
         );
     }
 

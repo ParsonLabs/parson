@@ -16,14 +16,6 @@ export function normalizeBaseURL(url: string): string {
 
 export default function getBaseURL(): string {
   if (typeof window !== "undefined") {
-    try {
-      const serverConfig = globalThis.localStorage?.getItem("server_url");
-      if (serverConfig) {
-        const configured = normalizeBaseURL(serverConfig);
-        if (configured) return configured;
-      }
-    } catch {}
-
     const url = new URL(window.location.href);
     if (url.hostname === "localhost" && url.port === "3000") {
       return normalizeBaseURL(`${url.protocol}//${url.hostname}:1993`);

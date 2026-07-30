@@ -16,6 +16,8 @@ import {
   useQueryClient,
 } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
+import { LinearGradient } from "expo-linear-gradient";
+import { Heart, Shuffle } from "lucide-react-native";
 import { useState } from "react";
 import {
   ActivityIndicator,
@@ -23,6 +25,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  useWindowDimensions,
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -43,6 +46,8 @@ import {
   useDownloadsRevision,
 } from "@/lib/downloads";
 import { useSession } from "@/providers/session-provider";
+import { usePlayer } from "@/providers/player-provider";
+import { PlaylistCover } from "@/components/playlist-cover";
 
 const PAGE_SIZE = 100;
 
@@ -51,6 +56,7 @@ type Section =
 
 export default function LibraryScreen() {
   const session = useSession();
+  const player = usePlayer();
   const client = useQueryClient();
   const [selectedSection, setSection] = useState<Section>(() =>
     session.phase === "offline" ? "downloads" : "albums",
@@ -67,6 +73,8 @@ export default function LibraryScreen() {
   const [creatingPlaylist, setCreatingPlaylist] = useState(false);
   const downloadsRevision = useDownloadsRevision();
   const router = useRouter();
+  const { width: windowWidth } = useWindowDimensions();
+  const playlistCardSize = Math.floor((windowWidth - 56) / 2);
 
   const catalog = useInfiniteQuery({
     queryKey: ["library", "catalog", section],
@@ -154,8 +162,7 @@ export default function LibraryScreen() {
     (section === "albums" && albumItems.length === 0) ||
     (section === "songs" && songItems.length === 0) ||
     (section === "artists" && artistItems.length === 0) ||
-    (section === "liked" && likedSongs.length === 0) ||
-    (section === "playlists" && (playlists.data?.length ?? 0) === 0);
+    (section === "liked" && likedSongs.length === 0);
   const retry = () => {
     if (section === "albums" || section === "songs") void catalog.refetch();
     else if (section === "artists") void artists.refetch();
@@ -173,6 +180,27 @@ export default function LibraryScreen() {
             <Text style={styles.offlineText}>
               Your server is unavailable. Downloaded music still works.
             </Text>
+            {session.error ? (
+              <Text accessibilityRole="alert" style={styles.offlineError}>
+                {session.error}
+              </Text>
+            ) : null}
+            <View style={styles.offlineActions}>
+              <Pressable
+                accessibilityRole="button"
+                style={styles.offlinePrimary}
+                onPress={() => void session.retry()}
+              >
+                <Text style={styles.offlinePrimaryText}>Reconnect</Text>
+              </Pressable>
+              <Pressable
+                accessibilityRole="button"
+                style={styles.offlineSecondary}
+                onPress={() => void session.changeServer()}
+              >
+                <Text style={styles.offlineSecondaryText}>Change library</Text>
+              </Pressable>
+            </View>
           </View>
         ) : null}
         <ScrollView
@@ -212,16 +240,6 @@ export default function LibraryScreen() {
               </Text>
             </Pressable>
           ))}
-          {section === "playlists" ? (
-            <Pressable
-              accessibilityLabel="Create playlist"
-              accessibilityRole="button"
-              style={styles.newPlaylist}
-              onPress={() => setCreatingPlaylist(true)}
-            >
-              <Text style={styles.newPlaylistText}>＋ New</Text>
-            </Pressable>
-          ) : null}
         </ScrollView>
         {loading ? (
           <ActivityIndicator color="white" style={{ marginTop: 60 }} />
@@ -242,21 +260,38 @@ export default function LibraryScreen() {
               paddingBottom: layout.tabBar + layout.miniPlayer + 28,
             }}
           >
+            {section === "playlists" ? (
+              <Pressable
+                accessibilityLabel="Create playlist"
+                accessibilityRole="button"
+                style={styles.newPlaylist}
+                onPress={() => setCreatingPlaylist(true)}
+              >
+                <Text style={styles.newPlaylistText}>＋ New playlist</Text>
+              </Pressable>
+            ) : null}
+            {section === "liked" && likedSongs.length > 1 ? (
+              <Pressable
+                accessibilityLabel="Shuffle liked songs"
+                accessibilityRole="button"
+                style={styles.shuffleCollection}
+                onPress={() => player.playShuffled(likedSongs)}
+              >
+                <Shuffle color="white" size={18} />
+                <Text style={styles.shuffleCollectionText}>Shuffle</Text>
+              </Pressable>
+            ) : null}
             {empty ? (
               <View style={styles.emptyDownloads}>
                 <Text style={styles.emptyDownloadsTitle}>
                   {section === "liked"
                     ? "No liked songs yet"
-                    : section === "playlists"
-                      ? "No playlists yet"
-                      : `No ${section} found`}
+                    : `No ${section} found`}
                 </Text>
                 <Text style={styles.emptyDownloadsText}>
                   {section === "liked"
                     ? "Songs you like will appear here."
-                    : section === "playlists"
-                      ? "Create a playlist to organize your music."
-                      : "Refresh or index your library from Settings."}
+                    : "Refresh or index your library from Settings."}
                 </Text>
               </View>
             ) : null}
@@ -381,36 +416,51 @@ export default function LibraryScreen() {
                 onPress={() => void liked.fetchNextPage()}
               />
             ) : null}
-            {section === "playlists" &&
-              playlists.data?.map((playlist) => (
+            {section === "playlists" ? (
+              <View style={styles.playlistGrid}>
                 <Pressable
-                  accessibilityLabel={`${playlist.name}, ${playlist.song_count} songs`}
+                  accessibilityLabel="Open Liked Songs"
                   accessibilityRole="button"
-                  key={playlist.id}
-                  style={styles.row}
-                  onPress={() => {
-                    if (!selectedPlaylist)
-                      router.push(`/playlist/${playlist.id}`);
-                  }}
-                  onLongPress={() => setSelectedPlaylist(playlist)}
+                  style={[styles.playlistCard, { width: playlistCardSize }]}
+                  onPress={() => setSection("liked")}
                 >
-                  <Artwork
-                    path={
-                      playlist.cover_image ??
-                      playlist.cover_songs[0]?.album_object?.cover_url
-                    }
-                    size={58}
-                  />
-                  <View style={styles.labels}>
-                    <Text numberOfLines={1} style={styles.name}>
+                  <LinearGradient
+                    colors={["#f43f5e", "#86198f"]}
+                    style={[
+                      styles.squarePlaylistCover,
+                      { width: playlistCardSize, height: playlistCardSize },
+                    ]}
+                  >
+                    <Heart color="white" fill="white" size={44} />
+                  </LinearGradient>
+                  <Text numberOfLines={2} style={styles.playlistCardTitle}>
+                    Liked Songs
+                  </Text>
+                </Pressable>
+                {playlists.data?.map((playlist) => (
+                  <Pressable
+                    accessibilityLabel={`${playlist.name}, ${playlist.song_count} songs`}
+                    accessibilityRole="button"
+                    key={playlist.id}
+                    style={[styles.playlistCard, { width: playlistCardSize }]}
+                    onPress={() => {
+                      if (!selectedPlaylist)
+                        router.push(`/playlist/${playlist.id}`);
+                    }}
+                    onLongPress={() => setSelectedPlaylist(playlist)}
+                  >
+                    <PlaylistCover
+                      size={playlistCardSize}
+                      songs={playlist.cover_songs}
+                      override={playlist.cover_image}
+                    />
+                    <Text numberOfLines={2} style={styles.playlistCardTitle}>
                       {playlist.name}
                     </Text>
-                    <Text style={styles.meta}>
-                      Playlist • {playlist.song_count} songs
-                    </Text>
-                  </View>
-                </Pressable>
-              ))}
+                  </Pressable>
+                ))}
+              </View>
+            ) : null}
           </ScrollView>
         )}
         {selectedAlbum ? (
@@ -489,8 +539,31 @@ const styles = StyleSheet.create({
     paddingBottom: 14,
   },
   results: { flex: 1 },
-  newPlaylist: { height: 36, justifyContent: "center", paddingHorizontal: 12 },
-  newPlaylistText: { color: "white", fontWeight: "700" },
+  shuffleCollection: {
+    alignSelf: "flex-end",
+    minHeight: 40,
+    marginHorizontal: 20,
+    marginBottom: 6,
+    paddingHorizontal: 15,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: palette.borderStrong,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  shuffleCollectionText: { color: "white", fontWeight: "700" },
+  newPlaylist: {
+    alignSelf: "flex-end",
+    minHeight: 40,
+    justifyContent: "center",
+    marginHorizontal: 20,
+    marginBottom: 8,
+    paddingHorizontal: 14,
+    borderRadius: 20,
+    backgroundColor: "white",
+  },
+  newPlaylistText: { color: "black", fontWeight: "800" },
   pill: {
     borderWidth: 1,
     borderColor: palette.borderStrong,
@@ -508,6 +581,27 @@ const styles = StyleSheet.create({
     alignItems: "center",
     paddingHorizontal: 20,
     gap: 13,
+  },
+  playlistGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 16,
+    paddingHorizontal: 20,
+    paddingTop: 4,
+  },
+  playlistCard: { minWidth: 0 },
+  squarePlaylistCover: {
+    borderRadius: 10,
+    alignItems: "center",
+    justifyContent: "center",
+    overflow: "hidden",
+  },
+  playlistCardTitle: {
+    color: "white",
+    fontSize: 15,
+    fontWeight: "700",
+    lineHeight: 19,
+    marginTop: 9,
   },
   labels: { flex: 1 },
   name: { color: "white", fontWeight: "700", fontSize: 15 },
@@ -538,6 +632,38 @@ const styles = StyleSheet.create({
   },
   offlineTitle: { color: "white", fontWeight: "800", fontSize: 14 },
   offlineText: { color: palette.secondary, fontSize: 13, marginTop: 4 },
+  offlineError: {
+    color: "#fca5a5",
+    fontSize: 12,
+    lineHeight: 17,
+    marginTop: 8,
+  },
+  offlineActions: {
+    flexDirection: "row",
+    gap: 10,
+    marginTop: 12,
+  },
+  offlinePrimary: {
+    minHeight: 40,
+    flex: 1,
+    borderRadius: 20,
+    backgroundColor: "white",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 12,
+  },
+  offlinePrimaryText: { color: "black", fontSize: 13, fontWeight: "800" },
+  offlineSecondary: {
+    minHeight: 40,
+    flex: 1,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: palette.borderStrong,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 12,
+  },
+  offlineSecondaryText: { color: "white", fontSize: 13, fontWeight: "700" },
   loadMoreText: { color: "white", fontWeight: "700" },
   errorState: { alignItems: "center", padding: 36, marginTop: 28 },
   errorTitle: { color: "white", fontSize: 16, fontWeight: "800" },

@@ -122,6 +122,166 @@ pub fn data_path(parts: &[&str]) -> PathBuf {
     path
 }
 
+fn copy_restore_tree(source: &Path, destination: &Path) -> std::io::Result<()> {
+    fs::create_dir_all(destination)?;
+    for entry in fs::read_dir(source)? {
+        let entry = entry?;
+        let metadata = entry.metadata()?;
+        let target = destination.join(entry.file_name());
+        if metadata.is_dir() {
+            copy_restore_tree(&entry.path(), &target)?;
+        } else if metadata.is_file() {
+            let temporary = target.with_extension(format!(
+                "{}.restore-tmp",
+                target
+                    .extension()
+                    .and_then(|extension| extension.to_str())
+                    .unwrap_or_default()
+            ));
+            if let Some(parent) = target.parent() {
+                fs::create_dir_all(parent)?;
+            }
+            fs::copy(entry.path(), &temporary)?;
+            if target.is_file() {
+                fs::remove_file(&target)?;
+            }
+            fs::rename(temporary, target)?;
+        }
+    }
+    Ok(())
+}
+
+fn prune_restore_rollbacks(recovery: &Path) -> std::io::Result<()> {
+    let mut rollbacks = fs::read_dir(recovery)?
+        .filter_map(Result::ok)
+        .map(|entry| entry.path())
+        .filter(|path| {
+            path.is_dir()
+                && path
+                    .file_name()
+                    .and_then(|name| name.to_str())
+                    .is_some_and(|name| name.starts_with("before-restore-"))
+        })
+        .collect::<Vec<_>>();
+    rollbacks.sort_unstable_by(|left, right| right.file_name().cmp(&left.file_name()));
+    for old in rollbacks.into_iter().skip(3) {
+        let _ = fs::remove_dir_all(old);
+    }
+    Ok(())
+}
+
+/// Applies a previously validated private backup before any database is opened.
+///
+/// Restore uploads are only staged by the HTTP process. Requiring a restart
+/// keeps SQLite pools from observing a database file replacement mid-request.
+pub fn apply_staged_restore() -> std::io::Result<()> {
+    let marker = data_path(&["Restore", "READY"]);
+    if !marker.is_file() {
+        return Ok(());
+    }
+    let staged = data_path(&["Restore", "staged"]);
+    let staged_music = staged.join("Database/parson-music.db");
+    if !staged.join("manifest.json").is_file() || !staged_music.is_file() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "the staged Parson restore is incomplete",
+        ));
+    }
+
+    let recovery = data_path(&["Recovery"]);
+    let rollback = recovery.join(format!(
+        "before-restore-{}",
+        chrono::Utc::now().format("%Y%m%dT%H%M%S%3fZ")
+    ));
+    fs::create_dir_all(&rollback)?;
+    for database in [music_database_path(), core_database_path()] {
+        if database.is_file() {
+            let name = database
+                .file_name()
+                .ok_or_else(|| std::io::Error::other("database has no filename"))?;
+            fs::copy(&database, rollback.join(name))?;
+        }
+    }
+
+    let database_directory = data_path(&["Database"]);
+    fs::create_dir_all(&database_directory)?;
+    for name in ["parson-music.db", "parson-core.db"] {
+        let source = staged.join("Database").join(name);
+        if !source.is_file() {
+            continue;
+        }
+        let destination = database_directory.join(name);
+        let temporary = database_directory.join(format!(".{name}.restore"));
+        fs::copy(source, &temporary)?;
+        if destination.is_file() {
+            fs::remove_file(&destination)?;
+        }
+        fs::rename(temporary, &destination)?;
+        let _ = fs::remove_file(PathBuf::from(format!("{}-wal", destination.display())));
+        let _ = fs::remove_file(PathBuf::from(format!("{}-shm", destination.display())));
+    }
+    for name in [
+        "Config",
+        "Profile Pictures",
+        "Album Covers",
+        "Artist Icons",
+        "Artwork",
+    ] {
+        let source = staged.join(name);
+        let destination = data_path(&[name]);
+        if destination.is_dir() {
+            fs::rename(&destination, rollback.join(name))?;
+        }
+        if source.is_dir() {
+            copy_restore_tree(&source, &destination)?;
+        }
+    }
+    fs::remove_file(marker)?;
+    fs::remove_dir_all(staged)?;
+    prune_restore_rollbacks(&recovery)?;
+    Ok(())
+}
+
+fn apply_reset_at(root: &Path) -> std::io::Result<bool> {
+    let marker = root.join("Reset/READY");
+    if !marker.is_file() {
+        return Ok(false);
+    }
+    for name in [
+        "Database",
+        "Config",
+        "Profile Pictures",
+        "Album Covers",
+        "Artist Icons",
+        "Artwork",
+        "Cache",
+        "Discovery",
+        "Recovery",
+        "Restore",
+        "Secrets",
+    ] {
+        let path = root.join(name);
+        match fs::symlink_metadata(&path) {
+            Ok(metadata) if metadata.is_dir() => fs::remove_dir_all(path)?,
+            Ok(_) => fs::remove_file(path)?,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(error),
+        }
+    }
+    let reset = root.join("Reset");
+    if reset.is_dir() {
+        fs::remove_dir_all(reset)?;
+    }
+    Ok(true)
+}
+
+/// Applies a confirmed factory reset before any Parson database is opened.
+///
+/// Backups are deliberately kept so an accidental reset remains recoverable.
+pub fn apply_staged_reset() -> std::io::Result<bool> {
+    apply_reset_at(&data_path(&[]))
+}
+
 pub fn core_database_path() -> PathBuf {
     data_path(&["Database", "parson-core.db"])
 }
@@ -292,8 +452,9 @@ fn restrict_secret_permissions(_path: &Path) {}
 #[cfg(test)]
 mod tests {
     use super::{
-        allowed_origins_for, load_or_create_instance_id_at, load_or_create_session_secret_at,
-        parse_bind_address, parse_port, parse_public_url, persist_secret, secure_cookies_for,
+        allowed_origins_for, apply_reset_at, load_or_create_instance_id_at,
+        load_or_create_session_secret_at, parse_bind_address, parse_port, parse_public_url,
+        persist_secret, secure_cookies_for,
     };
 
     #[test]
@@ -376,5 +537,51 @@ mod tests {
         assert!(parse_public_url(Some("null")).is_err());
         assert!(parse_public_url(Some("https://music.example/app")).is_err());
         assert!(parse_public_url(Some("https://user@music.example")).is_err());
+    }
+
+    #[test]
+    fn staged_reset_removes_parson_data_but_keeps_backups() {
+        let root = std::env::temp_dir().join(format!("parson-reset-test-{}", uuid::Uuid::new_v4()));
+        for name in [
+            "Database",
+            "Config",
+            "Profile Pictures",
+            "Album Covers",
+            "Artist Icons",
+            "Artwork",
+            "Cache",
+            "Discovery",
+            "Recovery",
+            "Restore",
+            "Secrets",
+            "Backups",
+        ] {
+            let directory = root.join(name);
+            std::fs::create_dir_all(&directory).expect("reset fixture directory");
+            std::fs::write(directory.join("private"), name).expect("reset fixture file");
+        }
+        std::fs::create_dir_all(root.join("Reset")).expect("reset marker directory");
+        std::fs::write(root.join("Reset/READY"), "confirmed").expect("reset marker");
+
+        assert!(apply_reset_at(&root).expect("apply reset"));
+        assert!(root.join("Backups/private").is_file());
+        for name in [
+            "Database",
+            "Config",
+            "Profile Pictures",
+            "Album Covers",
+            "Artist Icons",
+            "Artwork",
+            "Cache",
+            "Discovery",
+            "Recovery",
+            "Restore",
+            "Secrets",
+            "Reset",
+        ] {
+            assert!(!root.join(name).exists(), "{name} survived reset");
+        }
+        assert!(!apply_reset_at(&root).expect("reset is one-shot"));
+        std::fs::remove_dir_all(root).expect("reset test cleanup");
     }
 }

@@ -1,8 +1,11 @@
 import { afterEach, expect, mock, test } from "bun:test";
 
 import {
+  applyImageSignature,
+  embeddedWebClientTarget,
   configureNativeRuntime,
   freshAuthorizationHeaders,
+  imageRequestHeaders,
   normalizeOrigin,
 } from "./runtime";
 
@@ -33,6 +36,57 @@ test("plain local addresses use the Parson port", () => {
   );
   expect(normalizeOrigin("https://music.example")).toBe(
     "https://music.example",
+  );
+});
+
+test("Expo web continues on the server origin for HttpOnly authentication", () => {
+  expect(
+    embeddedWebClientTarget(
+      "web",
+      "http://localhost:8081",
+      "http://music.local:1993",
+    ),
+  ).toBe("http://music.local:1993");
+  expect(
+    embeddedWebClientTarget(
+      "web",
+      "http://music.local:1993",
+      "http://music.local:1993",
+    ),
+  ).toBeNull();
+  expect(
+    embeddedWebClientTarget(
+      "android",
+      "http://localhost",
+      "http://music.local:1993",
+    ),
+  ).toBeNull();
+});
+
+test("artwork authorization is sent only to the connected Parson origin", () => {
+  configureNativeRuntime({
+    origin: "https://music.example",
+    token: "private-access-token",
+  });
+
+  expect(
+    imageRequestHeaders("https://music.example/media/images/cover.jpg"),
+  ).toEqual({ Authorization: "Bearer private-access-token" });
+  expect(
+    imageRequestHeaders("https://artwork-provider.example/cover.jpg"),
+  ).toEqual({});
+  expect(imageRequestHeaders("not a URL")).toEqual({});
+});
+
+test("signed lock-screen artwork preserves the encoded image path", () => {
+  expect(
+    applyImageSignature(
+      "https://music.example/media/images/%2Fmusic%2Fcover.jpg",
+      123,
+      "abc",
+    ),
+  ).toBe(
+    "https://music.example/media/images/%2Fmusic%2Fcover.jpg?expires=123&image_signature=abc",
   );
 });
 

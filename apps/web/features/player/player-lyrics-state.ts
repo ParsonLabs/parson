@@ -1,5 +1,22 @@
 import type { LyricsResult } from "@parson/music-sdk";
 
+export function lyricsRequestFailure(error: unknown): "missing" | "failed" {
+  if (!error || typeof error !== "object" || !("response" in error)) {
+    return "failed";
+  }
+  const response = error.response;
+  if (!response || typeof response !== "object" || !("data" in response)) {
+    return "failed";
+  }
+  const data = response.data;
+  return data &&
+    typeof data === "object" &&
+    "code" in data &&
+    data.code === "lyrics_not_found"
+    ? "missing"
+    : "failed";
+}
+
 export function shouldRequestLyrics({
   cachedLyrics,
   completedSongId,

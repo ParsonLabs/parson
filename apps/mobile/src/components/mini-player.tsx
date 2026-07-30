@@ -17,11 +17,14 @@ import { Artwork } from "@/components/artwork";
 import { PauseGlyph } from "@/components/pause-glyph";
 import { layout, palette } from "@/constants/colors";
 import { usePlayer, usePlayerPosition } from "@/providers/player-provider";
+import {
+  immediateBorderlessPressFeedback,
+  immediatePressFeedback,
+} from "@/lib/press-feedback";
 
 export function MiniPlayer({ bottom }: { bottom: number }) {
   const router = useRouter();
   const { current, isPlaying, toggle, next } = usePlayer();
-  const { currentTime, duration } = usePlayerPosition();
   const [opening, setOpening] = useState(false);
   const expansion = useSharedValue(0);
   const openPlayerFromDrag = useCallback(() => {
@@ -63,11 +66,11 @@ export function MiniPlayer({ bottom }: { bottom: number }) {
     [expansion, openPlayerFromDrag],
   );
   if (!current || opening) return null;
-  const progress = duration > 0 ? Math.min(1, currentTime / duration) : 0;
   return (
     <GestureDetector gesture={dragUpGesture}>
       <Animated.View style={[styles.shell, { bottom }, dragStyle]}>
         <Pressable
+          {...immediatePressFeedback}
           accessibilityLabel={`Open player for ${current.name}`}
           accessibilityRole="button"
           style={styles.info}
@@ -88,6 +91,7 @@ export function MiniPlayer({ bottom }: { bottom: number }) {
           </View>
         </Pressable>
         <Pressable
+          {...immediateBorderlessPressFeedback}
           accessibilityLabel={isPlaying ? "Pause" : "Play"}
           accessibilityRole="button"
           hitSlop={10}
@@ -101,6 +105,7 @@ export function MiniPlayer({ bottom }: { bottom: number }) {
           )}
         </Pressable>
         <Pressable
+          {...immediateBorderlessPressFeedback}
           accessibilityLabel="Next song"
           accessibilityRole="button"
           hitSlop={10}
@@ -109,10 +114,16 @@ export function MiniPlayer({ bottom }: { bottom: number }) {
         >
           <SkipForward color="white" fill="white" size={21} />
         </Pressable>
-        <View style={[styles.progress, { width: `${progress * 100}%` }]} />
+        <MiniPlayerProgress />
       </Animated.View>
     </GestureDetector>
   );
+}
+
+function MiniPlayerProgress() {
+  const { currentTime, duration } = usePlayerPosition();
+  const progress = duration > 0 ? Math.min(1, currentTime / duration) : 0;
+  return <View style={[styles.progress, { width: `${progress * 100}%` }]} />;
 }
 
 const styles = StyleSheet.create({

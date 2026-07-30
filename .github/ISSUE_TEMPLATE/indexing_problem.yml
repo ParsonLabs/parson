@@ -1,0 +1,88 @@
+name: Indexing problem
+description: Report a library indexing problem.
+title: "[Indexing] "
+labels:
+  - bug
+  - indexing
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not attach your database publicly. Remove personal paths, usernames, tokens, and private filenames before posting.
+  - type: input
+    id: version
+    attributes:
+      label: Parson version
+      placeholder: 1.0.0
+    validations:
+      required: true
+  - type: input
+    id: operating-system
+    attributes:
+      label: Operating system
+      placeholder: Windows 11 or Ubuntu 24.04
+    validations:
+      required: true
+  - type: dropdown
+    id: storage
+    attributes:
+      label: Storage type
+      options:
+        - Local disk
+        - Removable disk
+        - Network share
+        - NAS
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected grouping
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual grouping
+    validations:
+      required: true
+  - type: textarea
+    id: folders
+    attributes:
+      label: Folder structure
+      description: Use substitute names if needed.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: tags
+    attributes:
+      label: Relevant tags
+      render: text
+  - type: dropdown
+    id: rescan
+    attributes:
+      label: Does it change after a rescan?
+      options:
+        - "No"
+        - "Yes"
+        - Not tested
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostics export
+      description: Attach an export, if available. Remove private data first.
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: I searched existing issues.
+          required: true
+        - label: I did not attach a Parson database.
+          required: true
+        - label: I removed personal paths, usernames, tokens, and private filenames.
+          required: true

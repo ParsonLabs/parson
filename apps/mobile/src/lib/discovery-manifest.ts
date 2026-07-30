@@ -12,6 +12,9 @@ export type ServerIdentity = {
   origin: string | null;
 };
 
+export const SERVER_REPLACEMENT_WARNING =
+  "This address now belongs to a different Parson library.";
+
 const MAX_MANIFEST_BYTES = 64 * 1024;
 
 export function parseDiscoveryManifest(value: unknown): DiscoveryManifest {
@@ -57,5 +60,17 @@ export function serverIdentityChanged(
   return Boolean(
     current.origin &&
     (current.origin !== next.origin || current.instanceId !== next.instanceId),
+  );
+}
+
+export function savedAddressWasReplaced(
+  current: ServerIdentity,
+  next: ServerIdentity,
+) {
+  return Boolean(
+    current.origin &&
+    current.instanceId &&
+    current.origin === next.origin &&
+    current.instanceId !== next.instanceId,
   );
 }

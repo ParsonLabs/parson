@@ -115,6 +115,14 @@ jobs:
         env:
           VERSION: ${{ needs.validate.outputs.version }}
         run: |
+          while IFS= read -r -d '' package; do
+            destination="artifacts/$(basename "$package")"
+            if [[ -e "$destination" ]]; then
+              echo "Duplicate release package: $(basename "$package")" >&2
+              exit 1
+            fi
+            mv "$package" "$destination"
+          done < <(find artifacts -mindepth 2 -type f -print0)
           cp LICENSE THIRD_PARTY_NOTICES.md artifacts/
           require_count() {
             local expected="$1"

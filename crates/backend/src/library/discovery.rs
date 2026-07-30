@@ -43,6 +43,9 @@ pub(crate) struct FilesystemInventory {
     pub(crate) audio_files: Vec<DiscoveredFile>,
     /// Images indexed by nearby ancestor directories.
     pub(crate) images_by_ancestor: HashMap<PathBuf, Vec<DiscoveredImage>>,
+    /// False when any part of the walk could not be enumerated. Callers must
+    /// not interpret absent paths as deletions for an incomplete inventory.
+    pub(crate) complete: bool,
 }
 
 #[derive(Debug, Default)]
@@ -414,8 +417,22 @@ fn discover_scope(
             options.initial_capacity.min(256)
         }),
         images_by_ancestor: HashMap::new(),
+        complete: true,
     };
-    for entry in walk.into_iter().filter_map(Result::ok) {
+    for entry in walk {
+        let entry = match entry {
+            Ok(entry) => entry,
+            Err(error) => {
+                inventory.complete = false;
+                warn!(
+                    root = %library_root.display(),
+                    scope = %scan_root.display(),
+                    %error,
+                    "library walk was incomplete; missing entries will be preserved"
+                );
+                continue;
+            }
+        };
         if !entry.file_type().is_file() {
             continue;
         }
@@ -684,6 +701,7 @@ fn update_scopes(inventory: &mut FilesystemInventory, root: &Path, scopes: &[Pat
 
     for scope in scopes.iter().filter(|scope| scope.exists()) {
         let partial = discover_scope(root, scope, None);
+        inventory.complete &= partial.complete;
         inventory.audio_files.extend(partial.audio_files);
         for (ancestor, images) in partial.images_by_ancestor {
             inventory

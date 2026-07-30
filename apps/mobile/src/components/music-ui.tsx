@@ -3,6 +3,8 @@ import { useRouter } from "expo-router";
 import {
   Disc3,
   Download,
+  ChevronDown,
+  ChevronUp,
   ListEnd,
   ListPlus,
   MoreHorizontal,
@@ -26,6 +28,11 @@ import {
 import { AlbumActions } from "@/components/album-actions";
 import { PlaylistPicker } from "@/components/playlist-picker";
 import { useSession } from "@/providers/session-provider";
+import { trackArtistCredit } from "@/lib/track-artist-credit";
+import {
+  immediateBorderlessPressFeedback,
+  immediatePressFeedback,
+} from "@/lib/press-feedback";
 
 export function Screen({ children }: { children?: React.ReactNode }) {
   return <View style={styles.screen}>{children}</View>;
@@ -61,13 +68,23 @@ export function SongRow({
   queue,
   index,
   onRemove,
+  onMoveDown,
+  onMoveUp,
+  removeLabel = "Remove from playlist",
   showAlbum = true,
+  albumArtist,
+  albumType,
 }: {
   song: LibrarySong;
   queue?: LibrarySong[];
   index?: number;
   onRemove?: () => void;
+  onMoveDown?: () => void;
+  onMoveUp?: () => void;
+  removeLabel?: string;
   showAlbum?: boolean;
+  albumArtist?: string;
+  albumType?: string | null;
 }) {
   const player = usePlayer();
   const session = useSession();
@@ -78,9 +95,24 @@ export function SongRow({
   const [downloadError, setDownloadError] = useState(false);
   useDownloadsRevision();
   const active = player.current?.id === song.id;
+  const albumCredit =
+    !showAlbum && albumArtist
+      ? trackArtistCredit({
+          albumArtist,
+          albumType,
+          contributingArtists: song.contributing_artists,
+          trackArtist: song.artist,
+        })
+      : null;
+  const subtitle = showAlbum
+    ? `${song.artist}${
+        song.album_object?.name ? ` • ${song.album_object.name}` : ""
+      }`
+    : albumCredit;
   return (
     <View style={styles.songRow}>
       <Pressable
+        {...immediatePressFeedback}
         accessibilityLabel={`${song.name} by ${song.artist}`}
         accessibilityRole="button"
         style={({ pressed }) => [styles.songMain, pressed && styles.pressed]}
@@ -101,15 +133,15 @@ export function SongRow({
           <Text numberOfLines={1} style={styles.songTitle}>
             {song.name}
           </Text>
-          <Text numberOfLines={1} style={styles.songArtist}>
-            {song.artist}
-            {showAlbum && song.album_object?.name
-              ? ` • ${song.album_object.name}`
-              : ""}
-          </Text>
+          {subtitle ? (
+            <Text numberOfLines={1} style={styles.songArtist}>
+              {subtitle}
+            </Text>
+          ) : null}
         </View>
       </Pressable>
       <Pressable
+        {...immediateBorderlessPressFeedback}
         accessibilityLabel={`More actions for ${song.name}`}
         accessibilityRole="button"
         hitSlop={12}
@@ -121,7 +153,7 @@ export function SongRow({
       <ActionDrawer
         open={menu}
         onClose={() => setMenu(false)}
-        title={`${song.name} • ${song.artist}`}
+        title={song.name}
       >
         <DrawerAction
           icon={Play}
@@ -211,10 +243,30 @@ export function SongRow({
             The download action failed. Please try again.
           </Text>
         ) : null}
+        {onMoveUp ? (
+          <DrawerAction
+            icon={ChevronUp}
+            label="Move up"
+            onPress={() => {
+              setMenu(false);
+              onMoveUp();
+            }}
+          />
+        ) : null}
+        {onMoveDown ? (
+          <DrawerAction
+            icon={ChevronDown}
+            label="Move down"
+            onPress={() => {
+              setMenu(false);
+              onMoveDown();
+            }}
+          />
+        ) : null}
         {onRemove ? (
           <DrawerAction
             icon={X}
-            label="Remove from playlist"
+            label={removeLabel}
             onPress={() => {
               setMenu(false);
               onRemove();

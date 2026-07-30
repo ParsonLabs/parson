@@ -793,6 +793,83 @@ pub async fn library_roots() -> impl Responder {
 }
 
 #[derive(Deserialize)]
+pub struct ClassificationDiagnosticsQuery {
+    offset: Option<i64>,
+    limit: Option<i64>,
+}
+
+#[derive(QueryableByName)]
+struct ClassificationDiagnosticRow {
+    #[diesel(sql_type = Text)]
+    album_id: String,
+    #[diesel(sql_type = Text)]
+    title: String,
+    #[diesel(sql_type = Text)]
+    primary_type: String,
+    #[diesel(sql_type = Text)]
+    explanation_json: String,
+}
+
+#[derive(Serialize)]
+pub struct ClassificationDiagnostic {
+    album_id: String,
+    title: String,
+    primary_type: String,
+    explanation: serde_json::Value,
+}
+
+/// Returns the exact title analysis, evidence-derived classification, and
+/// confidence persisted for each album during indexing.
+#[get("/diagnostics/classifications")]
+pub async fn library_classification_diagnostics(
+    pool: web::Data<DbPool>,
+    query: web::Query<ClassificationDiagnosticsQuery>,
+) -> HttpResponse {
+    let offset = query.offset.unwrap_or(0).max(0);
+    let limit = query.limit.unwrap_or(100).clamp(1, 500);
+    classification_diagnostics_response(pool.get_ref(), offset, limit)
+}
+
+fn classification_diagnostics_response(pool: &DbPool, offset: i64, limit: i64) -> HttpResponse {
+    let mut connection = match pool.get() {
+        Ok(connection) => connection,
+        Err(error) => {
+            return service_unavailable(error.to_string(), "library_diagnostics_unavailable");
+        }
+    };
+    let rows = match diesel::sql_query(
+        "SELECT id AS album_id, title, primary_type,
+                COALESCE(release_album_json, '{}') AS explanation_json
+         FROM album_entity
+         ORDER BY normalized_title, id
+         LIMIT ? OFFSET ?",
+    )
+    .bind::<diesel::sql_types::BigInt, _>(limit)
+    .bind::<diesel::sql_types::BigInt, _>(offset)
+    .load::<ClassificationDiagnosticRow>(&mut connection)
+    {
+        Ok(rows) => rows,
+        Err(error) => {
+            return service_unavailable(error.to_string(), "library_diagnostics_unavailable");
+        }
+    };
+    HttpResponse::Ok().json(
+        rows.into_iter()
+            .map(|row| ClassificationDiagnostic {
+                album_id: row.album_id,
+                title: row.title,
+                primary_type: row.primary_type,
+                explanation: serde_json::from_str(&row.explanation_json).unwrap_or_else(|error| {
+                    serde_json::json!({
+                        "diagnostic_error": format!("Stored explanation is malformed: {error}")
+                    })
+                }),
+            })
+            .collect::<Vec<_>>(),
+    )
+}
+
+#[derive(Deserialize)]
 pub struct RemoveLibraryRootQuery {
     path: String,
 }
@@ -1642,17 +1719,67 @@ mod reliability_tests {
     use std::sync::Arc;
     use std::time::{Duration, Instant};
 
+    use actix_web::body::to_bytes;
+    use diesel::connection::SimpleConnection;
+    use diesel::r2d2::ConnectionManager;
+    use diesel::sqlite::SqliteConnection;
     use tokio::sync::Mutex;
 
     use super::{
         LibraryRefreshFailure, LibraryRefreshSuccess, MAX_CONCURRENT_TRANSCODES, StreamAudioEffect,
         TranscodeCleanup, automatic_change_is_settled, classify_refresh_result,
-        merge_progressive_catalog, parse_range, prune_transcode_cache, release_transcode_lock,
-        retain_progressive_albums_with_artwork, select_auto_refresh_quiet_window,
-        transcode_cache_locks, transcode_cache_path, transcode_slots,
+        content_type_for_path, merge_progressive_catalog, parse_range, prune_transcode_cache,
+        release_transcode_lock, retain_progressive_albums_with_artwork,
+        select_auto_refresh_quiet_window, stream_file_range, transcode_cache_locks,
+        transcode_cache_path, transcode_slots,
     };
     use crate::domain::{Album, Artist, Song};
     use crate::library::normalize::LibraryIndexReport;
+    use crate::persistence::connection::DbPool;
+
+    #[actix_web::test]
+    async fn classification_diagnostics_return_persisted_evidence_and_confidence() {
+        let manager = ConnectionManager::<SqliteConnection>::new(":memory:");
+        let pool: DbPool = Arc::new(
+            diesel::r2d2::Pool::builder()
+                .max_size(1)
+                .build(manager)
+                .expect("diagnostics pool"),
+        );
+        {
+            let mut connection = pool.get().expect("diagnostics connection");
+            connection
+                .batch_execute(
+                    "CREATE TABLE album_entity (
+                         id TEXT PRIMARY KEY, title TEXT NOT NULL,
+                         normalized_title TEXT NOT NULL, primary_type TEXT NOT NULL,
+                         release_album_json TEXT
+                     );
+                     INSERT INTO album_entity VALUES (
+                         'album-1', 'Short Release', 'short release', 'EP',
+                         '{\"classification\":{\"primary_type\":\"EP\",\"confidence\":0.91,\"evidence\":[\"four tracks\"]}}'
+                     );",
+                )
+                .expect("diagnostics fixture");
+        }
+
+        let response = super::classification_diagnostics_response(&pool, 0, 10);
+        assert!(response.status().is_success());
+        let body = to_bytes(response.into_body())
+            .await
+            .expect("diagnostics response body");
+        let diagnostics: serde_json::Value =
+            serde_json::from_slice(&body).expect("diagnostics response JSON");
+        assert_eq!(diagnostics[0]["album_id"], "album-1");
+        assert_eq!(
+            diagnostics[0]["explanation"]["classification"]["confidence"],
+            0.91
+        );
+        assert_eq!(
+            diagnostics[0]["explanation"]["classification"]["evidence"][0],
+            "four tracks"
+        );
+    }
 
     #[test]
     fn stream_audio_effects_keep_speed_pitch_and_reverb_distinct() {
@@ -1889,6 +2016,68 @@ mod reliability_tests {
         );
         assert!(parse_range(Some("bytes=100-"), 100).is_err());
         assert!(parse_range(Some("bytes=20-10"), 100).is_err());
+
+        let very_large_file = u64::from(u32::MAX) + 10_000;
+        assert_eq!(
+            parse_range(
+                Some(&format!("bytes={}-", very_large_file - 512)),
+                very_large_file,
+            )
+            .expect("64-bit end range"),
+            (very_large_file - 512, very_large_file - 1, true)
+        );
+    }
+
+    #[test]
+    fn direct_stream_content_types_cover_mixed_library_formats() {
+        for (path, expected) in [
+            ("track.flac", "audio/flac"),
+            ("track.MP3", "audio/mpeg"),
+            ("track.m4a", "audio/mp4"),
+            ("track.wav", "audio/wav"),
+            ("track.ogg", "audio/ogg"),
+            ("track.opus", "audio/opus"),
+            ("track.webm", "video/webm"),
+        ] {
+            assert_eq!(content_type_for_path(Path::new(path)), expected);
+        }
+    }
+
+    #[actix_web::test]
+    async fn stream_ranges_handle_boundaries_and_disappearing_files() {
+        let path = std::env::temp_dir().join(format!(
+            "parson-stream-reliability-{}.bin",
+            uuid::Uuid::new_v4()
+        ));
+        tokio::fs::write(&path, b"0123456789")
+            .await
+            .expect("stream fixture");
+
+        let request = actix_web::test::TestRequest::get()
+            .insert_header((actix_web::http::header::RANGE, "bytes=0-0"))
+            .to_http_request();
+        let response = stream_file_range(&request, &path, "boundary-test", "audio/mpeg").await;
+        assert_eq!(
+            response.status(),
+            actix_web::http::StatusCode::PARTIAL_CONTENT
+        );
+        assert_eq!(
+            response
+                .headers()
+                .get(actix_web::http::header::CONTENT_RANGE)
+                .and_then(|value| value.to_str().ok()),
+            Some("bytes 0-0/10")
+        );
+        let body = actix_web::body::to_bytes(response.into_body())
+            .await
+            .expect("range body");
+        assert_eq!(body.as_ref(), b"0");
+
+        tokio::fs::remove_file(&path)
+            .await
+            .expect("remove stream fixture");
+        let missing = stream_file_range(&request, &path, "missing-test", "audio/mpeg").await;
+        assert_eq!(missing.status(), actix_web::http::StatusCode::NOT_FOUND);
     }
 
     #[test]

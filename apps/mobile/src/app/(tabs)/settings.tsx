@@ -4,7 +4,6 @@ import {
   getUsers,
   getLibraryRoots,
   indexLibrary,
-  isInsecureHttpOrigin,
   refreshCurrentLibrary,
   removeLibraryRoot,
   register,
@@ -617,12 +616,6 @@ function ServerSettings({
           </Text>
         </View>
       </View>
-      {origin && isInsecureHttpOrigin(origin) ? (
-        <Text accessibilityRole="alert" style={styles.securityWarning}>
-          This HTTP connection is not private. Use it only on a network you
-          trust; configure HTTPS before remote access.
-        </Text>
-      ) : null}
       {offline ? (
         <Pressable
           accessibilityRole="button"
@@ -891,11 +884,6 @@ const styles = StyleSheet.create({
   value: { color: palette.secondary, fontSize: 13, marginTop: 4 },
   body: { color: palette.secondary, lineHeight: 21 },
   message: { color: palette.secondary, marginTop: 8 },
-  securityWarning: {
-    color: "#fcd34d",
-    lineHeight: 20,
-    paddingHorizontal: 2,
-  },
   adminToggle: {
     minHeight: 48,
     flexDirection: "row",

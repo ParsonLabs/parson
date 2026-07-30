@@ -1,9 +1,16 @@
 const truncateUtf8 = (value: string, maximumBytes: number) => {
-  const encoder = new TextEncoder();
   let bytes = 0;
   let result = "";
   for (const character of value) {
-    const characterBytes = encoder.encode(character).length;
+    const codePoint = character.codePointAt(0) ?? 0;
+    const characterBytes =
+      codePoint <= 0x7f
+        ? 1
+        : codePoint <= 0x7ff
+          ? 2
+          : codePoint <= 0xffff
+            ? 3
+            : 4;
     if (bytes + characterBytes > maximumBytes) break;
     bytes += characterBytes;
     result += character;
@@ -12,7 +19,7 @@ const truncateUtf8 = (value: string, maximumBytes: number) => {
 };
 
 export const safePathComponent = (value: string) =>
-  truncateUtf8(value.replace(/[\\/:*?"<>|]/g, "_").trim(), 72) || "Music";
+  truncateUtf8(value.replace(/[\\/:*?"<>|[\]]/g, "_").trim(), 72) || "Music";
 
 export const safeIdentifier = (value: string) =>
   value.replace(/[^a-z0-9_-]/gi, "_").slice(0, 40) || "unknown";
@@ -31,7 +38,7 @@ export const albumDirectoryName = (
 ) =>
   `${artist ? `${safePathComponent(artist)} - ` : ""}${safePathComponent(
     name,
-  )} [${safeIdentifier(albumId)}]`;
+  )} - ${safeIdentifier(albumId)}`;
 
 export const albumTrackFilename = (
   index: number,
@@ -41,7 +48,7 @@ export const albumTrackFilename = (
 ) =>
   `${String(index + 1).padStart(2, "0")} ${safePathComponent(
     name,
-  )} [${safeIdentifier(songId)}].${mediaExtension(path)}`;
+  )} - ${safeIdentifier(songId)}.${mediaExtension(path)}`;
 
 export const songFilename = (
   artist: string,
@@ -49,6 +56,6 @@ export const songFilename = (
   songId: string,
   path: string,
 ) =>
-  `${safePathComponent(artist)} - ${safePathComponent(name)} [${safeIdentifier(
+  `${safePathComponent(artist)} - ${safePathComponent(name)} - ${safeIdentifier(
     songId,
-  )}].${mediaExtension(path)}`;
+  )}.${mediaExtension(path)}`;

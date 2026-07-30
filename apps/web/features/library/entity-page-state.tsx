@@ -1,7 +1,7 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
-import { Loader2 } from "lucide-react";
+import { ArrowLeft, Loader2 } from "lucide-react";
 import Link from "next/link";
 
 export default function EntityPageState({
@@ -40,7 +40,15 @@ export default function EntityPageState({
             </Button>
           )}
           <Button asChild variant="ghost">
-            <Link href="/library">Back to library</Link>
+            <Link
+              className="select-none"
+              draggable={false}
+              href="/library"
+              onDragStart={(event) => event.preventDefault()}
+            >
+              <ArrowLeft aria-hidden="true" className="h-4 w-4" />
+              Library
+            </Link>
           </Button>
         </div>
       </div>

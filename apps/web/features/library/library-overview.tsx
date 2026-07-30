@@ -3,6 +3,7 @@
 import { Button } from "@/components/ui/button";
 import AlbumCard from "@/features/library/album-card";
 import ArtistMenu from "@/features/library/artist-menu";
+import { artistCatalogSummary } from "@/features/library/artist-catalog-summary";
 import CreatePlaylistDialog from "@/features/library/create-playlist-dialog";
 import PlaylistCover from "@/features/library/playlist-cover";
 import PlaylistMenu from "@/features/library/playlist-menu";
@@ -17,19 +18,13 @@ import { usePlayer } from "@/features/player/player-context";
 import getBaseURL from "@/lib/api/server-url";
 import { defaultCover } from "@/lib/images/default-cover";
 import {
-  getFavoriteSongDetails,
   getLibraryCatalog,
   getLibraryCatalogArtists,
-  getPlaylist,
   getPlaylists,
   type LibraryCatalogArtist,
   type LibraryCatalogSong,
 } from "@parson/music-sdk";
-import {
-  useInfiniteQuery,
-  useQuery,
-  useQueryClient,
-} from "@tanstack/react-query";
+import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import {
   Disc3,
   ChevronRight,
@@ -46,7 +41,6 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { uniqueById } from "./library-items";
-import LikedSongsView from "./liked-songs-view";
 import {
   InfiniteLoad,
   LibraryLoading,
@@ -55,11 +49,10 @@ import {
 } from "./library-view-primitives";
 
 const PAGE_SIZE = 100;
-const views = ["albums", "songs", "liked", "artists", "playlists"] as const;
+const views = ["albums", "songs", "artists", "playlists"] as const;
 type LibraryView = (typeof views)[number];
 
 export default function LibraryOverview() {
-  const queryClient = useQueryClient();
   const searchParams = useSearchParams();
   const requestedView = searchParams.get("view");
   const [view, setView] = useState<LibraryView>(() =>
@@ -96,33 +89,6 @@ export default function LibraryOverview() {
     enabled: view === "playlists",
   });
 
-  const favorites = useInfiniteQuery({
-    queryKey: ["favorite-song-details"],
-    initialPageParam: undefined as
-      { before_added_at: string; before_song_id: string } | undefined,
-    queryFn: async ({ pageParam }) => {
-      const details = await getFavoriteSongDetails({
-        limit: PAGE_SIZE,
-        ...pageParam,
-      });
-      for (const detail of details) {
-        queryClient.setQueryData(["favorite-membership", detail.song_id], true);
-      }
-      return details;
-    },
-    getNextPageParam: (lastPage) => {
-      if (lastPage.length < PAGE_SIZE) return undefined;
-      const last = lastPage.at(-1);
-      return last
-        ? { before_added_at: last.added_at, before_song_id: last.song_id }
-        : undefined;
-    },
-    enabled: view === "liked",
-  });
-  const favoriteSongs =
-    favorites.data?.pages.flatMap((page) => page.map((item) => item.song)) ??
-    [];
-
   const catalogPages = catalog.data?.pages ?? [];
   const allAlbums = uniqueById(catalogPages.flatMap((page) => page.albums));
   const allSongs = uniqueById(catalogPages.flatMap((page) => page.songs));
@@ -130,11 +96,9 @@ export default function LibraryOverview() {
   const initialLoading =
     (catalogEnabled && catalog.isPending && !catalog.data) ||
     (view === "artists" && artists.isPending && !artists.data) ||
-    (view === "playlists" && playlists.isPending) ||
-    (view === "liked" && favorites.isPending);
+    (view === "playlists" && playlists.isPending);
   const activeError =
     (catalogEnabled ? catalog.error : null) ??
-    (view === "liked" ? favorites.error : null) ??
     (view === "artists" ? artists.error : null) ??
     (view === "playlists" ? playlists.error : null);
 
@@ -188,12 +152,6 @@ export default function LibraryOverview() {
             onClick={() => selectView("songs")}
           />
           <LibraryTab
-            active={view === "liked"}
-            icon={<Heart />}
-            label="Liked Songs"
-            onClick={() => selectView("liked")}
-          />
-          <LibraryTab
             active={view === "artists"}
             icon={<UserRound />}
             label="Artists"
@@ -237,17 +195,6 @@ export default function LibraryOverview() {
           onLoadMore={() => void catalog.fetchNextPage()}
         />
       )}
-      {view === "liked" && (
-        <LikedSongsView
-          error={Boolean(favorites.error)}
-          hasMore={favorites.hasNextPage}
-          loading={favorites.isPending}
-          loadingMore={favorites.isFetchingNextPage}
-          onLoadMore={() => void favorites.fetchNextPage()}
-          onRetry={() => void favorites.refetch()}
-          songs={favoriteSongs}
-        />
-      )}
       {view === "artists" && (
         <ArtistsView
           artists={allArtists}
@@ -260,7 +207,6 @@ export default function LibraryOverview() {
       {view === "playlists" && (
         <PlaylistsView
           loading={playlists.isPending}
-          onOpenLiked={() => selectView("liked")}
           playlists={playlists.data}
         />
       )}
@@ -521,6 +467,7 @@ function ArtistsView({
 }
 
 function ArtistRow({ artist }: { artist: LibraryCatalogArtist }) {
+  const summary = artistCatalogSummary(artist);
   return (
     <ArtistMenu artistId={artist.id}>
       <Link
@@ -531,11 +478,7 @@ function ArtistRow({ artist }: { artist: LibraryCatalogArtist }) {
           <h2 className="truncate text-sm font-semibold text-zinc-100 group-hover:text-white">
             {artist.name}
           </h2>
-          <p className="mt-1 text-xs text-zinc-500">
-            {artist.albumCount} {artist.albumCount === 1 ? "album" : "albums"}
-            {" · "}
-            {artist.songCount} {artist.songCount === 1 ? "song" : "songs"}
-          </p>
+          {summary && <p className="mt-1 text-xs text-zinc-500">{summary}</p>}
         </div>
         <ChevronRight className="h-4 w-4 shrink-0 text-zinc-600 transition-colors group-hover:text-white" />
       </Link>
@@ -545,11 +488,9 @@ function ArtistRow({ artist }: { artist: LibraryCatalogArtist }) {
 
 function PlaylistsView({
   loading,
-  onOpenLiked,
   playlists,
 }: {
   loading: boolean;
-  onOpenLiked: () => void;
   playlists?: Awaited<ReturnType<typeof getPlaylists>>;
 }) {
   const [createOpen, setCreateOpen] = useState(false);
@@ -562,7 +503,7 @@ function PlaylistsView({
               <LibraryLoading compact />
             ) : (
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                <LikedSongsPlaylistCard onOpen={onOpenLiked} />
+                <LikedSongsPlaylistCard />
                 {playlists?.map((playlist) => (
                   <PlaylistCard key={playlist.id} playlist={playlist} />
                 ))}
@@ -582,15 +523,14 @@ function PlaylistsView({
   );
 }
 
-function LikedSongsPlaylistCard({ onOpen }: { onOpen: () => void }) {
+function LikedSongsPlaylistCard() {
   return (
     <ContextMenu>
       <ContextMenuTrigger asChild>
-        <button
+        <Link
           aria-label="Open Liked Songs"
           className="group flex min-w-0 items-center gap-4 overflow-hidden rounded-xl border border-white/[0.08] bg-white/[0.025] p-4 transition-colors hover:bg-white/[0.06]"
-          onClick={onOpen}
-          type="button"
+          href="/playlist?system=liked"
         >
           <div className="grid h-14 w-14 shrink-0 place-items-center rounded-lg bg-gradient-to-br from-rose-500 to-fuchsia-800 text-white">
             <Heart className="h-6 w-6 fill-current" />
@@ -599,12 +539,14 @@ function LikedSongsPlaylistCard({ onOpen }: { onOpen: () => void }) {
             Liked Songs
           </h2>
           <ChevronRight className="h-4 w-4 shrink-0 text-zinc-600 transition-colors group-hover:text-white" />
-        </button>
+        </Link>
       </ContextMenuTrigger>
       <ContextMenuContent className="w-52">
-        <ContextMenuItem onSelect={onOpen}>
-          <Heart className="h-4 w-4" />
-          Go to Liked Songs
+        <ContextMenuItem asChild>
+          <Link href="/playlist?system=liked">
+            <Heart className="h-4 w-4" />
+            Go to Liked Songs
+          </Link>
         </ContextMenuItem>
       </ContextMenuContent>
     </ContextMenu>
@@ -616,31 +558,13 @@ function PlaylistCard({
 }: {
   playlist: Awaited<ReturnType<typeof getPlaylists>>[number];
 }) {
-  const player = usePlayer();
-  const play = async () => {
-    const detail = await getPlaylist(playlist.id);
-    const first = detail.songs[0];
-    if (!first) return;
-    player.setQueue(
-      detail.songs.map((song) => ({
-        song,
-        artist: song.artist_object,
-        album: song.album_object,
-      })),
-    );
-    player.setCurrentSongIndex(0);
-    player.setSongCallback(first, first.artist_object, first.album_object);
-    player.playAudioSource();
-  };
   return (
     <PlaylistMenu playlistId={playlist.id}>
-      <div className="group relative flex min-w-0 items-center gap-4 overflow-hidden rounded-xl border border-white/[0.08] bg-white/[0.025] p-4 transition-colors hover:bg-white/[0.06]">
-        <button
-          aria-label={`Play ${playlist.name}`}
-          className="absolute inset-0 z-0 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white/30"
-          onClick={() => void play()}
-          type="button"
-        />
+      <Link
+        aria-label={`Open ${playlist.name}`}
+        className="group flex min-w-0 items-center gap-4 overflow-hidden rounded-xl border border-white/[0.08] bg-white/[0.025] p-4 transition-colors hover:bg-white/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white/30"
+        href={`/playlist?id=${playlist.id}`}
+      >
         <div className="pointer-events-none relative z-10 h-14 w-14 shrink-0">
           <PlaylistCover
             className="h-14 w-14 rounded-lg"
@@ -650,14 +574,8 @@ function PlaylistCard({
         <h2 className="pointer-events-none relative z-10 min-w-0 flex-1 truncate text-sm font-semibold text-zinc-100">
           {playlist.name}
         </h2>
-        <Link
-          aria-label={`Open ${playlist.name}`}
-          className="relative z-20 rounded-md p-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30"
-          href={`/playlist?id=${playlist.id}`}
-        >
-          <ChevronRight className="h-4 w-4 shrink-0 text-zinc-600 transition-colors group-hover:text-white" />
-        </Link>
-      </div>
+        <ChevronRight className="h-4 w-4 shrink-0 text-zinc-600 transition-colors group-hover:text-white" />
+      </Link>
     </PlaylistMenu>
   );
 }
@@ -666,11 +584,7 @@ function CreatePlaylistButton() {
   const [open, setOpen] = useState(false);
   return (
     <>
-      <Button
-        className="h-7 rounded px-2.5 text-xs bg-white text-black hover:bg-zinc-200 [&_svg]:size-3.5"
-        onClick={() => setOpen(true)}
-        size="sm"
-      >
+      <Button onClick={() => setOpen(true)}>
         <Plus /> New playlist
       </Button>
       <CreatePlaylistDialog onOpenChange={setOpen} open={open} />

@@ -1,5 +1,5 @@
 import { getPlaylist } from "@parson/music-sdk";
-import { ListMusic, Play } from "lucide-react-native";
+import { ListMusic, Play, Shuffle } from "lucide-react-native";
 import { useRouter } from "expo-router";
 import { useState } from "react";
 
@@ -36,6 +36,22 @@ export function PlaylistActions({
             .then((playlist) => {
               if (playlist.songs[0])
                 player.playSong(playlist.songs[0], playlist.songs);
+              onClose();
+            })
+            .catch(() => setFailed(true))
+            .finally(() => setLoading(false));
+        }}
+      />
+      <DrawerAction
+        icon={Shuffle}
+        label={loading ? "Loading playlist…" : "Shuffle"}
+        onPress={() => {
+          if (loading) return;
+          setFailed(false);
+          setLoading(true);
+          void getPlaylist(playlistId)
+            .then((playlist) => {
+              player.playShuffled(playlist.songs);
               onClose();
             })
             .catch(() => setFailed(true))

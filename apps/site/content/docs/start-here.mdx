@@ -3,15 +3,19 @@ title: Start here
 description: From installer to first song in a few minutes.
 ---
 
-## 1. Install Parson on Windows
+## 1. Install Parson
 
-Download the latest **Parson for Windows** installer, open it, and follow Windows' prompts. Parson supports 64-bit Windows 10 version 2004 or newer, including Windows 11.
+Download the package for Windows, macOS, or Linux and follow the platform's
+installation prompts. The desktop application includes both the player and the
+local server.
 
 ## 2. Create the first account
 
 Open Parson. Enter a username and a password of at least 8 characters. The first account becomes the administrator.
 
-If setup is opened directly on the Windows host, nothing else is required. Setup from another device asks for the 12-character code shown in the server log.
+The setup endpoint is intentionally open until the first account is created.
+Complete this step promptly on the host or a trusted network before exposing
+port `1993` to any untrusted device.
 
 ## 3. Choose a music folder
 
@@ -25,8 +29,11 @@ Parson discovers files, reads tags, builds the library and search index, and pre
 
 Open an album, artist, or song and press **Play**. The player stays available at the bottom of the app. Search, queue, repeat, seeking, lyrics, playlists, likes, and history work without further setup.
 
-## 6. Connect Android
+## 6. Connect another device
 
-Keep Parson running on Windows and put both devices on the same trusted network. Open Parson on Android, select the nearby library, and sign in. If it does not appear, use **Enter address**; see [Connect Android](/docs/connecting-devices).
+Keep Parson running and put both devices on the same trusted network. Open
+`http://computer-name:1993` in a current browser on the other device and sign
+in. If the page does not load, use the host's local IP address and see
+[Connecting devices](/docs/connecting-devices).
 
 That is the normal setup. You do not need to configure a port, hostname, or reverse proxy for use at home.

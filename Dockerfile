@@ -12,6 +12,7 @@ COPY apps/mobile/patches ./apps/mobile/patches
 COPY apps/site/package.json ./apps/site/package.json
 COPY apps/web/package.json ./apps/web/package.json
 COPY packages ./packages
+COPY patches ./patches
 COPY LICENSE ./LICENSE
 COPY tools/generate-third-party-notices.cjs ./tools/generate-third-party-notices.cjs
 RUN bun install --frozen-lockfile --ignore-scripts

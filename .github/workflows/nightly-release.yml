@@ -40,6 +40,14 @@ jobs:
           merge-multiple: true
       - name: Verify release package set
         run: |
+          while IFS= read -r -d '' package; do
+            destination="artifacts/$(basename "$package")"
+            if [[ -e "$destination" ]]; then
+              echo "Duplicate release package: $(basename "$package")" >&2
+              exit 1
+            fi
+            mv "$package" "$destination"
+          done < <(find artifacts -mindepth 2 -type f -print0)
           cp LICENSE THIRD_PARTY_NOTICES.md artifacts/
           test "$(find artifacts -maxdepth 1 -type f -name '*.AppImage' | wc -l)" -eq 2
           test "$(find artifacts -maxdepth 1 -type f -name '*.deb' | wc -l)" -eq 2

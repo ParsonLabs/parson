@@ -3,14 +3,18 @@
 import { AlbumArtFallback, getLibraryImageUrl } from "@/lib/images/image-url";
 import getBaseURL from "@/lib/api/server-url";
 import { Album, Artist } from "@parson/music-sdk/types";
+import { getAlbumInfos, type LibraryAlbum } from "@parson/music-sdk";
 import { useArtist } from "@/features/library/use-library-entity";
+import { displaySongTitle } from "@/features/library/song-presentation";
 import Image from "next/image";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useMemo } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { usePageTitle } from "@/components/app/title-metadata";
 import EntityPageState from "@/features/library/entity-page-state";
 import AlbumMenu from "@/features/library/album-menu";
+import { songCreditsArtist } from "@/features/library/artist-appearance";
 
 type ArtistDetailsProps = {
   devArtist?: Artist;
@@ -37,6 +41,15 @@ export default function ArtistDetails({
   const artist = artistQuery.data ?? null;
   usePageTitle(artist?.name);
   const albums = devAlbums ?? artist?.albums ?? [];
+  const featuredAlbumIds = artist?.featured_on_album_ids ?? [];
+  const featuredAlbumsQuery = useQuery({
+    queryKey: ["artist-featured-albums", artist?.id, featuredAlbumIds],
+    queryFn: () =>
+      getAlbumInfos(featuredAlbumIds, false) as Promise<
+        Record<string, LibraryAlbum>
+      >,
+    enabled: featuredAlbumIds.length > 0,
+  });
 
   const artistIconURL = useMemo(
     () => getLibraryImageUrl(artist?.icon_url, getBaseURL),
@@ -61,6 +74,18 @@ export default function ArtistDetails({
         ]
       : [];
   }, [albums, artist?.discography]);
+  const featuredAppearances = useMemo(
+    () =>
+      featuredAlbumIds.flatMap((albumId) => {
+        const album = featuredAlbumsQuery.data?.[albumId];
+        if (!album || !artist) return [];
+        const featuredTrack = album.songs.find((song) =>
+          songCreditsArtist(song, artist),
+        );
+        return featuredTrack ? [{ album, track: featuredTrack }] : [];
+      }),
+    [artist, featuredAlbumIds, featuredAlbumsQuery.data],
+  );
   if (!id && !devArtist) return <EntityPageState kind="artist" />;
   if (artistQuery.isPending) return <EntityPageState kind="artist" loading />;
   if (artistQuery.isError || !artist)
@@ -158,6 +183,50 @@ export default function ArtistDetails({
                 </section>
               ))}
             </div>
+          )}
+          {featuredAppearances.length > 0 && (
+            <section>
+              <h3 className="mb-5 text-xl font-semibold text-white">
+                Appears on
+              </h3>
+              <div className="grid gap-3 sm:grid-cols-2">
+                {featuredAppearances.map(({ album, track }) => {
+                  const coverURL = getLibraryImageUrl(
+                    album.cover_url,
+                    getBaseURL,
+                  );
+                  return (
+                    <Link
+                      className="group flex min-w-0 items-center gap-4 rounded-lg p-2 transition-colors hover:bg-white/[0.06]"
+                      href={`/album?id=${album.id}`}
+                      key={`${album.id}-${track.id}`}
+                    >
+                      <div className="relative h-16 w-16 shrink-0 overflow-hidden rounded-md border border-white/10 bg-white/[0.04]">
+                        {coverURL ? (
+                          <Image
+                            alt={album.name}
+                            className="object-cover transition-transform duration-300 group-hover:scale-105"
+                            fill
+                            sizes="64px"
+                            src={coverURL}
+                          />
+                        ) : (
+                          <AlbumArtFallback />
+                        )}
+                      </div>
+                      <div className="min-w-0">
+                        <h4 className="truncate text-sm font-semibold text-zinc-100">
+                          {displaySongTitle(track.name)}
+                        </h4>
+                        <p className="mt-1 truncate text-sm text-zinc-400">
+                          {album.artist_object.name} · {album.name}
+                        </p>
+                      </div>
+                    </Link>
+                  );
+                })}
+              </div>
+            </section>
           )}
         </div>
       </div>

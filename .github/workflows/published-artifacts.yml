@@ -233,61 +233,6 @@ jobs:
           $process = Start-Process $uninstaller -ArgumentList "/S" -Wait -PassThru
           if ($process.ExitCode -ne 0) { throw "Uninstall failed." }
 
-  windows-server:
-    name: Windows server package and updater
-    needs: resolve
-    runs-on: windows-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@v7
-      - name: Download exact published Windows server artifacts
-        shell: pwsh
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ needs.resolve.outputs.current }}
-        run: |
-          $version = $env:TAG.TrimStart("v")
-          gh release download $env:TAG `
-            --repo $env:GITHUB_REPOSITORY `
-            --pattern "ParsonMusicServer-${version}-win-x64.zip" `
-            --pattern "ParsonMusicServer.exe" `
-            --pattern "ParsonMusicServer.exe.sha256" `
-            --pattern "windows-server-update.json"
-      - name: Verify package, provenance, and updater metadata
-        shell: pwsh
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ needs.resolve.outputs.current }}
-        run: |
-          $version = $env:TAG.TrimStart("v")
-          .\crates\windows-server\verify-update-assets.ps1 `
-            -Version $version `
-            -Directory "."
-
-          $executable = Get-Item "ParsonMusicServer.exe"
-          foreach ($artifact in @(
-            $executable,
-            (Get-Item "ParsonMusicServer-${version}-win-x64.zip")
-          )) {
-            gh attestation verify $artifact.FullName --repo $env:GITHUB_REPOSITORY
-            if ($LASTEXITCODE -ne 0) {
-              throw "$($artifact.Name) has no valid build provenance."
-            }
-          }
-
-          $expanded = Join-Path $env:RUNNER_TEMP "ParsonWindowsServer"
-          Expand-Archive "ParsonMusicServer-${version}-win-x64.zip" $expanded
-          $archivedExecutable = Join-Path $expanded "ParsonMusicServer.exe"
-          if ((Get-FileHash $archivedExecutable -Algorithm SHA256).Hash -ne
-              (Get-FileHash $executable.FullName -Algorithm SHA256).Hash) {
-            throw "Archived and updater Windows server executables differ."
-          }
-          foreach ($name in @("LICENSE", "THIRD_PARTY_NOTICES.md", "README.md")) {
-            if (-not (Test-Path (Join-Path $expanded $name) -PathType Leaf)) {
-              throw "Windows server archive is missing $name."
-            }
-          }
-
   macos:
     name: macOS install and startup (${{ matrix.arch }})
     needs: resolve

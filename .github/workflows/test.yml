@@ -3,7 +3,17 @@ name: Build and Test
 on:
   pull_request:
   workflow_call:
+    inputs:
+      release:
+        description: Build the desktop and server release artifact set.
+        type: boolean
+        default: false
   workflow_dispatch:
+    inputs:
+      release:
+        description: Build the desktop and server release artifact set.
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -29,26 +39,56 @@ jobs:
       - name: Install native build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y nasm
+          sudo apt-get install -y libxml2-utils nasm
       - name: Install JavaScript dependencies
         run: bun install --frozen-lockfile
       - name: Check repository formatting
+        if: inputs.release != true
         run: bun run format:check
+      - name: Check desktop and server release formatting
+        if: inputs.release
+        run: |
+          bunx prettier --check \
+            .github \
+            apps/desktop \
+            apps/site \
+            apps/web \
+            packages/parson-music-sdk \
+            package.json \
+            README.md \
+            docker-compose.yml \
+            --ignore-unknown
       - name: Check web types
         run: bun --filter parson-music-web type-check
       - name: Check site and mobile types
+        if: inputs.release != true
         run: bun --filter parson-site type-check && bun --filter parson-mobile type-check
       - name: Lint mobile client
+        if: inputs.release != true
         run: bun --filter parson-mobile lint
+      - name: Check Expo SDK compatibility
+        if: inputs.release != true
+        working-directory: apps/mobile
+        run: bunx expo-doctor@1.20.1
       - name: Test client and SDK
         run: bun test packages/parson-music-sdk/src apps/web/components apps/web/features
+      - name: Test mobile client
+        if: inputs.release != true
+        run: bun test apps/mobile/src/lib
       - name: Test desktop integration
         run: bun --filter parson-music-desktop desktop:test
-      - name: Audit production JavaScript dependencies
-        run: bun audit --production
+      - name: Test mobile build plugins
+        if: inputs.release != true
+        run: node --test apps/mobile/plugins/*.test.cjs
+      - name: Validate distribution metadata
+        if: ${{ hashFiles('distribution/scripts/validate.sh') != '' }}
+        run: bash ./distribution/scripts/validate.sh
+      - name: Audit complete JavaScript dependency graph
+        run: bun audit
       - name: Build web export
         run: bun --filter parson-music-web build
       - name: Build website and documentation
+        if: inputs.release != true
         run: bun --filter parson-site build
       - name: Check Rust formatting
         run: cargo fmt --check
@@ -72,8 +112,22 @@ jobs:
           - arch: arm64
             runner: ubuntu-24.04-arm
     runs-on: ${{ matrix.runner }}
+    container: ubuntu:22.04
     timeout-minutes: 45
     steps:
+      - name: Bootstrap Ubuntu 22.04 build environment
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          apt-get update
+          apt-get install -y \
+            build-essential \
+            ca-certificates \
+            curl \
+            git \
+            pkg-config \
+            unzip \
+            xz-utils
       - uses: actions/checkout@v7
       - uses: oven-sh/setup-bun@v2
         with:
@@ -81,9 +135,11 @@ jobs:
       - uses: dtolnay/rust-toolchain@1.97.0
       - uses: Swatinem/rust-cache@v2
       - name: Install Linux packaging dependencies
+        env:
+          DEBIAN_FRONTEND: noninteractive
         run: |
-          sudo apt-get update
-          sudo apt-get install -y libssl-dev nasm patchelf dpkg-dev
+          apt-get update
+          apt-get install -y file libcrypt1 libssl-dev nasm patchelf dpkg-dev
       - name: Install JavaScript dependencies
         run: bun install --frozen-lockfile
       - name: Build Linux packages from a clean checkout
@@ -129,11 +185,45 @@ jobs:
         shell: pwsh
         run: |
           $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
-          .\crates\windows-server\package.ps1 -Version $version -SkipWebBuild
+          $arguments = @{
+            Version = $version
+            SkipWebBuild = $true
+          }
+          .\crates\windows-server\package.ps1 @arguments
           .\crates\windows-server\verify-update-assets.ps1 -Version $version
           .\crates\windows-server\test-updater.ps1
       - name: Build native Windows release
         run: bun --filter parson-music-desktop desktop:build
+      - name: Verify Windows package license payload
+        shell: pwsh
+        run: |
+          $unpacked = Get-ChildItem target\release\bundle\electron -Directory |
+            Where-Object Name -Like "win*-unpacked" |
+            Select-Object -First 1
+          if ($null -eq $unpacked) {
+            throw "Electron Builder did not retain an unpacked Windows application."
+          }
+          foreach ($relativePath in @(
+            "resources\LICENSE",
+            "resources\THIRD_PARTY_NOTICES.md",
+            "LICENSE.electron.txt",
+            "LICENSES.chromium.html"
+          )) {
+            $path = Join-Path $unpacked.FullName $relativePath
+            if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+              throw "Windows package is missing $relativePath."
+            }
+          }
+          if ("${{ matrix.arch }}" -eq "x64") {
+            $archive = Get-ChildItem artifacts\windows-server -Filter *.zip |
+              Select-Object -First 1
+            $entries = tar -tf $archive.FullName
+            foreach ($name in @("LICENSE", "THIRD_PARTY_NOTICES.md")) {
+              if ($entries -notcontains $name) {
+                throw "$($archive.Name) is missing $name."
+              }
+            }
+          }
       - name: Upload Windows installer and portable executable
         uses: actions/upload-artifact@v6
         with:
@@ -141,18 +231,65 @@ jobs:
           path: |
             target/release/bundle/electron/Parson_*-setup.exe
             target/release/bundle/electron/Parson_*-portable.exe
+            artifacts/windows-server/ParsonMusicServer-*-win-x64.zip
+            artifacts/windows-server/ParsonMusicServer.exe
+            artifacts/windows-server/ParsonMusicServer.exe.sha256
+            artifacts/windows-server/windows-server-update.json
           if-no-files-found: error
 
-  android:
-    name: Android (${{ matrix.artifact }})
+  macos-packages:
+    name: macOS desktop (${{ matrix.arch }})
     strategy:
       fail-fast: false
       matrix:
         include:
+          - arch: x64
+            runner: macos-15-intel
+          - arch: arm64
+            runner: macos-15
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@1.97.0
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+      - uses: Swatinem/rust-cache@v2
+      - name: Install packaging dependencies
+        run: |
+          brew list nasm >/dev/null 2>&1 || brew install nasm
+          bun install --frozen-lockfile --ignore-scripts
+          node node_modules/electron/install.js
+      - name: Build macOS packages
+        env:
+          MACOSX_DEPLOYMENT_TARGET: "12.0"
+          PARSON_BUILD_ARCH: ${{ matrix.arch }}
+        run: bun --filter parson-music-desktop desktop:build
+      - name: Verify macOS package and architecture
+        env:
+          PARSON_BUILD_ARCH: ${{ matrix.arch }}
+        run: bash ./apps/desktop/scripts/verify-macos-package.sh
+      - name: Upload macOS DMG and ZIP
+        uses: actions/upload-artifact@v6
+        with:
+          name: parson-macos-${{ matrix.arch }}
+          path: |
+            target/release/bundle/electron/Parson_*.dmg
+            target/release/bundle/electron/Parson_*.zip
+          if-no-files-found: error
+
+  android:
+    name: Android (${{ matrix.artifact }})
+    if: inputs.release != true
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: universal
+            artifact: universal
           - arch: arm64-v8a
             artifact: arm64
-          - arch: armeabi-v7a
-            artifact: armv7
           - arch: x86_64
             artifact: x64
     runs-on: ubuntu-latest
@@ -174,16 +311,47 @@ jobs:
       - uses: android-actions/setup-android@v3
       - name: Build Android release APK
         working-directory: apps/mobile/android
-        run: ./gradlew assembleRelease --no-daemon -PreactNativeArchitectures=${{ matrix.arch }}
+        run: |
+          arguments=(
+            assembleRelease
+            --no-daemon
+          )
+          if [[ "${{ matrix.arch }}" != "universal" ]]; then
+            arguments+=("-PreactNativeArchitectures=${{ matrix.arch }}")
+          fi
+          keystore="$RUNNER_TEMP/parson-upload.jks"
+          keytool -genkeypair \
+            -keystore "$keystore" \
+            -storepass parson-ci \
+            -keypass parson-ci \
+            -alias parson-ci \
+            -keyalg RSA \
+            -keysize 3072 \
+            -validity 2 \
+            -dname "CN=Parson CI, OU=CI, O=ParsonLabs, C=PT"
+          arguments+=(
+            "-PPARSON_UPLOAD_STORE_FILE=$keystore"
+            "-PPARSON_UPLOAD_STORE_PASSWORD=parson-ci"
+            "-PPARSON_UPLOAD_KEY_ALIAS=parson-ci"
+            "-PPARSON_UPLOAD_KEY_PASSWORD=parson-ci"
+          )
+          ./gradlew "${arguments[@]}"
       - name: Verify Android architecture
         run: |
           apk="$(find apps/mobile/android/app/build/outputs/apk/release -name '*.apk' -print -quit)"
           test -n "$apk"
           unzip -Z1 "$apk" > "$RUNNER_TEMP/apk-entries"
-          grep -q "^lib/${{ matrix.arch }}/" "$RUNNER_TEMP/apk-entries"
-          if grep '^lib/' "$RUNNER_TEMP/apk-entries" | grep -qv "^lib/${{ matrix.arch }}/"; then
-            echo "APK contains libraries for an unexpected architecture" >&2
-            exit 1
+          grep -q '^assets/licenses/LICENSE$' "$RUNNER_TEMP/apk-entries"
+          grep -q '^assets/licenses/THIRD_PARTY_NOTICES.md$' "$RUNNER_TEMP/apk-entries"
+          if [[ "${{ matrix.arch }}" == "universal" ]]; then
+            grep -q '^lib/arm64-v8a/' "$RUNNER_TEMP/apk-entries"
+            grep -q '^lib/x86_64/' "$RUNNER_TEMP/apk-entries"
+          else
+            grep -q "^lib/${{ matrix.arch }}/" "$RUNNER_TEMP/apk-entries"
+            if grep '^lib/' "$RUNNER_TEMP/apk-entries" | grep -qv "^lib/${{ matrix.arch }}/"; then
+              echo "APK contains libraries for an unexpected architecture" >&2
+              exit 1
+            fi
           fi
           version="$(node -p "require('./apps/mobile/app.json').expo.version")"
           mv "$apk" "apps/mobile/android/app/build/outputs/apk/release/Parson_${version}_android-${{ matrix.artifact }}.apk"

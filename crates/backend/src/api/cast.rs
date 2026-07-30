@@ -357,9 +357,11 @@ fn hydrate_response(
                 encoded(&session.id),
             );
             let artwork_url = (!album.cover_url.trim().is_empty()).then(|| {
+                let encoded_cover = encoded(&album.cover_url);
+                let image_signature =
+                    crate::api::image::sign_image_path(&album.cover_url, expires);
                 format!(
-                    "{origin}/media/images/{}?raw=true",
-                    encoded(&album.cover_url)
+                    "{origin}/media/images/{encoded_cover}?raw=true&expires={expires}&image_signature={image_signature}"
                 )
             });
             Some(CastQueueItem {

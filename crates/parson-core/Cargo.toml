@@ -7,7 +7,7 @@ rust-version = "1.97"
 license = "GPL-3.0-only"
 
 [dependencies]
-base64 = "0.22.1"
+base64 = "0.23.0"
 diesel = { version = "2.3.11", default-features = false, features = ["sqlite"] }
 libsqlite3-sys = { version = "0.37.0", features = ["bundled"] }
 serde = { version = "1.0.228", features = ["derive"] }

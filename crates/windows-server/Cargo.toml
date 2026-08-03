@@ -23,7 +23,7 @@ tokio = { version = "1.52.3", features = ["macros", "rt-multi-thread", "sync"] }
 tracing = "0.1.44"
 tracing-appender = "0.2.4"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
-winreg = "0.55.0"
+winreg = "0.56.0"
 windows-sys = { version = "0.61.2", features = [
     "Win32_Foundation",
     "Win32_Graphics_Gdi",

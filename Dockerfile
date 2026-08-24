@@ -1,6 +1,6 @@
-FROM --platform=$BUILDPLATFORM oven/bun:1.3.14-alpine AS bun-runtime
+FROM --platform=$BUILDPLATFORM oven/bun:1.4.0-alpine AS bun-runtime
 
-FROM --platform=$BUILDPLATFORM node:24-alpine AS web-deps
+FROM --platform=$BUILDPLATFORM node:26-alpine AS web-deps
 WORKDIR /app
 ENV NEXT_TELEMETRY_DISABLED=1
 COPY --from=bun-runtime /usr/local/bin/bun /usr/local/bin/bun
@@ -23,7 +23,7 @@ COPY apps/web ./apps/web
 FROM web-deps AS web-builder
 RUN bun --filter parson-music-web build
 
-FROM rust:1.97-slim-trixie AS backend-builder
+FROM rust:1.98-slim-trixie AS backend-builder
 WORKDIR /app
 
 RUN apt-get update \

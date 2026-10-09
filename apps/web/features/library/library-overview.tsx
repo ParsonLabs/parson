@@ -8,6 +8,10 @@ import CreatePlaylistDialog from "@/features/library/create-playlist-dialog";
 import PlaylistCover from "@/features/library/playlist-cover";
 import PlaylistMenu from "@/features/library/playlist-menu";
 import SongMenu from "@/features/library/song-menu";
+import { SongTitle, ExplicitBadge } from "./song-title";
+import { isExplicitSongTitle } from "./song-presentation";
+import { ArtistCreditLinks } from "./artist-credit-links";
+import { catalogSongArtistCredits } from "./track-artist-credit";
 import {
   ContextMenu,
   ContextMenuContent,
@@ -105,8 +109,11 @@ export default function LibraryOverview() {
   const selectView = (nextView: LibraryView) => {
     setView(nextView);
     const next = new URLSearchParams(window.location.search);
-    if (nextView === "albums") next.delete("view");
-    else next.set("view", nextView);
+    if (nextView === "albums") {
+      next.delete("view");
+    } else {
+      next.set("view", nextView);
+    }
     window.history.replaceState(
       window.history.state,
       "",
@@ -128,15 +135,15 @@ export default function LibraryOverview() {
   }, []);
 
   return (
-    <section className="mx-auto w-full max-w-[1064px] space-y-7">
+    <section className="mx-auto w-full max-w-266 space-y-7">
       <header className="flex items-end justify-between gap-5">
         <h1 className="text-3xl font-semibold text-white">Library</h1>
       </header>
 
-      <div className="flex min-h-11 min-w-0 items-end border-b border-white/[0.08]">
+      <div className="flex min-h-11 min-w-0 items-end border-b border-white/8">
         <div
           aria-label="Library views"
-          className="flex min-w-0 flex-1 gap-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          className="flex min-w-0 flex-1 gap-1 overflow-x-auto scrollbar-none [&::-webkit-scrollbar]:hidden"
           role="tablist"
         >
           <LibraryTab
@@ -172,7 +179,7 @@ export default function LibraryOverview() {
       </div>
 
       {activeError && (
-        <p className="rounded-lg border border-amber-300/20 bg-amber-300/[0.06] px-4 py-3 text-sm text-amber-100">
+        <p className="rounded-lg border border-amber-300/20 bg-amber-300/6 px-4 py-3 text-sm text-amber-100">
           Some items could not be loaded. You can retry below.
         </p>
       )}
@@ -257,8 +264,10 @@ function AlbumsView({
   loadingMore: boolean;
   onLoadMore: () => void;
 }) {
-  if (loading) return <LibraryLoading compact />;
-  if (!albums.length)
+  if (loading) {
+    return <LibraryLoading compact />;
+  }
+  if (!albums.length) {
     return (
       <LibraryMessage
         title="No albums yet"
@@ -267,6 +276,7 @@ function AlbumsView({
         action="Open settings"
       />
     );
+  }
   return (
     <>
       <div className="grid grid-cols-2 gap-x-4 gap-y-10 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
@@ -304,8 +314,10 @@ function SongsView({
   loadingMore: boolean;
   onLoadMore: () => void;
 }) {
-  if (loading) return <LibraryLoading compact />;
-  if (!songs.length)
+  if (loading) {
+    return <LibraryLoading compact />;
+  }
+  if (!songs.length) {
     return (
       <LibraryMessage
         title="No songs yet"
@@ -314,9 +326,10 @@ function SongsView({
         action="Open settings"
       />
     );
+  }
   return (
     <>
-      <div className="overflow-hidden rounded-xl border border-white/[0.08]">
+      <div className="overflow-hidden rounded-xl border border-white/8">
         {songs.map((song, index) => (
           <CatalogSongRow key={song.id} index={index} song={song} />
         ))}
@@ -377,7 +390,7 @@ function CatalogSongRow({
       song_id={song.id}
       song_name={song.name}
     >
-      <div className="group grid grid-cols-[2rem_3rem_minmax(0,1fr)_auto] items-center gap-2 border-b border-white/[0.06] px-3 py-2 last:border-0 hover:bg-white/[0.035] sm:grid-cols-[2rem_3rem_minmax(0,1fr)_minmax(8rem,0.6fr)_auto] sm:gap-3">
+      <div className="group grid grid-cols-[2rem_3rem_minmax(0,1fr)_auto] items-center gap-2 border-b border-white/6 px-3 py-2 last:border-0 hover:bg-white/[0.035] sm:grid-cols-[2rem_3rem_minmax(0,1fr)_minmax(8rem,0.6fr)_auto] sm:gap-3">
         <button
           aria-label={`${active && player.isPlaying ? "Pause" : "Play"} ${song.name}`}
           className="flex h-8 w-8 items-center justify-center rounded-full text-zinc-500 hover:bg-white/10 hover:text-white"
@@ -406,21 +419,17 @@ function CatalogSongRow({
           <p
             className={`truncate text-sm font-medium ${active ? "text-white" : "text-zinc-200"}`}
           >
-            {song.name}
+            <SongTitle title={song.name} />
           </p>
-          <Link
-            className="truncate text-xs text-zinc-500 hover:text-white hover:underline sm:hidden"
-            href={`/artist?id=${song.artistId}`}
-          >
-            {song.artistName}
-          </Link>
+          <p className="truncate text-xs text-zinc-500 hover:text-white hover:underline sm:hidden">
+            {isExplicitSongTitle(song.name) && <ExplicitBadge />}
+            <ArtistCreditLinks credits={catalogSongArtistCredits(song)} />
+          </p>
         </div>
-        <Link
-          className="hidden truncate text-sm text-zinc-500 hover:text-white hover:underline sm:block"
-          href={`/artist?id=${song.artistId}`}
-        >
-          {song.artistName}
-        </Link>
+        <p className="hidden truncate text-sm text-zinc-500 hover:text-white hover:underline sm:block">
+          {isExplicitSongTitle(song.name) && <ExplicitBadge />}
+          <ArtistCreditLinks credits={catalogSongArtistCredits(song)} />
+        </p>
         <span className="pr-2 text-xs tabular-nums text-zinc-600">
           {formatDuration(song.durationSeconds)}
         </span>
@@ -442,17 +451,20 @@ function ArtistsView({
   loadingMore: boolean;
   onLoadMore: () => void;
 }) {
-  if (loading) return <LibraryLoading compact />;
-  if (!artists.length)
+  if (loading) {
+    return <LibraryLoading compact />;
+  }
+  if (!artists.length) {
     return (
       <LibraryMessage
         title="No artists yet"
         body="Artists will appear after Parson indexes your collection."
       />
     );
+  }
   return (
     <>
-      <div className="overflow-hidden rounded-xl border border-white/[0.08]">
+      <div className="overflow-hidden rounded-xl border border-white/8">
         {artists.map((artist) => (
           <ArtistRow artist={artist} key={artist.id} />
         ))}
@@ -471,7 +483,7 @@ function ArtistRow({ artist }: { artist: LibraryCatalogArtist }) {
   return (
     <ArtistMenu artistId={artist.id}>
       <Link
-        className="group flex min-w-0 items-center gap-4 border-b border-white/[0.06] px-4 py-4 transition-colors last:border-0 hover:bg-white/[0.035] sm:px-5"
+        className="group flex min-w-0 items-center gap-4 border-b border-white/6 px-4 py-4 transition-colors last:border-0 hover:bg-white/[0.035] sm:px-5"
         href={`/artist?id=${artist.id}`}
       >
         <div className="min-w-0 flex-1">
@@ -529,10 +541,10 @@ function LikedSongsPlaylistCard() {
       <ContextMenuTrigger asChild>
         <Link
           aria-label="Open Liked Songs"
-          className="group flex min-w-0 items-center gap-4 overflow-hidden rounded-xl border border-white/[0.08] bg-white/[0.025] p-4 transition-colors hover:bg-white/[0.06]"
+          className="group flex min-w-0 items-center gap-4 overflow-hidden rounded-xl border border-white/8 bg-white/2.5 p-4 transition-colors hover:bg-white/6"
           href="/playlist?system=liked"
         >
-          <div className="grid h-14 w-14 shrink-0 place-items-center rounded-lg bg-gradient-to-br from-rose-500 to-fuchsia-800 text-white">
+          <div className="grid h-14 w-14 shrink-0 place-items-center rounded-lg bg-linear-to-br from-rose-500 to-fuchsia-800 text-white">
             <Heart className="h-6 w-6 fill-current" />
           </div>
           <h2 className="min-w-0 flex-1 truncate text-sm font-semibold text-zinc-100">
@@ -562,7 +574,7 @@ function PlaylistCard({
     <PlaylistMenu playlistId={playlist.id}>
       <Link
         aria-label={`Open ${playlist.name}`}
-        className="group flex min-w-0 items-center gap-4 overflow-hidden rounded-xl border border-white/[0.08] bg-white/[0.025] p-4 transition-colors hover:bg-white/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white/30"
+        className="group flex min-w-0 items-center gap-4 overflow-hidden rounded-xl border border-white/8 bg-white/2.5 p-4 transition-colors hover:bg-white/6 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white/30"
         href={`/playlist?id=${playlist.id}`}
       >
         <div className="pointer-events-none relative z-10 h-14 w-14 shrink-0">

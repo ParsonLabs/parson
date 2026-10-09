@@ -5,7 +5,7 @@ export type FailureKind =
   | "database_migration_failed"
   | "backup_failed"
   | "host_unavailable"
-  | "android_cannot_connect"
+  | "device_cannot_connect"
   | "lyrics_provider_unavailable"
   | "playback_format_unsupported"
   | "update_failed"
@@ -48,8 +48,8 @@ export const failureCopy: Record<FailureKind, FailureCopy> = {
     body: "The device that serves this library can’t be reached. Make sure it is on, Parson is running, and both devices are on the same network.",
     action: "Try again",
   },
-  android_cannot_connect: {
-    title: "Android can’t connect",
+  device_cannot_connect: {
+    title: "Device can’t connect",
     body: "Make sure the Parson host is running and this phone is on the same Wi‑Fi network. Then check the address and try again.",
     action: "Try again",
   },

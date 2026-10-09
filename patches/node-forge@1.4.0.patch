@@ -1,0 +1,21 @@
+diff --git a/lib/rsa.js b/lib/rsa.js
+index a4264822b4dcd6dca44ca3e59e410c982eed7183..61b192561ca50fe60e465d4b1e4e392acc0731cf 100644
+--- a/lib/rsa.js
++++ b/lib/rsa.js
+@@ -1172,7 +1172,15 @@ pki.setRsaPublicKey = pki.rsa.setPublicKey = function(n, e) {
+           var capture = {};
+           var errors = [];
+           if(!asn1.validate(obj, digestInfoValidator, capture, errors) ||
+-            obj.value.length !== 2) {
++            obj.value.length !== 2 ||
++            !Array.isArray(obj.value[0].value) ||
++            obj.value[0].value.length < 1 ||
++            obj.value[0].value.length > 2 ||
++            (obj.value[0].value.length === 2 &&
++              (obj.value[0].value[1].tagClass !== asn1.Class.UNIVERSAL ||
++              obj.value[0].value[1].type !== asn1.Type.NULL ||
++              obj.value[0].value[1].constructed !== false ||
++              obj.value[0].value[1].value !== ''))) {
+             var error = new Error(
+               'ASN.1 object does not contain a valid RSASSA-PKCS1-v1_5 ' +
+               'DigestInfo value.');

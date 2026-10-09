@@ -4,6 +4,7 @@ node_modules/
 .turbo/
 out/
 dist/
+/THIRD_PARTY_NOTICES.md
 target/
 target-*/
 artifacts/

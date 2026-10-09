@@ -75,6 +75,8 @@ jobs:
       - name: Test mobile client
         if: inputs.release != true
         run: bun test apps/mobile/src/lib
+      - name: Check release versions and tooling
+        run: bun run version:check && node --test tools/release.test.cjs
       - name: Test desktop integration
         run: bun --filter parson-music-desktop desktop:test
       - name: Test mobile build plugins
@@ -180,6 +182,16 @@ jobs:
         run: node node_modules/electron/install.js
       - name: Build embedded web UI
         run: bun --filter parson-music-web build
+      - name: Configure optional Windows signing
+        env:
+          CERTIFICATE: ${{ secrets.WINDOWS_CSC_LINK }}
+          PASSWORD: ${{ secrets.WINDOWS_CSC_KEY_PASSWORD }}
+        shell: pwsh
+        run: |
+          if ($env:CERTIFICATE) {
+            "CSC_LINK=$env:CERTIFICATE" >> $env:GITHUB_ENV
+            "CSC_KEY_PASSWORD=$env:PASSWORD" >> $env:GITHUB_ENV
+          }
       - name: Build native Windows release
         run: bun --filter parson-music-desktop desktop:build
       - name: Verify Windows package license payload
@@ -209,6 +221,20 @@ jobs:
           path: |
             target/release/bundle/electron/Parson_*-setup.exe
             target/release/bundle/electron/Parson_*-portable.exe
+            target/release/bundle/electron/*.blockmap
+          if-no-files-found: error
+      - name: Build standalone Windows server update
+        if: matrix.arch == 'x64' && startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        run: |
+          ./crates/windows-server/package.ps1 -SkipWebBuild
+          ./crates/windows-server/verify-update-assets.ps1
+      - name: Upload standalone Windows server update
+        if: matrix.arch == 'x64' && startsWith(github.ref, 'refs/tags/v')
+        uses: actions/upload-artifact@v6
+        with:
+          name: parson-windows-server
+          path: artifacts/windows-server/*
           if-no-files-found: error
 
   macos-packages:
@@ -238,6 +264,11 @@ jobs:
       - name: Build macOS packages
         env:
           MACOSX_DEPLOYMENT_TARGET: "12.0"
+          CSC_LINK: ${{ secrets.MACOS_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.MACOS_CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           PARSON_BUILD_ARCH: ${{ matrix.arch }}
         run: bun --filter parson-music-desktop desktop:build
       - name: Verify macOS package and architecture
@@ -251,87 +282,5 @@ jobs:
           path: |
             target/release/bundle/electron/Parson_*.dmg
             target/release/bundle/electron/Parson_*.zip
-          if-no-files-found: error
-
-  android:
-    name: Android (${{ matrix.artifact }})
-    if: inputs.release != true
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - arch: universal
-            artifact: universal
-          - arch: arm64-v8a
-            artifact: arm64
-          - arch: x86_64
-            artifact: x64
-    runs-on: ubuntu-latest
-    timeout-minutes: 45
-    steps:
-      - uses: actions/checkout@v7
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: 1.3.14
-      - name: Install JavaScript dependencies
-        run: bun install --frozen-lockfile
-      - name: Generate Android project
-        run: bun --filter parson-mobile prebuild:android
-      - uses: actions/setup-java@v5
-        with:
-          distribution: temurin
-          java-version: "17"
-          cache: gradle
-      - uses: android-actions/setup-android@v3
-      - name: Build Android release APK
-        working-directory: apps/mobile/android
-        run: |
-          arguments=(
-            assembleRelease
-            --no-daemon
-          )
-          if [[ "${{ matrix.arch }}" != "universal" ]]; then
-            arguments+=("-PreactNativeArchitectures=${{ matrix.arch }}")
-          fi
-          keystore="$RUNNER_TEMP/parson-upload.jks"
-          keytool -genkeypair \
-            -keystore "$keystore" \
-            -storepass parson-ci \
-            -keypass parson-ci \
-            -alias parson-ci \
-            -keyalg RSA \
-            -keysize 3072 \
-            -validity 2 \
-            -dname "CN=Parson CI, OU=CI, O=ParsonLabs, C=PT"
-          arguments+=(
-            "-PPARSON_UPLOAD_STORE_FILE=$keystore"
-            "-PPARSON_UPLOAD_STORE_PASSWORD=parson-ci"
-            "-PPARSON_UPLOAD_KEY_ALIAS=parson-ci"
-            "-PPARSON_UPLOAD_KEY_PASSWORD=parson-ci"
-          )
-          ./gradlew "${arguments[@]}"
-      - name: Verify Android architecture
-        run: |
-          apk="$(find apps/mobile/android/app/build/outputs/apk/release -name '*.apk' -print -quit)"
-          test -n "$apk"
-          unzip -Z1 "$apk" > "$RUNNER_TEMP/apk-entries"
-          grep -q '^assets/licenses/LICENSE$' "$RUNNER_TEMP/apk-entries"
-          grep -q '^assets/licenses/THIRD_PARTY_NOTICES.md$' "$RUNNER_TEMP/apk-entries"
-          if [[ "${{ matrix.arch }}" == "universal" ]]; then
-            grep -q '^lib/arm64-v8a/' "$RUNNER_TEMP/apk-entries"
-            grep -q '^lib/x86_64/' "$RUNNER_TEMP/apk-entries"
-          else
-            grep -q "^lib/${{ matrix.arch }}/" "$RUNNER_TEMP/apk-entries"
-            if grep '^lib/' "$RUNNER_TEMP/apk-entries" | grep -qv "^lib/${{ matrix.arch }}/"; then
-              echo "APK contains libraries for an unexpected architecture" >&2
-              exit 1
-            fi
-          fi
-          version="$(node -p "require('./apps/mobile/app.json').expo.version")"
-          mv "$apk" "apps/mobile/android/app/build/outputs/apk/release/Parson_${version}_android-${{ matrix.artifact }}.apk"
-      - name: Upload Android APK
-        uses: actions/upload-artifact@v6
-        with:
-          name: parson-android-${{ matrix.artifact }}
-          path: apps/mobile/android/app/build/outputs/apk/release/Parson_*.apk
+            target/release/bundle/electron/*.blockmap
           if-no-files-found: error

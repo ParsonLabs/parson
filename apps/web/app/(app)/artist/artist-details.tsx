@@ -5,7 +5,8 @@ import getBaseURL from "@/lib/api/server-url";
 import { Album, Artist } from "@parson/music-sdk/types";
 import { getAlbumInfos, type LibraryAlbum } from "@parson/music-sdk";
 import { useArtist } from "@/features/library/use-library-entity";
-import { displaySongTitle } from "@/features/library/song-presentation";
+import { SongTitle, ExplicitBadge } from "@/features/library/song-title";
+import { isExplicitSongTitle } from "@/features/library/song-presentation";
 import Image from "next/image";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
@@ -78,7 +79,9 @@ export default function ArtistDetails({
     () =>
       featuredAlbumIds.flatMap((albumId) => {
         const album = featuredAlbumsQuery.data?.[albumId];
-        if (!album || !artist) return [];
+        if (!album || !artist) {
+          return [];
+        }
         const featuredTrack = album.songs.find((song) =>
           songCreditsArtist(song, artist),
         );
@@ -86,15 +89,20 @@ export default function ArtistDetails({
       }),
     [artist, featuredAlbumIds, featuredAlbumsQuery.data],
   );
-  if (!id && !devArtist) return <EntityPageState kind="artist" />;
-  if (artistQuery.isPending) return <EntityPageState kind="artist" loading />;
-  if (artistQuery.isError || !artist)
+  if (!id && !devArtist) {
+    return <EntityPageState kind="artist" />;
+  }
+  if (artistQuery.isPending) {
+    return <EntityPageState kind="artist" loading />;
+  }
+  if (artistQuery.isError || !artist) {
     return (
       <EntityPageState
         kind="artist"
         onRetry={() => void artistQuery.refetch()}
       />
     );
+  }
 
   return (
     <div className="tidal-route relative text-zinc-50">
@@ -110,7 +118,7 @@ export default function ArtistDetails({
         <div className="absolute inset-0 bg-black/45" />
       </div>
 
-      <div className="relative z-10 mx-auto max-w-[900px] px-5 pb-24 pt-10 sm:px-7">
+      <div className="relative z-10 mx-auto max-w-225 px-5 pb-24 pt-10 sm:px-7">
         <div className="mb-10 flex items-end gap-5">
           {artistIconURL && (
             <div className="relative h-32 w-32 shrink-0 overflow-hidden rounded-full border border-white/10 sm:h-40 sm:w-40">
@@ -124,7 +132,7 @@ export default function ArtistDetails({
               />
             </div>
           )}
-          <h1 className="min-w-0 break-words text-4xl font-black leading-none text-white sm:text-6xl">
+          <h1 className="min-w-0 wrap-break-word text-4xl font-black leading-none text-white sm:text-6xl">
             {artist.name}
           </h1>
         </div>
@@ -147,9 +155,9 @@ export default function ArtistDetails({
                       >
                         <Link
                           href={`/album?id=${album.id}`}
-                          className="group min-w-0 max-w-[190px] cursor-pointer"
+                          className="group min-w-0 max-w-47.5 cursor-pointer"
                         >
-                          <div className="relative aspect-square w-full overflow-hidden rounded-lg border border-white/10 bg-white/[0.04]">
+                          <div className="relative aspect-square w-full overflow-hidden rounded-lg border border-white/10 bg-white/4">
                             {getLibraryImageUrl(album.cover_url, getBaseURL) ? (
                               <Image
                                 src={
@@ -197,11 +205,11 @@ export default function ArtistDetails({
                   );
                   return (
                     <Link
-                      className="group flex min-w-0 items-center gap-4 rounded-lg p-2 transition-colors hover:bg-white/[0.06]"
+                      className="group flex min-w-0 items-center gap-4 rounded-lg p-2 transition-colors hover:bg-white/6"
                       href={`/album?id=${album.id}`}
                       key={`${album.id}-${track.id}`}
                     >
-                      <div className="relative h-16 w-16 shrink-0 overflow-hidden rounded-md border border-white/10 bg-white/[0.04]">
+                      <div className="relative h-16 w-16 shrink-0 overflow-hidden rounded-md border border-white/10 bg-white/4">
                         {coverURL ? (
                           <Image
                             alt={album.name}
@@ -216,9 +224,10 @@ export default function ArtistDetails({
                       </div>
                       <div className="min-w-0">
                         <h4 className="truncate text-sm font-semibold text-zinc-100">
-                          {displaySongTitle(track.name)}
+                          <SongTitle title={track.name} />
                         </h4>
                         <p className="mt-1 truncate text-sm text-zinc-400">
+                          {isExplicitSongTitle(track.name) && <ExplicitBadge />}
                           {album.artist_object.name} · {album.name}
                         </p>
                       </div>

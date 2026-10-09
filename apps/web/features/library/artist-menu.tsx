@@ -29,14 +29,18 @@ export default function ArtistMenu({
       const queue = artist.albums.flatMap((album) =>
         album.songs
           .filter((song) => {
-            if (seen.has(song.id)) return false;
+            if (seen.has(song.id)) {
+              return false;
+            }
             seen.add(song.id);
             return true;
           })
           .map((song) => ({ song, album, artist })),
       );
       const first = queue[0];
-      if (!first) return;
+      if (!first) {
+        return;
+      }
       player.setQueue(queue);
       player.setCurrentSongIndex(0);
       player.setSongCallback(first.song, artist, first.album);
@@ -49,16 +53,16 @@ export default function ArtistMenu({
   return (
     <ContextMenu>
       <ContextMenuTrigger asChild>{children}</ContextMenuTrigger>
-      <ContextMenuContent className="w-52">
+      <ContextMenuContent className="w-60">
         <ContextMenuItem onSelect={() => void play()}>
-          <Play className="fill-current" />
+          <Play className="h-4 w-4" />
           Play
         </ContextMenuItem>
         <ContextMenuSeparator />
         <ContextMenuItem asChild>
           <Link href={`/artist?id=${artistId}`}>
             <UserRound className="h-4 w-4" />
-            Go to artist
+            View artist
           </Link>
         </ContextMenuItem>
       </ContextMenuContent>

@@ -31,7 +31,7 @@ Open `http://localhost:3000`. The embedded production API/UI origin is `http://l
 | `crates/windows-server`     | Native Windows notification-area server host and updater                         |
 | `apps/web`                  | Next.js web UI embedded by native/server releases                                |
 | `apps/desktop`              | Shared Linux, macOS, and Windows Electron shell and native packaging             |
-| `apps/mobile`               | Expo/React Native client for Android and iOS                                     |
+| `apps/mobile`               | Expo/React Native mobile client                                                  |
 | `packages/parson-music-sdk` | Typed TypeScript API client                                                      |
 | `apps/site`                 | The Parson website and documentation                                             |
 
@@ -41,7 +41,7 @@ Run the checks proportional to your change. The release suite includes TypeScrip
 
 ## Contributions
 
-Keep product names, API ownership, request budgets, bounded collections, and local-first privacy behavior intact. Add regression tests for behavior changes. Do not commit secrets, private libraries, copyrighted recordings, or personal diagnostic data.
+Keep product names, API ownership, request budgets, bounded collections, and local-first privacy behaviour intact. Add regression tests for behaviour changes. Do not commit secrets, private libraries, copyrighted recordings, or personal diagnostic data.
 
 ## Release process
 
@@ -50,7 +50,7 @@ Parson follows Semantic Versioning. Maintainers build and verify platform artifa
 ## API and protocol compatibility
 
 - `/api/core/v1` owns accounts, discovery, setup, and library registrations.
-- `/api/music/v1` owns catalog, search, streaming, lyrics, playlists, queue, and playback behavior.
+- `/api/music/v1` owns catalogue, search, streaming, lyrics, playlists, queue, and playback behaviour.
 - `/api/v1` remains a compatibility alias for existing clients.
 - `/.well-known/parson` exposes `protocolVersion` and capabilities for client negotiation.
 

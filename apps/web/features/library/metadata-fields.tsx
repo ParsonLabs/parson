@@ -1,6 +1,6 @@
 "use client";
 
-import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
+import { Field, FieldGroup } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import getBaseURL from "@/lib/api/server-url";

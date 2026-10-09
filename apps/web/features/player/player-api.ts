@@ -37,6 +37,7 @@ export type Player = {
   playQueueItem: (index: number) => void;
   reorderQueue: (from: number, to: number) => void;
   handleTimeChange: (value: number | string) => void;
+  getPlaybackPosition: () => number;
   setAudioVolume: (value: number | string) => void;
   toggleMute: () => void;
   toggleSlowedReverb: () => void;
@@ -44,10 +45,23 @@ export type Player = {
   toggleLoop: () => void;
 };
 
-export const PlayerContext = createContext<Player | null>(null);
+export const PlayerContext = createContext<Omit<Player, "currentTime"> | null>(
+  null,
+);
+export const PlayerClockContext = createContext<number | null>(null);
+
+export function usePlayerClock() {
+  const time = useContext(PlayerClockContext);
+  if (time === null) {
+    throw new Error("usePlayerClock must be used inside PlayerProvider");
+  }
+  return time;
+}
 
 export function usePlayer() {
   const player = useContext(PlayerContext);
-  if (!player) throw new Error("usePlayer must be used inside PlayerProvider");
+  if (!player) {
+    throw new Error("usePlayer must be used inside PlayerProvider");
+  }
   return player;
 }

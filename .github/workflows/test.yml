@@ -28,14 +28,15 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v7
-      - uses: oven-sh/setup-bun@v2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
         with:
-          bun-version: 1.3.14
-      - uses: dtolnay/rust-toolchain@1.97.0
+          bun-version: 1.4.2
+      - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249
         with:
+          toolchain: 1.99.0
           components: rustfmt, clippy
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
       - name: Install native build dependencies
         run: |
           sudo apt-get update
@@ -54,6 +55,8 @@ jobs:
             apps/site \
             apps/web \
             packages/parson-music-sdk \
+            tools \
+            patches \
             package.json \
             README.md \
             docker-compose.yml \
@@ -69,7 +72,7 @@ jobs:
       - name: Check Expo SDK compatibility
         if: inputs.release != true
         working-directory: apps/mobile
-        run: bunx expo-doctor@1.20.1
+        run: bunx expo-doctor@1.20.4
       - name: Test client and SDK
         run: bun test packages/parson-music-sdk/src apps/web/components apps/web/features
       - name: Test mobile client
@@ -86,7 +89,7 @@ jobs:
         if: ${{ hashFiles('distribution/scripts/validate.sh') != '' }}
         run: bash ./distribution/scripts/validate.sh
       - name: Audit complete JavaScript dependency graph
-        run: bun audit
+        run: bun run audit:dependencies
       - name: Build web export
         run: bun --filter parson-music-web build
       - name: Build website and documentation
@@ -130,12 +133,14 @@ jobs:
             pkg-config \
             unzip \
             xz-utils
-      - uses: actions/checkout@v7
-      - uses: oven-sh/setup-bun@v2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
         with:
-          bun-version: 1.3.14
-      - uses: dtolnay/rust-toolchain@1.97.0
-      - uses: Swatinem/rust-cache@v2
+          bun-version: 1.4.2
+      - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249
+        with:
+          toolchain: 1.99.0
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
       - name: Install Linux packaging dependencies
         env:
           DEBIAN_FRONTEND: noninteractive
@@ -149,7 +154,7 @@ jobs:
       - name: Verify Linux package contents
         run: bash ./apps/desktop/scripts/verify-linux-package.sh
       - name: Upload Linux AppImage and Debian package
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: parson-linux-${{ matrix.arch }}
           path: |
@@ -170,12 +175,14 @@ jobs:
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@1.97.0
-      - uses: oven-sh/setup-bun@v2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249
         with:
-          bun-version: 1.3.14
-      - uses: Swatinem/rust-cache@v2
+          toolchain: 1.99.0
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+        with:
+          bun-version: 1.4.2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
       - name: Install packaging dependencies
         run: bun install --frozen-lockfile --ignore-scripts
       - name: Install Electron runtime
@@ -215,7 +222,7 @@ jobs:
             }
           }
       - name: Upload Windows installer and portable executable
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: parson-windows-${{ matrix.arch }}
           path: |
@@ -231,7 +238,7 @@ jobs:
           ./crates/windows-server/verify-update-assets.ps1
       - name: Upload standalone Windows server update
         if: matrix.arch == 'x64' && startsWith(github.ref, 'refs/tags/v')
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: parson-windows-server
           path: artifacts/windows-server/*
@@ -250,12 +257,14 @@ jobs:
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@1.97.0
-      - uses: oven-sh/setup-bun@v2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249
         with:
-          bun-version: 1.3.14
-      - uses: Swatinem/rust-cache@v2
+          toolchain: 1.99.0
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+        with:
+          bun-version: 1.4.2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
       - name: Install packaging dependencies
         run: |
           brew list nasm >/dev/null 2>&1 || brew install nasm
@@ -263,7 +272,7 @@ jobs:
           node node_modules/electron/install.js
       - name: Build macOS packages
         env:
-          MACOSX_DEPLOYMENT_TARGET: "12.0"
+          MACOSX_DEPLOYMENT_TARGET: "13.0"
           CSC_LINK: ${{ secrets.MACOS_CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.MACOS_CSC_KEY_PASSWORD }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
@@ -276,7 +285,7 @@ jobs:
           PARSON_BUILD_ARCH: ${{ matrix.arch }}
         run: bash ./apps/desktop/scripts/verify-macos-package.sh
       - name: Upload macOS DMG and ZIP
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: parson-macos-${{ matrix.arch }}
           path: |

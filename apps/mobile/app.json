@@ -2,7 +2,7 @@
   "expo": {
     "name": "Parson",
     "slug": "parson",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "orientation": "default",
     "icon": "./assets/images/parson-icon.png",
     "scheme": "parson",
@@ -15,7 +15,7 @@
         "NSLocalNetworkUsageDescription": "Parson finds music libraries running on your local network.",
         "NSBonjourServices": ["_parson._tcp"]
       },
-      "buildNumber": "1000000"
+      "buildNumber": "1000001"
     },
     "android": {
       "package": "com.parsonlabs.parson",

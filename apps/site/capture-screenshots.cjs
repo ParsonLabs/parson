@@ -18,20 +18,24 @@ const shots = [
     view: "home",
   },
   {
-    album: "night-swim",
-    file: "02-library.png",
-    time: 68,
-    title: "Library",
-    track: 1,
-    view: "library",
+    file: "02-fullscreen-lyrics.png",
+    title: "Fullscreen lyrics",
+    album: "golden-state",
+    time: 114,
+    track: 7,
+    view: "home",
+    panel: "fullscreen",
+    fullscreenLyrics: true,
   },
   {
-    album: "evergreen",
-    file: "03-artist.png",
-    time: 91,
-    title: "Artist",
-    track: 2,
-    view: "artist",
+    album: "red-shift",
+    file: "03-now-playing.png",
+    playing: true,
+    time: 37,
+    title: "Now playing",
+    panel: "fullscreen",
+    track: 5,
+    view: "home",
   },
   {
     album: "amber-hours",
@@ -42,8 +46,17 @@ const shots = [
     view: "album",
   },
   {
+    album: "golden-state",
+    file: "05-lyrics.png",
+    time: 114,
+    title: "Lyrics",
+    track: 7,
+    panel: "lyrics",
+    view: "home",
+  },
+  {
     album: "still-form",
-    file: "05-search.png",
+    file: "06-search.png",
     time: 153,
     title: "Search",
     track: 4,
@@ -51,22 +64,64 @@ const shots = [
     view: "home",
   },
   {
-    album: "red-shift",
-    file: "06-now-playing.png",
-    playing: true,
-    time: 37,
-    title: "Now playing",
-    track: 5,
-    view: "home",
+    album: "evergreen",
+    file: "07-artist.png",
+    time: 91,
+    title: "Artist",
+    track: 2,
+    view: "artist",
   },
   {
-    album: "golden-state",
-    file: "07-lyrics.png",
-    time: 114,
-    title: "Lyrics",
-    track: 7,
-    panel: "lyrics",
+    album: "night-swim",
+    file: "08-library.png",
+    time: 68,
+    title: "Library",
+    track: 1,
+    view: "library",
+  },
+  {
+    file: "09-playlist.png",
+    title: "Playlist",
+    album: "afterlight",
+    time: 42,
+    track: 0,
+    view: "playlist",
+  },
+  {
+    file: "10-queue.png",
+    title: "Queue",
+    album: "afterlight",
+    time: 42,
+    track: 0,
     view: "home",
+    panel: "queue",
+  },
+  {
+    file: "11-library-songs.png",
+    title: "Library Songs",
+    album: "night-swim",
+    time: 68,
+    track: 1,
+    view: "library",
+    librarySection: "Songs",
+  },
+  {
+    file: "12-library-artists.png",
+    title: "Library Artists",
+    album: "night-swim",
+    time: 68,
+    track: 1,
+    view: "library",
+    librarySection: "Artists",
+  },
+  {
+    file: "13-library-playlists.png",
+    title: "Library Playlists",
+    album: "night-swim",
+    time: 68,
+    track: 1,
+    view: "library",
+    librarySection: "Playlists",
   },
 ];
 
@@ -89,7 +144,9 @@ async function serverIsReady() {
 }
 
 async function ensureServer() {
-  if (await serverIsReady()) return null;
+  if (await serverIsReady()) {
+    return null;
+  }
   const child = spawn(
     "bun",
     [
@@ -105,7 +162,9 @@ async function ensureServer() {
   );
   for (let attempt = 0; attempt < 60; attempt += 1) {
     await new Promise((resolve) => setTimeout(resolve, 500));
-    if (await serverIsReady()) return child;
+    if (await serverIsReady()) {
+      return child;
+    }
   }
   child.kill("SIGTERM");
   throw new Error("Timed out waiting for the Parson showcase route");
@@ -148,21 +207,44 @@ async function main() {
       });
       const page = await context.newPage();
       const parameters = new URLSearchParams({
+        capture: "true",
         album: shot.album,
         time: String(shot.time),
         track: String(shot.track),
         view: shot.view,
       });
-      if (shot.playing) parameters.set("playing", "true");
-      if (shot.panel) parameters.set("panel", shot.panel);
-      if (shot.query) parameters.set("query", shot.query);
+      if (shot.playing) {
+        parameters.set("playing", "true");
+      }
+      if (shot.panel) {
+        parameters.set("panel", shot.panel);
+      }
+      if (shot.query) {
+        parameters.set("query", shot.query);
+      }
       await page.goto(`${baseUrl}/showcase?${parameters}`, {
         waitUntil: "networkidle",
       });
+      await page.locator('[data-demo-ready="true"]').waitFor();
       await page.addStyleTag({
-        content:
-          "nextjs-portal,.demo-window-controls{display:none!important}*,*::before,*::after{animation:none!important;caret-color:transparent!important;scroll-behavior:auto!important;transition:none!important}",
+        content: `
+            nextjs-portal, .demo-window-controls { display: none !important; }
+            *, *::before, *::after {
+              animation: none !important;
+              caret-color: transparent !important;
+              scroll-behavior: auto !important;
+              transition: none !important;
+            }
+          `,
       });
+      if (shot.librarySection) {
+        await page
+          .getByRole("tab", { name: shot.librarySection, exact: true })
+          .click();
+      }
+      if (shot.fullscreenLyrics) {
+        await page.getByLabel("Lyrics", { exact: true }).click();
+      }
       await settle(page);
       // Warm the compositor to avoid stale blurred tiles.
       await page.screenshot({ animations: "disabled" });

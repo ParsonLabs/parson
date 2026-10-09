@@ -48,7 +48,9 @@ import { toast } from "sonner";
 
 function formatTotalDuration(duration: number) {
   const minutes = Math.max(1, Math.round(duration / 60));
-  if (minutes < 60) return `${minutes} min`;
+  if (minutes < 60) {
+    return `${minutes} min`;
+  }
 
   const hours = Math.floor(minutes / 60);
   const remainingMinutes = minutes % 60;
@@ -62,7 +64,9 @@ function splitQualifiedTitle(title: string) {
   const bracket = title.indexOf("[");
   const candidates = [parenthesis, bracket].filter((index) => index > 0);
   const splitAt = candidates.length ? Math.min(...candidates) : -1;
-  if (splitAt < 0) return null;
+  if (splitAt < 0) {
+    return null;
+  }
   return [title.slice(0, splitAt).trimEnd(), title.slice(splitAt)] as const;
 }
 
@@ -125,7 +129,9 @@ export default function AlbumDetails({ devAlbum }: AlbumDetailsProps = {}) {
   }, [album?.songs]);
   const addAlbumToPlaylist = useMutation({
     mutationFn: async ({ id }: { id: number; name: string }) => {
-      if (!album) throw new Error("Album unavailable");
+      if (!album) {
+        throw new Error("Album unavailable");
+      }
       await addAlbumTracksToPlaylist(id, album.id);
     },
     onSuccess: async (_, playlist) => {
@@ -143,7 +149,9 @@ export default function AlbumDetails({ devAlbum }: AlbumDetailsProps = {}) {
   });
 
   const addAlbumToQueue = () => {
-    if (!album || !artist) return;
+    if (!album || !artist) {
+      return;
+    }
     addToQueue(
       album.songs.map((song) => ({
         song,
@@ -155,13 +163,19 @@ export default function AlbumDetails({ devAlbum }: AlbumDetailsProps = {}) {
   };
 
   const saveAlbum = () => {
-    if (!album) return;
+    if (!album) {
+      return;
+    }
     const count = downloadAlbum(album);
-    if (count) toast.success(`Downloading ${count} songs from ${album.name}`);
+    if (count) {
+      toast.success(`Downloading ${count} songs from ${album.name}`);
+    }
   };
 
   const playTrack = (track: LibraryAlbum["songs"][number]) => {
-    if (!album || !artist) return;
+    if (!album || !artist) {
+      return;
+    }
     const index = album.songs.findIndex((song) => song.id === track.id);
     setQueue(album.songs.map((song) => ({ song, album, artist })));
     setCurrentSongIndex(Math.max(index, 0));
@@ -175,16 +189,23 @@ export default function AlbumDetails({ devAlbum }: AlbumDetailsProps = {}) {
 
   const playAlbum = () => {
     const firstSong = album?.songs?.[0];
-    if (!artist || !firstSong) return;
+    if (!artist || !firstSong) {
+      return;
+    }
     playTrack(firstSong);
   };
 
-  if (!id && !devAlbum) return <EntityPageState kind="album" />;
-  if (albumQuery.isPending) return <EntityPageState kind="album" loading />;
-  if (albumQuery.isError || !album || !artist)
+  if (!id && !devAlbum) {
+    return <EntityPageState kind="album" />;
+  }
+  if (albumQuery.isPending) {
+    return <EntityPageState kind="album" loading />;
+  }
+  if (albumQuery.isError || !album || !artist) {
     return (
       <EntityPageState kind="album" onRetry={() => void albumQuery.refetch()} />
     );
+  }
 
   const isAlbumPlaying =
     isPlaying && currentSong?.album_object?.id === album.id;
@@ -192,7 +213,7 @@ export default function AlbumDetails({ devAlbum }: AlbumDetailsProps = {}) {
 
   return (
     <div className="tidal-route relative text-zinc-50">
-      <div className="relative mx-auto max-w-[900px] px-5 pb-24 pt-8 sm:px-7">
+      <div className="relative mx-auto max-w-225 px-5 pb-24 pt-8 sm:px-7">
         <div className="mb-8 flex w-full flex-col items-start gap-6 sm:flex-row sm:items-end">
           {albumCoverURL && (
             <div className="relative h-44 w-44 shrink-0 overflow-hidden rounded-md border border-white/5 sm:h-52 sm:w-52">
@@ -295,9 +316,6 @@ export default function AlbumDetails({ devAlbum }: AlbumDetailsProps = {}) {
                   View artist
                 </Link>
               </DropdownMenuItem>
-              {session?.role === "admin" && (
-                <AlbumEditor albumId={album.id} trigger="dropdown" />
-              )}
               <DropdownMenuSub>
                 <DropdownMenuSubTrigger>
                   <ListPlus className="h-4 w-4" />
@@ -339,6 +357,9 @@ export default function AlbumDetails({ devAlbum }: AlbumDetailsProps = {}) {
                   )}
                 </DropdownMenuSubContent>
               </DropdownMenuSub>
+              {session?.role === "admin" && (
+                <AlbumEditor albumId={album.id} trigger="dropdown" />
+              )}
             </DropdownMenuContent>
           </DropdownMenu>
           <CreatePlaylistDialog

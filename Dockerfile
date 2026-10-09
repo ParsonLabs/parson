@@ -1,6 +1,6 @@
-FROM --platform=$BUILDPLATFORM oven/bun:1.3.14-alpine AS bun-runtime
+FROM --platform=$BUILDPLATFORM oven/bun:1.4.2-alpine AS bun-runtime
 
-FROM --platform=$BUILDPLATFORM node:24-alpine AS web-deps
+FROM --platform=$BUILDPLATFORM node:26-alpine AS web-deps
 WORKDIR /app
 ENV NEXT_TELEMETRY_DISABLED=1
 COPY --from=bun-runtime /usr/local/bin/bun /usr/local/bin/bun
@@ -8,7 +8,6 @@ COPY --from=bun-runtime /usr/local/bin/bun /usr/local/bin/bun
 COPY package.json bun.lock turbo.json ./
 COPY apps/desktop/package.json ./apps/desktop/package.json
 COPY apps/mobile/package.json ./apps/mobile/package.json
-COPY apps/mobile/patches ./apps/mobile/patches
 COPY apps/site/package.json ./apps/site/package.json
 COPY apps/web/package.json ./apps/web/package.json
 COPY packages ./packages
@@ -23,7 +22,7 @@ COPY apps/web ./apps/web
 FROM web-deps AS web-builder
 RUN bun --filter parson-music-web build
 
-FROM rust:1.97-slim-trixie AS backend-builder
+FROM rust:1.99-slim-trixie AS backend-builder
 WORKDIR /app
 
 RUN apt-get update \
@@ -45,6 +44,7 @@ LABEL org.opencontainers.image.licenses="GPL-3.0-only" \
   org.opencontainers.image.source="https://github.com/ParsonLabs/Parson"
 
 RUN apt-get update \
+  && apt-get upgrade -y \
   && apt-get install -y --no-install-recommends ca-certificates curl ffmpeg \
   && rm -rf /var/lib/apt/lists/*
 
@@ -58,7 +58,7 @@ ENV RUNNING_IN_DOCKER=true
 ENV PARSON_PORT=1993
 EXPOSE 1993
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-  CMD curl --fail --silent http://127.0.0.1:1993/health || exit 1
+  CMD curl --fail --silent "http://127.0.0.1:${PARSON_PORT}/health" || exit 1
 USER parson
 
 ENTRYPOINT ["/usr/local/bin/parson-music-server"]

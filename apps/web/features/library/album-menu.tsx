@@ -4,6 +4,7 @@ import {
   ContextMenu,
   ContextMenuContent,
   ContextMenuItem,
+  ContextMenuSeparator,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
 import { useSession } from "@/features/account/session-provider";
@@ -37,7 +38,9 @@ export default function AlbumMenu({
     const album = await loadAlbum();
     const firstSong = album.songs?.[0];
     const artist = album.artist_object;
-    if (!firstSong || !artist) return;
+    if (!firstSong || !artist) {
+      return;
+    }
     player.setQueue(album.songs.map((song) => ({ song, album, artist })));
     player.setCurrentSongIndex(0);
     player.setSongCallback(firstSong, artist, album);
@@ -47,17 +50,20 @@ export default function AlbumMenu({
   const save = async () => {
     const album = await loadAlbum();
     const count = downloadAlbum(album);
-    if (count) toast.success(`Downloading ${count} songs from ${album.name}`);
+    if (count) {
+      toast.success(`Downloading ${count} songs from ${album.name}`);
+    }
   };
 
   return (
     <ContextMenu>
       <ContextMenuTrigger asChild>{children}</ContextMenuTrigger>
-      <ContextMenuContent className="w-56">
+      <ContextMenuContent className="w-60">
         <ContextMenuItem onSelect={() => void play()}>
-          <Play className="h-4 w-4 fill-current" />
+          <Play className="h-4 w-4" />
           Play
         </ContextMenuItem>
+        <ContextMenuSeparator />
         <ContextMenuItem asChild>
           <Link href={`/album?id=${album_id}`}>
             <Disc3 className="h-4 w-4" />

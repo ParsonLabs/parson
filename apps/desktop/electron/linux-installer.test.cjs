@@ -75,10 +75,12 @@ test("installs and integrates an AppImage without elevated permissions", async (
     await fs.promises.readFile(context.paths.application, "utf8"),
     "new executable",
   );
-  assert.equal(
-    (await fs.promises.stat(context.paths.application)).mode & 0o777,
-    0o755,
-  );
+  if (process.platform !== "win32") {
+    assert.equal(
+      (await fs.promises.stat(context.paths.application)).mode & 0o777,
+      0o755,
+    );
+  }
   assert.equal(await fs.promises.readFile(context.paths.icon, "utf8"), "image");
 
   const desktopEntry = await fs.promises.readFile(

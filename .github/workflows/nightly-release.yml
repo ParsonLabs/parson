@@ -52,7 +52,7 @@ jobs:
           test "$(find artifacts -maxdepth 1 -type f -name '*-portable.exe' | wc -l)" -eq 2
           test "$(find artifacts -maxdepth 1 -type f -name '*.dmg' | wc -l)" -eq 2
           test "$(find artifacts -maxdepth 1 -type f -name 'Parson_*.zip' | wc -l)" -eq 2
-          test "$(find artifacts -maxdepth 1 -type f | wc -l)" -eq 12
+          test "$(find artifacts -maxdepth 1 -type f ! -name '*.blockmap' | wc -l)" -eq 12
       - name: Publish rolling nightly release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

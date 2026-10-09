@@ -5,6 +5,10 @@ description: Automatic updates, database changes, rollback limits, and sensible 
 
 ## Automatic updates
 
+Installed desktop releases check for updates in the background and download them without interrupting playback. Updates install when Parson closes, or through **Settings → Account → Restart to update**. The bundled server and player update together. Windows installers, Linux AppImages and signed macOS builds support this; portable executables, unsigned macOS builds and package-managed Linux installations use their respective manual update paths.
+
+Docker hosts pull the new image and recreate the container; the web player updates with the server.
+
 The Windows notification-area host updates on demand through **Check and install updates**. It downloads the official update manifest and executable, verifies size and SHA-256, stops the server, replaces the executable, and relaunches it. A failed executable replacement rolls back automatically.
 
 Parson does not silently replace the application while you are listening.

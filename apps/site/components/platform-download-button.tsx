@@ -6,8 +6,7 @@ import { useEffect, useState } from "react";
 
 import { releaseDownloads } from "../lib/release-downloads";
 
-type Platform =
-  "windows" | "android" | "ios" | "macos" | "linux" | "chromeos" | "unknown";
+type Platform = "windows" | "ios" | "macos" | "linux" | "chromeos" | "unknown";
 type Architecture = "arm64" | "x64" | "unknown";
 type PlatformSelection = {
   architecture: Architecture;
@@ -20,14 +19,6 @@ function WindowsIcon(props: SVGProps<SVGSVGElement>) {
   return (
     <svg viewBox="0 0 24 24" fill="currentColor" {...props}>
       <path d="M2 4.4 10.1 3v8.2H2V4.4Zm9.2-1.6L22 1v10.2H11.2V2.8ZM2 12.3h8.1v8.2L2 19.1v-6.8Zm9.2 0H22V22l-10.8-1.8v-7.9Z" />
-    </svg>
-  );
-}
-
-function AndroidIcon(props: SVGProps<SVGSVGElement>) {
-  return (
-    <svg viewBox="0 0 24 24" fill="currentColor" {...props}>
-      <path d="m17.6 9.2 1.8-3.1a.7.7 0 0 0-1.2-.7l-1.8 3a10 10 0 0 0-8.8 0l-1.8-3a.7.7 0 1 0-1.2.7l1.8 3.1A8.8 8.8 0 0 0 3 16.3h18a8.8 8.8 0 0 0-3.4-7.1ZM8.2 13a1 1 0 1 1 0-2 1 1 0 0 1 0 2Zm7.6 0a1 1 0 1 1 0-2 1 1 0 0 1 0 2ZM3 17.5h18V20a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-2.5Z" />
     </svg>
   );
 }
@@ -63,13 +54,6 @@ const platformDetails = {
     href: releaseDownloads.windowsX64,
     available: true,
     direct: true,
-  },
-  android: {
-    label: "Android",
-    Icon: AndroidIcon,
-    href: "/docs/download-and-install?platform=android",
-    available: false,
-    direct: false,
   },
   ios: {
     label: "iPhone",
@@ -125,19 +109,20 @@ function architectureFrom(value: string): Architecture {
 
 async function detectPlatform(): Promise<PlatformSelection> {
   const source = `${navigator.userAgent} ${navigator.platform}`.toLowerCase();
-  const platform = /android/.test(source)
-    ? "android"
-    : /iphone|ipad|ipod/.test(source)
-      ? "ios"
-      : /cros/.test(source)
-        ? "chromeos"
-        : /windows|win32|win64/.test(source)
-          ? "windows"
-          : /macintosh|mac os|macintel/.test(source)
-            ? "macos"
-            : /linux|x11/.test(source)
-              ? "linux"
-              : "unknown";
+  const platform =
+    /mobile/.test(source) && !/iphone|ipad|ipod/.test(source)
+      ? "unknown"
+      : /iphone|ipad|ipod/.test(source)
+        ? "ios"
+        : /cros/.test(source)
+          ? "chromeos"
+          : /windows|win32|win64/.test(source)
+            ? "windows"
+            : /macintosh|mac os|macintel/.test(source)
+              ? "macos"
+              : /linux|x11/.test(source)
+                ? "linux"
+                : "unknown";
   let architecture = architectureFrom(source);
   const userAgentData = (
     navigator as Navigator & {

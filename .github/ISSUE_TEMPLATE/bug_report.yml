@@ -19,7 +19,7 @@ body:
     id: operating-system
     attributes:
       label: Operating system
-      placeholder: Windows 11, Ubuntu 24.04, Android 16
+      placeholder: Windows 11, macOS, Ubuntu 24.04
     validations:
       required: true
   - type: textarea

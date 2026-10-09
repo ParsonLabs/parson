@@ -26,7 +26,9 @@ export default function PlaylistMenu({
     try {
       const playlist = await getPlaylist(playlistId);
       const first = playlist.songs[0];
-      if (!first) return;
+      if (!first) {
+        return;
+      }
       player.setQueue(
         playlist.songs.map((song) => ({
           song,
@@ -45,16 +47,16 @@ export default function PlaylistMenu({
   return (
     <ContextMenu>
       <ContextMenuTrigger asChild>{children}</ContextMenuTrigger>
-      <ContextMenuContent className="w-52">
+      <ContextMenuContent className="w-60">
         <ContextMenuItem onSelect={() => void play()}>
-          <Play className="fill-current" />
+          <Play className="h-4 w-4" />
           Play
         </ContextMenuItem>
         <ContextMenuSeparator />
         <ContextMenuItem asChild>
           <Link href={`/playlist?id=${playlistId}`}>
             <ListMusic className="h-4 w-4" />
-            Go to playlist
+            View playlist
           </Link>
         </ContextMenuItem>
       </ContextMenuContent>

@@ -3,6 +3,7 @@ import { fileURLToPath } from "node:url";
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   output: "export",
+  devIndicators: { position: "bottom-right" },
   transpilePackages: ["@parson/music-sdk"],
   // TypeScript 7 is checked separately because Next still imports its removed JS API.
   typescript: { ignoreBuildErrors: true },

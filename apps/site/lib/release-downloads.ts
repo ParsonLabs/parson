@@ -1,5 +1,5 @@
-import { version } from "../package.json";
-export const releaseVersion = version;
+import packageJson from "../package.json";
+export const releaseVersion = packageJson.version;
 export const releaseTag = `v${releaseVersion}`;
 export const releaseBase =
   `https://github.com/ParsonLabs/Parson/releases/download/${releaseTag}` as const;

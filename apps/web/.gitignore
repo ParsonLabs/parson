@@ -1,4 +1,5 @@
 /node_modules
+/AGENTS.md
 /.pnp
 .pnp.js
 .yarn/install-state.gz

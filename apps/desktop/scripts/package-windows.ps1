@@ -1,11 +1,18 @@
 param(
     [ValidatePattern('^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$')]
-    [string]$Version = "1.0.0",
+    [string]$Version = "",
     [string]$OutputDirectory = "artifacts\windows"
 )
 
 $ErrorActionPreference = "Stop"
 $workspace = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..\..\..")).Path
+
+$packagePath = Join-Path $workspace "package.json"
+$packageVersion = (Get-Content -LiteralPath $packagePath -Raw | ConvertFrom-Json).version
+if (-not $Version) {
+    $Version = $packageVersion
+}
+
 $previousLocation = Get-Location
 Set-Location -LiteralPath $workspace
 try {

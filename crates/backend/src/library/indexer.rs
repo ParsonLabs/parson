@@ -3898,7 +3898,9 @@ fn mp4_text(data_type: u32, bytes: &[u8]) -> Option<String> {
         1 => std::str::from_utf8(bytes).ok().map(ToString::to_string),
         2 if bytes.len().is_multiple_of(2) => {
             let mut words = bytes
-                .chunks_exact(2)
+                .as_chunks::<2>()
+                .0
+                .iter()
                 .map(|pair| u16::from_be_bytes([pair[0], pair[1]]))
                 .collect::<Vec<_>>();
             if words.first() == Some(&0xfeff) {

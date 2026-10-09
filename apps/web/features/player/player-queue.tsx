@@ -13,6 +13,9 @@ import {
   useState,
 } from "react";
 import { queueDropIndex } from "./player-queue-reorder";
+import { SongTitle, ExplicitBadge } from "@/features/library/song-title";
+import { isExplicitSongTitle } from "@/features/library/song-presentation";
+import { trackArtistCredit } from "@/features/library/track-artist-credit";
 
 export default function PlayerQueue({
   currentSongId,
@@ -44,7 +47,15 @@ export default function PlayerQueue({
       onClose();
     };
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
+      if (event.key === "Escape" && !event.defaultPrevented) {
+        event.preventDefault();
+        onClose();
+        document
+          .querySelector<HTMLButtonElement>(
+            "[data-player-queue-trigger] button",
+          )
+          ?.focus();
+      }
     };
 
     document.addEventListener("pointerdown", handlePointerDown);
@@ -58,7 +69,7 @@ export default function PlayerQueue({
   return (
     <aside
       aria-label="Queue"
-      className="fixed bottom-[7.75rem] left-3 right-3 z-[60] flex max-h-[380px] flex-col overflow-hidden rounded-2xl border border-white/10 bg-black/95 text-white shadow-2xl backdrop-blur-2xl sm:left-auto sm:right-5 sm:w-[360px] lg:right-[max(1.25rem,calc((100vw-80px-min(960px,100vw-112px))/2))]"
+      className="fixed bottom-42 left-3 right-3 z-60 flex max-h-[min(380px,calc(100dvh-188px))] flex-col overflow-hidden rounded-2xl border border-white/10 bg-black/95 text-white shadow-2xl backdrop-blur-2xl sm:left-auto sm:right-5 sm:w-90 md:bottom-31 md:max-h-[min(380px,calc(100dvh-144px))] lg:right-[max(1.25rem,calc((100vw-80px-min(960px,100vw-112px))/2))]"
       ref={queueRef}
     >
       <header className="flex items-center justify-between border-b border-white/10 px-4 py-3">
@@ -117,7 +128,9 @@ export function PlayerQueueList({
   const suppressClick = useRef(false);
 
   const move = (from: number, to: number) => {
-    if (from === to || from < 0 || to < 0 || to >= queue.length) return;
+    if (from === to || from < 0 || to < 0 || to >= queue.length) {
+      return;
+    }
     onReorder(from, to);
   };
   const drop = (event: DragEvent<HTMLButtonElement>, targetIndex: number) => {
@@ -138,7 +151,9 @@ export function PlayerQueueList({
     event: ReactKeyboardEvent<HTMLButtonElement>,
     index: number,
   ) => {
-    if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
+    if (event.key !== "ArrowUp" && event.key !== "ArrowDown") {
+      return;
+    }
     event.preventDefault();
     move(index, index + (event.key === "ArrowUp" ? -1 : 1));
   };
@@ -157,14 +172,16 @@ export function PlayerQueueList({
           <button
             aria-current={active ? "true" : undefined}
             aria-label={`${item.song.name || "Untitled song"}. Position ${index + 1} of ${queue.length}. Drag to reorder, or use the arrow keys.`}
-            className={`group relative flex h-[62px] w-full cursor-grab items-center gap-3 rounded-xl p-2 text-left transition-colors active:cursor-grabbing ${
-              active ? "bg-white/[0.09]" : "hover:bg-white/[0.05]"
+            className={`group relative flex h-15.5 w-full cursor-grab items-center gap-3 rounded-xl p-2 text-left transition-colors active:cursor-grabbing ${
+              active ? "bg-white/9" : "hover:bg-white/5"
             } ${draggedIndex === index ? "opacity-60" : ""}`}
             data-native-drag="true"
             draggable
             key={`${item.song.id}-${index}`}
             onClick={() => {
-              if (!suppressClick.current) onSelect(index);
+              if (!suppressClick.current) {
+                onSelect(index);
+              }
             }}
             onDragEnd={() => {
               setDraggedIndex(null);
@@ -174,7 +191,9 @@ export function PlayerQueueList({
               }, 0);
             }}
             onDragOver={(event) => {
-              if (draggedIndex === null) return;
+              if (draggedIndex === null) {
+                return;
+              }
               event.preventDefault();
               event.dataTransfer.dropEffect = "move";
               const bounds = event.currentTarget.getBoundingClientRect();
@@ -221,10 +240,19 @@ export function PlayerQueueList({
               <p
                 className={`truncate text-sm font-medium ${active ? "text-white" : "text-zinc-200"}`}
               >
-                {item.song.name || "Untitled song"}
+                <SongTitle title={item.song.name || "Untitled song"} />
               </p>
               <p className="truncate text-xs text-zinc-500">
-                {item.artist.name || item.song.artist || "Unknown artist"}
+                {isExplicitSongTitle(item.song.name) && <ExplicitBadge />}
+                {trackArtistCredit({
+                  albumArtist: item.artist.name,
+                  albumType: item.album.primary_type,
+                  contributingArtists: item.song.contributing_artists ?? [],
+                  trackArtist: item.song.artist,
+                }) ||
+                  item.artist.name ||
+                  item.song.artist ||
+                  "Unknown artist"}
               </p>
             </div>
             {active && <span className="mr-2 h-2 w-2 rounded-full bg-white" />}

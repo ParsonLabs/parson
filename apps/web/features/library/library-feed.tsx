@@ -7,7 +7,10 @@ import { useSession } from "@/features/account/session-provider";
 import { Button } from "@/components/ui/button";
 import { homeFeedShouldShowSkeleton } from "@/features/library/library-readiness-state";
 import { presentRecentItems } from "@/features/library/home-recent-items";
-import { trackArtistCredit } from "@/features/library/track-artist-credit";
+import {
+  trackArtistCredit,
+  trackArtistCreditParts,
+} from "@/features/library/track-artist-credit";
 import {
   emptyLibraryFeed,
   useLibraryFeed,
@@ -66,7 +69,7 @@ export default function LibraryFeed() {
 
   return (
     <div className="relative min-h-full py-7 pb-36">
-      <div className="mx-auto w-full max-w-[1064px] px-5 sm:px-7">
+      <div className="mx-auto w-full max-w-266 px-5 sm:px-7">
         <header className="mb-10">
           <h1 className="text-3xl font-semibold text-white">Home</h1>
         </header>
@@ -106,17 +109,17 @@ export default function LibraryFeed() {
 function HomeLoading() {
   return (
     <div className="relative min-h-full py-7 pb-36">
-      <div className="mx-auto w-full max-w-[1064px] px-5 sm:px-7">
-        <div className="mb-10 h-9 w-24 animate-pulse rounded-md bg-white/[0.05]" />
+      <div className="mx-auto w-full max-w-266 px-5 sm:px-7">
+        <div className="mb-10 h-9 w-24 animate-pulse rounded-md bg-white/5" />
         <div className="space-y-11">
           {Array.from({ length: 3 }).map((_, row) => (
-            <section className="mx-auto w-full max-w-[1000px]" key={row}>
-              <div className="mb-4 h-5 w-44 animate-pulse rounded bg-white/[0.05]" />
+            <section className="mx-auto w-full max-w-250" key={row}>
+              <div className="mb-4 h-5 w-44 animate-pulse rounded bg-white/5" />
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 lg:grid-cols-4 lg:gap-5">
                 {Array.from({ length: 4 }).map((_, card) => (
                   <div className="min-w-0 space-y-3" key={card}>
-                    <div className="aspect-square animate-pulse rounded-lg bg-white/[0.045]" />
-                    <div className="h-3 w-3/4 animate-pulse rounded bg-white/[0.05]" />
+                    <div className="aspect-square animate-pulse rounded-lg bg-white/4.5" />
+                    <div className="h-3 w-3/4 animate-pulse rounded bg-white/5" />
                     <div className="h-3 w-1/2 animate-pulse rounded bg-white/[0.035]" />
                   </div>
                 ))}
@@ -176,6 +179,7 @@ function SongRow({ songs }: { songs: LibrarySong[] }) {
             path={song.path}
             artist_id={song.artist_object?.id}
             artist_name={songCardArtist(song)}
+            artistCredits={songCardCredits(song)}
             album_id={song.album_object?.id}
             album_name={song.album_object?.name}
             album_cover={song.album_object?.cover_url}
@@ -222,6 +226,7 @@ function RecentRow({ songs }: { songs: LibrarySong[] }) {
               album_name={song.album_object?.name}
               artist_id={song.artist_object?.id}
               artist_name={songCardArtist(song)}
+              artistCredits={songCardCredits(song)}
               path={song.path}
               song_id={song.id}
               song_name={song.name}
@@ -231,6 +236,24 @@ function RecentRow({ songs }: { songs: LibrarySong[] }) {
         );
       })}
     </>
+  );
+}
+
+function songCardCredits(song: LibrarySong) {
+  return (
+    trackArtistCreditParts({
+      albumArtist: song.artist_object?.name ?? "",
+      albumArtistId: song.artist_object?.id,
+      albumType: song.album_object?.primary_type ?? "",
+      contributingArtists: song.contributing_artists,
+      contributingArtistIds: song.contributing_artist_ids,
+      trackArtist: song.artist,
+    }) ?? [
+      {
+        id: song.artist_object?.id,
+        name: song.artist_object?.name ?? song.artist,
+      },
+    ]
   );
 }
 
@@ -271,7 +294,9 @@ function FeedRow({ children, title }: { children: ReactNode; title: string }) {
 
   const scroll = (direction: "left" | "right") => {
     const node = scrollRef.current;
-    if (!node) return;
+    if (!node) {
+      return;
+    }
     const amount = Math.min(720, node.clientWidth * 0.85);
     node.scrollBy({
       left: direction === "left" ? -amount : amount,
@@ -280,7 +305,7 @@ function FeedRow({ children, title }: { children: ReactNode; title: string }) {
   };
 
   return (
-    <section className="mx-auto w-full max-w-[1000px]">
+    <section className="mx-auto w-full max-w-250">
       <div className="mb-4 flex items-center justify-between gap-4">
         <h2 className="text-[18px] font-semibold text-zinc-50">{title}</h2>
         <div className="flex items-center gap-2">
@@ -304,7 +329,7 @@ function FeedRow({ children, title }: { children: ReactNode; title: string }) {
       </div>
       <div
         ref={scrollRef}
-        className="grid snap-x snap-mandatory grid-flow-col auto-cols-[calc((100%_-_36px)/2)] gap-3 overflow-x-auto overflow-y-visible pb-2 [scrollbar-width:none] sm:auto-cols-[calc((100%_-_48px)/3)] sm:gap-4 lg:auto-cols-[calc((100%_-_60px)/4)] lg:gap-5 [&::-webkit-scrollbar]:hidden"
+        className="grid snap-x snap-mandatory grid-flow-col auto-cols-[calc((100%-36px)/2)] gap-3 overflow-x-auto overflow-y-visible pb-2 scrollbar-none sm:auto-cols-[calc((100%-48px)/3)] sm:gap-4 lg:auto-cols-[calc((100%-60px)/4)] lg:gap-5 [&::-webkit-scrollbar]:hidden"
       >
         {children}
       </div>

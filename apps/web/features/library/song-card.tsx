@@ -2,17 +2,21 @@
 
 import { usePlayer } from "@/features/player/player-context";
 import SongMenu from "@/features/library/song-menu";
+import { SongTitle, ExplicitBadge } from "./song-title";
+import { isExplicitSongTitle } from "./song-presentation";
+import { ArtistCreditLinks } from "./artist-credit-links";
+import type { TrackArtistCreditPart } from "./track-artist-credit";
 import getBaseURL from "@/lib/api/server-url";
 import { defaultCover } from "@/lib/images/default-cover";
 import Image from "next/image";
 import Link from "next/link";
-import { useState } from "react";
 
 type SongCardProps = {
   song_name: string;
   song_id: string;
   artist_id: string;
   artist_name: string;
+  artistCredits?: TrackArtistCreditPart[];
   album_id: string;
   album_name: string;
   album_cover: string;
@@ -25,6 +29,7 @@ export default function SongCard({
   song_id,
   artist_id,
   artist_name,
+  artistCredits,
   album_id,
   album_name,
   album_cover,
@@ -32,7 +37,6 @@ export default function SongCard({
 }: SongCardProps) {
   const { playAudioSource, setQueue, setSongCallback, setCurrentSongIndex } =
     usePlayer();
-  const [imageLoaded, setImageLoaded] = useState(false);
   const imageSrc = album_cover
     ? `${getBaseURL()}/media/images/${encodeURIComponent(album_cover)}`
     : defaultCover;
@@ -61,19 +65,14 @@ export default function SongCard({
       >
         <div className="group min-w-0">
           <div className="relative aspect-square w-full overflow-hidden rounded-lg bg-[#111]">
-            {!imageLoaded && (
-              <div className="absolute inset-0 animate-pulse bg-white/[0.04]" />
-            )}
             <Image
               src={imageSrc}
               alt={song_name}
               fill
               sizes="(min-width: 1024px) 260px, 42vw"
-              className={`cursor-pointer object-cover transition-opacity duration-200 ${imageLoaded ? "opacity-100" : "opacity-0"}`}
-              onLoad={() => setImageLoaded(true)}
+              className="cursor-pointer object-cover"
               onError={(event) => {
                 event.currentTarget.src = defaultCover;
-                setImageLoaded(true);
               }}
               onClick={handlePlay}
             />
@@ -84,16 +83,16 @@ export default function SongCard({
               href={`/album?id=${album_id}`}
               className="block truncate text-sm font-semibold leading-5 text-zinc-100 hover:underline"
             >
-              {song_name}
+              <SongTitle title={song_name} />
             </Link>
             <p className="truncate text-sm leading-5 text-zinc-500">
               {typeLabel && <span>{typeLabel} · </span>}
-              <Link
-                href={`/artist?id=${artist_id ?? "0"}`}
-                className="hover:text-zinc-200 hover:underline"
-              >
-                {artist_name}
-              </Link>
+              {isExplicitSongTitle(song_name) && <ExplicitBadge />}
+              <ArtistCreditLinks
+                credits={
+                  artistCredits ?? [{ id: artist_id, name: artist_name }]
+                }
+              />
             </p>
           </div>
         </div>

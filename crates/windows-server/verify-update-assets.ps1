@@ -1,11 +1,18 @@
 param(
     [ValidatePattern('^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$')]
-    [string]$Version = "1.0.0",
+    [string]$Version = "",
     [string]$Directory = "artifacts\windows-server"
 )
 
 $ErrorActionPreference = "Stop"
 $workspace = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..\..")).Path
+
+$packagePath = Join-Path $workspace "package.json"
+$packageVersion = (Get-Content -LiteralPath $packagePath -Raw | ConvertFrom-Json).version
+if (-not $Version) {
+    $Version = $packageVersion
+}
+
 $assets = Join-Path $workspace $Directory
 $executable = Join-Path $assets "ParsonMusicServer.exe"
 $manifestPath = Join-Path $assets "windows-server-update.json"

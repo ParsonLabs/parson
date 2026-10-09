@@ -1,0 +1,15 @@
+diff --git a/src/sprintf.js b/src/sprintf.js
+index 65d6324645ef1d0133614a71497751009dc5c912..876bbd0f3ee0b8f93f636848190b5b266b07d145 100644
+--- a/src/sprintf.js
++++ b/src/sprintf.js
+@@ -184,6 +184,10 @@
+                     throw new Error('[sprintf] mixing positional and named placeholders is not (yet) supported')
+                 }
+ 
++                if (Number(match[6] || 0) > 10000 || Number(match[7] || 0) > 100) {
++                    throw new RangeError('[sprintf] width or precision exceeds the limit')
++                }
++
+                 parse_tree.push(
+                     {
+                         placeholder: match[0],

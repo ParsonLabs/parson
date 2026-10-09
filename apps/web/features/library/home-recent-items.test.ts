@@ -11,7 +11,7 @@ function source(id: string, albumId: string): RecentSource {
 }
 
 describe("presentRecentItems", () => {
-  test("keeps every history event when an album representation is useful", () => {
+  test("collapses repeated plays into one album card", () => {
     const items = presentRecentItems([
       source("event-1", "album-a"),
       source("event-2", "album-a"),
@@ -19,43 +19,67 @@ describe("presentRecentItems", () => {
       source("event-4", "album-a"),
     ]);
 
-    expect(items).toHaveLength(4);
-    expect(items.map((item) => item.kind)).toEqual([
-      "album",
-      "song",
-      "song",
-      "song",
-    ]);
-    expect(items.map((item) => item.historyIndex).sort()).toEqual([0, 1, 2, 3]);
+    expect(items).toHaveLength(1);
+    expect(items[0]).toEqual({
+      historyIndex: 0,
+      kind: "album",
+      source: source("event-1", "album-a"),
+    });
   });
 
-  test("separates adjacent matching artwork when an alternative exists", () => {
+  test("collapses interleaved albums and keeps unrelated songs", () => {
     const items = presentRecentItems([
-      source("event-1", "album-a"),
-      source("event-2", "album-a"),
-      source("event-3", "album-b"),
-      source("event-4", "album-a"),
+      source("a-1", "album-a"),
+      source("b-1", "album-b"),
+      source("a-2", "album-a"),
+      source("b-2", "album-b"),
+      source("c-1", "album-c"),
+      source("a-3", "album-a"),
+      source("b-3", "album-b"),
+      source("a-4", "album-a"),
+      source("b-4", "album-b"),
     ]);
 
-    expect(items.map((item) => item.source.album_object.id)).toEqual([
-      "album-a",
-      "album-b",
-      "album-a",
-      "album-a",
+    expect(
+      items.map((item) => [item.kind, item.source.id, item.historyIndex]),
+    ).toEqual([
+      ["album", "a-1", 0],
+      ["album", "b-1", 1],
+      ["song", "c-1", 4],
     ]);
   });
 
-  test("retains chronological order when no alternative artwork exists", () => {
-    const items = presentRecentItems([
-      source("event-1", "album-a"),
-      source("event-2", "album-a"),
-      source("event-3", "album-a"),
-    ]);
+  test("does not group songs without an album identity", () => {
+    const sources = [
+      source("1", ""),
+      source("2", ""),
+      source("3", ""),
+      source("4", ""),
+    ];
+    const items = presentRecentItems(sources);
+    expect(items.map((item) => item.source)).toEqual(sources);
+    expect(items.every((item) => item.kind === "song")).toBe(true);
+  });
 
-    expect(items.map((item) => item.source.id)).toEqual([
-      "event-1",
-      "event-2",
-      "event-3",
-    ]);
+  test.each([2, 3])("groups an album with %i recent songs", (count) => {
+    const items = presentRecentItems(
+      Array.from({ length: count }, (_, index) =>
+        source(`golden-${index}`, "golden"),
+      ),
+    );
+    expect(items).toHaveLength(1);
+    expect(items[0]?.kind).toBe("album");
+    expect(items[0]?.source.album_object.id).toBe("golden");
+  });
+
+  test("keeps single songs in chronological order", () => {
+    const sources = [
+      source("1", "album-a"),
+      source("2", "album-b"),
+      source("3", "album-c"),
+    ];
+    const items = presentRecentItems(sources);
+    expect(items.map((item) => item.source)).toEqual(sources);
+    expect(items.every((item) => item.kind === "song")).toBe(true);
   });
 });

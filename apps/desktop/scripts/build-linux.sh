@@ -17,4 +17,4 @@ case "${PARSON_BUILD_ARCH:-$(uname -m)}" in
     ;;
 esac
 
-bunx electron-builder --linux AppImage deb "$arch_flag"
+bunx electron-builder --linux AppImage deb "$arch_flag" --publish=never

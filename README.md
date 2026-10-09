@@ -20,13 +20,9 @@ Desktop apps include everything needed to run your library.
 
 ## Download
 
-| Platform    | Available packages                                                                                                                                                                                                        |
-| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Windows     | [x64 installer](https://github.com/ParsonLabs/Parson/releases/download/v1.0.0/Parson_1.0.0_x64-setup.exe) · [ARM64 installer](https://github.com/ParsonLabs/Parson/releases/download/v1.0.0/Parson_1.0.0_arm64-setup.exe) |
-| Linux x64   | [AppImage](https://github.com/ParsonLabs/Parson/releases/download/v1.0.0/Parson_1.0.0_x86_64.AppImage) · [Debian package](https://github.com/ParsonLabs/Parson/releases/download/v1.0.0/Parson_1.0.0_amd64.deb)           |
-| Linux ARM64 | [AppImage](https://github.com/ParsonLabs/Parson/releases/download/v1.0.0/Parson_1.0.0_arm64.AppImage) · [Debian package](https://github.com/ParsonLabs/Parson/releases/download/v1.0.0/Parson_1.0.0_arm64.deb)            |
-| macOS       | [Intel DMG](https://github.com/ParsonLabs/Parson/releases/download/v1.0.0/Parson_1.0.0_x64.dmg) · [Apple Silicon DMG](https://github.com/ParsonLabs/Parson/releases/download/v1.0.0/Parson_1.0.0_arm64.dmg)               |
-| Server      | `ghcr.io/parsonlabs/parson:1.0.0`                                                                                                                                                                                         |
+Get Windows, macOS and Linux packages from the [latest release](https://github.com/ParsonLabs/Parson/releases/latest).
+
+The server container is `ghcr.io/parsonlabs/parson:latest`. Versioned image tags are also published for pinned deployments.
 
 Build provenance is included with the release.
 

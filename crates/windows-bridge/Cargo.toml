@@ -1,8 +1,8 @@
 [package]
 name = "parson-music-windows-bridge"
-version = "1.0.0"
+version = "1.0.1"
 edition = "2024"
-rust-version = "1.97"
+rust-version = "1.99"
 license = "GPL-3.0-only"
 publish = false
 
@@ -11,5 +11,5 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 parson-music = { path = "../backend", default-features = false }
-serde_json = "1.0.150"
-tokio = { version = "1.52.3", features = ["rt-multi-thread"] }
+serde_json = "1.0.151"
+tokio = { version = "1.53.2", features = ["rt-multi-thread"] }

@@ -23,6 +23,7 @@ export default async function ShowcasePage({
   return (
     <main className="showcase-capture">
       <InteractiveProductDemo
+        capture={parameters.capture === "true"}
         initialAlbumId={
           Array.isArray(parameters.album)
             ? parameters.album[0]
@@ -30,7 +31,9 @@ export default async function ShowcasePage({
         }
         initialPlaying={parameters.playing === "true"}
         initialPanel={
-          parameters.panel === "lyrics" || parameters.panel === "queue"
+          parameters.panel === "lyrics" ||
+          parameters.panel === "queue" ||
+          parameters.panel === "fullscreen"
             ? parameters.panel
             : undefined
         }

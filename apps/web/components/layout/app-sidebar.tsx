@@ -32,20 +32,21 @@ export default function AppSidebar() {
     <>
       <aside
         aria-label="Main navigation"
-        className="fixed bottom-0 left-0 top-0 z-50 hidden w-[80px] bg-black md:block"
+        className="fixed bottom-0 left-0 top-0 z-50 hidden w-20 bg-black md:block"
       >
         <div className="flex h-full flex-col px-4 md:items-center md:px-0">
           <Link
             href="/"
             aria-label="Parson home"
-            className="mt-3 flex h-12 items-center gap-3 md:w-12 md:justify-center"
+            draggable={false}
+            className="mt-3 flex h-12 select-none items-center gap-3 md:w-12 md:justify-center"
             onClick={() => handleNavigate("/")}
           >
             <ParsonBrandMark className="h-16 w-16 shrink-0 text-white" />
             <span className="text-base font-semibold md:hidden">Parson</span>
           </Link>
 
-          <nav className="mt-8 flex w-full flex-col gap-2 md:items-center">
+          <nav className="mt-2 flex w-full flex-col gap-2 md:items-center">
             {navigation.map(({ href, label, icon: Icon }) => {
               const active = isActive(href);
 
@@ -53,13 +54,14 @@ export default function AppSidebar() {
                 <Link
                   key={href}
                   href={href}
+                  prefetch={true}
                   aria-label={label}
                   title={label}
                   onClick={() => handleNavigate(href)}
-                  className={`flex h-11 w-full items-center gap-3 rounded-[14px] px-3 transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/20 focus-visible:ring-offset-2 focus-visible:ring-offset-black md:w-11 md:justify-center md:px-0 ${
+                  className={`flex h-12 w-full items-center gap-3 rounded-[14px] px-3 transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/20 focus-visible:ring-offset-2 focus-visible:ring-offset-black md:w-12 md:justify-center md:px-0 ${
                     active
-                      ? "bg-white/[0.08] text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.06)]"
-                      : "text-zinc-600 hover:bg-white/[0.04] hover:text-zinc-300"
+                      ? "bg-white/8 text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.06)]"
+                      : "text-zinc-600 hover:bg-white/4 hover:text-zinc-300"
                   }`}
                 >
                   <Icon className="h-5 w-5" strokeWidth={1.8} />
@@ -71,10 +73,10 @@ export default function AppSidebar() {
 
           <Link
             aria-label="Settings"
-            className={`mb-4 mt-auto flex h-11 w-full items-center gap-3 rounded-[14px] px-3 transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/20 focus-visible:ring-offset-2 focus-visible:ring-offset-black md:w-11 md:justify-center md:px-0 ${
+            className={`mb-4 mt-auto flex h-12 w-full items-center gap-3 rounded-[14px] px-3 transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/20 focus-visible:ring-offset-2 focus-visible:ring-offset-black md:w-12 md:justify-center md:px-0 ${
               pathname === "/settings"
-                ? "bg-white/[0.08] text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.06)]"
-                : "text-zinc-600 hover:bg-white/[0.04] hover:text-zinc-300"
+                ? "bg-white/8 text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.06)]"
+                : "text-zinc-600 hover:bg-white/4 hover:text-zinc-300"
             }`}
             href="/settings"
             onClick={() => handleNavigate("/settings")}
@@ -88,7 +90,7 @@ export default function AppSidebar() {
 
       <nav
         aria-label="Main navigation"
-        className="fixed inset-x-0 bottom-0 z-50 flex h-[72px] items-stretch border-t border-white/10 bg-black/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-xl md:hidden"
+        className="fixed inset-x-0 bottom-0 z-50 flex h-18 items-stretch border-t border-white/10 bg-black/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-xl md:hidden"
       >
         {mobileNavigation.map(({ href, label, icon: Icon }) => {
           const active = isActive(href);
@@ -103,10 +105,7 @@ export default function AppSidebar() {
                 active ? "text-white" : "text-zinc-600 active:text-zinc-300"
               }`}
             >
-              <Icon
-                className="h-[22px] w-[22px]"
-                strokeWidth={active ? 2.2 : 1.8}
-              />
+              <Icon className="h-5.5 w-5.5" strokeWidth={active ? 2.2 : 1.8} />
               <span>{label}</span>
             </Link>
           );

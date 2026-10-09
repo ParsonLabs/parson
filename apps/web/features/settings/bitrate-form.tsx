@@ -16,10 +16,18 @@ const bitrates = { low: 96, normal: 128, high: 256, lossless: 0 } as const;
 type Quality = keyof typeof bitrates;
 
 function qualityFromBitrate(bitrate: number): Quality {
-  if (bitrate === 0) return "lossless";
-  if (bitrate === 96) return "low";
-  if (bitrate === 128) return "normal";
-  if (bitrate === 256) return "high";
+  if (bitrate === 0) {
+    return "lossless";
+  }
+  if (bitrate === 96) {
+    return "low";
+  }
+  if (bitrate === 128) {
+    return "normal";
+  }
+  if (bitrate === 256) {
+    return "high";
+  }
   return "normal";
 }
 
@@ -43,14 +51,18 @@ export default function BitrateForm({
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (requestInFlight.current) return;
+    if (requestInFlight.current) {
+      return;
+    }
     const bitrate = bitrates[quality];
     requestInFlight.current = true;
     setSaving(true);
     setMessage("");
     try {
       await setBitrate(bitrate);
-      if (session) setSession({ ...session, bitrate });
+      if (session) {
+        setSession({ ...session, bitrate });
+      }
       setMessage("Quality updated.");
     } catch {
       setMessage("Could not update quality.");
@@ -74,17 +86,12 @@ export default function BitrateForm({
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="low">Low · 96 kbps</SelectItem>
-            <SelectItem value="normal">Normal · 128 kbps</SelectItem>
-            <SelectItem value="high">High · 256 kbps</SelectItem>
+            <SelectItem value="low">Low</SelectItem>
+            <SelectItem value="normal">Medium</SelectItem>
+            <SelectItem value="high">High</SelectItem>
             <SelectItem value="lossless">Original</SelectItem>
           </SelectContent>
         </Select>
-        <p className="mt-2 text-sm text-zinc-500">
-          {quality === "lossless"
-            ? "Streams the source file without transcoding."
-            : "Uses less bandwidth by transcoding while you listen."}
-        </p>
       </div>
       <Button type="submit" disabled={saving}>
         {saving ? "Applying…" : "Apply quality"}

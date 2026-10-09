@@ -654,7 +654,7 @@ fn acronym_variants(value: &str) -> Vec<String> {
     }
 
     let mut variants = vec![String::new()];
-    for word in words {
+    for word in &words {
         let Some(initial) = word
             .chars()
             .next()
@@ -662,7 +662,7 @@ fn acronym_variants(value: &str) -> Vec<String> {
         else {
             continue;
         };
-        let shorthand = letter_name_shorthand(word).filter(|letter| *letter != initial);
+        let shorthand = title_word_shorthand(word).filter(|letter| *letter != initial);
         let mut expanded = Vec::with_capacity(
             variants
                 .len()
@@ -687,6 +687,31 @@ fn acronym_variants(value: &str) -> Vec<String> {
         variants = expanded;
     }
 
+    let mut compact_aliases = vec![String::new()];
+    for word in &words {
+        let mut expanded = Vec::new();
+        for variant in &compact_aliases {
+            if expanded.len() >= MAX_ACRONYM_VARIANTS {
+                break;
+            }
+            expanded.push(format!("{variant}{word}"));
+            if let Some(shorthand) = title_word_shorthand(word)
+                && expanded.len() < MAX_ACRONYM_VARIANTS
+            {
+                expanded.push(format!("{variant}{shorthand}"));
+            }
+        }
+        compact_aliases = expanded;
+    }
+    let compact_title = compact(&normalized);
+    let remaining_aliases = MAX_ACRONYM_VARIANTS.saturating_sub(variants.len());
+    variants.extend(
+        compact_aliases
+            .into_iter()
+            .filter(|alias| alias != &compact_title)
+            .take(remaining_aliases),
+    );
+
     variants.retain(|variant| variant.chars().count() >= 2);
     variants.sort();
     variants.dedup();
@@ -707,6 +732,19 @@ fn words_acronym(normalized: &str) -> String {
                 .filter(|character| character.is_alphabetic())
         })
         .collect()
+}
+
+fn title_word_shorthand(word: &str) -> Option<char> {
+    match word {
+        "to" | "too" | "two" => Some('2'),
+        "for" | "four" => Some('4'),
+        "one" | "won" => Some('1'),
+        "eight" | "ate" => Some('8'),
+        "and" => Some('n'),
+        "be" | "bee" => Some('b'),
+        "oh" => Some('o'),
+        _ => letter_name_shorthand(word),
+    }
 }
 
 fn letter_name_shorthand(word: &str) -> Option<char> {
@@ -955,6 +993,63 @@ mod tests {
                 .iter()
                 .all(|hit| hit.entity_id != "song-distractor")
         );
+    }
+
+    #[test]
+    fn supports_texting_shorthand_for_titles() {
+        let titles = [
+            (
+                "talk",
+                "Talk to You",
+                vec!["tty", "t2u", "talk2you", "talk2u", "t2"],
+            ),
+            (
+                "you",
+                "For You Maps",
+                vec!["fym", "4um", "4youmaps", "forumaps"],
+            ),
+            ("too", "Too Bright Maps", vec!["tbm", "2bm", "2brightmaps"]),
+            ("repeat", "Road to Road", vec!["rtr", "r2r", "road2road"]),
+            (
+                "one",
+                "One More Lantern",
+                vec!["oml", "1ml", "1morelantern"],
+            ),
+            (
+                "eight",
+                "Eight Paper Boats",
+                vec!["epb", "8pb", "8paperboats"],
+            ),
+            ("and", "Red and Copper", vec!["rac", "rnc", "redncopper"]),
+        ];
+        let index = SearchIndex::build(&[Artist {
+            id: "artist-shorthand".into(),
+            name: "Test Artist".into(),
+            albums: vec![Album {
+                id: "album-shorthand".into(),
+                name: "Test Album".into(),
+                songs: titles
+                    .iter()
+                    .map(|(id, title, _)| Song {
+                        id: (*id).into(),
+                        name: (*title).into(),
+                        artist: "Test Artist".into(),
+                        ..Default::default()
+                    })
+                    .collect(),
+                ..Default::default()
+            }],
+            ..Default::default()
+        }])
+        .unwrap();
+        for (id, _, queries) in titles {
+            for query in queries {
+                let hits = index.search(query, 10).unwrap();
+                assert!(!hits.is_empty(), "query {query}");
+                assert_eq!(hits[0].entity_id, id, "query {query}");
+            }
+        }
+        assert!(!acronym_variants("Tomorrow Trails").contains(&"2t".into()));
     }
 
     #[test]

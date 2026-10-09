@@ -4,7 +4,11 @@ import type { LibraryAlbum } from "@parson/music-sdk";
 import { Clock, Pause, Play } from "lucide-react";
 import Link from "next/link";
 import SongMenu from "@/features/library/song-menu";
-import { displaySongTitle } from "@/features/library/song-presentation";
+import {
+  displaySongTitle,
+  isExplicitSongTitle,
+} from "@/features/library/song-presentation";
+import { SongTitle, ExplicitBadge } from "@/features/library/song-title";
 import { trackArtistCreditParts } from "@/features/library/track-artist-credit";
 
 function formatDuration(duration: number) {
@@ -28,7 +32,7 @@ export function AlbumTrackList({
 }) {
   return (
     <div className="w-full pb-8">
-      <div className="mb-2 grid grid-cols-[2rem_minmax(0,1fr)_3rem] gap-4 border-b border-white/10 px-4 py-2 text-sm font-medium text-zinc-500">
+      <div className="mb-2 grid select-none grid-cols-[2rem_minmax(0,1fr)_3rem] gap-4 border-b border-white/10 px-4 py-2 text-sm font-medium text-zinc-500">
         <div className="text-center">#</div>
         <div>Track</div>
         <div className="flex justify-end text-right">
@@ -40,6 +44,7 @@ export function AlbumTrackList({
           const active = activeSongId === track.id;
           const artistCredit = trackArtistCreditParts({
             albumArtist: artistName,
+            albumArtistId: album.artist_object.id,
             albumType: album.primary_type,
             contributingArtists: track.contributing_artists,
             contributingArtistIds: track.contributing_artist_ids,
@@ -60,7 +65,7 @@ export function AlbumTrackList({
             >
               <div
                 className={`group relative grid min-h-14 grid-cols-[2rem_minmax(0,1fr)_3rem] items-center gap-4 rounded-md px-4 py-3 text-left text-sm transition-colors hover:bg-zinc-800/50 ${
-                  active ? "bg-white/[0.02]" : ""
+                  active ? "bg-white/2" : ""
                 }`}
               >
                 <button
@@ -69,7 +74,7 @@ export function AlbumTrackList({
                   onClick={() => onPlay(track)}
                   type="button"
                 />
-                <div className="pointer-events-none relative z-10 text-center text-zinc-400">
+                <div className="pointer-events-none relative z-10 select-none text-center text-zinc-400">
                   <span className={active ? "block" : "group-hover:hidden"}>
                     {active ? (
                       <>
@@ -101,13 +106,16 @@ export function AlbumTrackList({
                 </div>
                 <div className="pointer-events-none relative z-10 flex min-w-0 flex-col pr-4 text-left">
                   <span className="truncate font-medium text-white">
-                    {displayTitle}
+                    <SongTitle title={track.name} />
                   </span>
-                  {artistCredit && (
+                  {(artistCredit || isExplicitSongTitle(track.name)) && (
                     <span className="mt-0.5 truncate text-zinc-400">
-                      {artistCredit[0]?.name}
-                      {artistCredit.length > 1 && " feat. "}
-                      {artistCredit.slice(1).map((credit, creditIndex) => (
+                      {isExplicitSongTitle(track.name) && <ExplicitBadge />}
+                      {(
+                        artistCredit ?? [
+                          { id: album.artist_object.id, name: artistName },
+                        ]
+                      ).map((credit, creditIndex) => (
                         <span
                           key={`${credit.id ?? credit.name}-${creditIndex}`}
                         >

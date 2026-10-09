@@ -51,7 +51,9 @@ function downloadBlob(blob: Blob, filename: string) {
 }
 
 function formatBytes(bytes: number) {
-  if (!Number.isFinite(bytes) || bytes <= 0) return "0 B";
+  if (!Number.isFinite(bytes) || bytes <= 0) {
+    return "0 B";
+  }
   const units = ["B", "KB", "MB", "GB", "TB"];
   const unit = Math.min(
     Math.floor(Math.log(bytes) / Math.log(1024)),
@@ -81,15 +83,18 @@ export default function DataSettings({ isAdmin }: { isAdmin: boolean }) {
     action: Exclude<BusyAction, null>,
     work: () => Promise<void>,
   ) {
-    if (busy) return;
+    if (busy) {
+      return;
+    }
     setBusy(action);
     try {
       await work();
     } catch (cause) {
       const message =
         cause instanceof Error ? cause.message : "The operation failed.";
-      if (action === "backup") setBackupError(message);
-      else {
+      if (action === "backup") {
+        setBackupError(message);
+      } else {
         const errors: Record<Exclude<BusyAction, null>, string> = {
           backup: "Backup wasn’t created.",
           download: "Backup wasn’t downloaded.",
@@ -129,10 +134,6 @@ export default function DataSettings({ isAdmin }: { isAdmin: boolean }) {
         <>
           <section>
             <h2 className="text-base font-semibold text-white">Backups</h2>
-            <p className="mt-1 max-w-xl text-sm leading-6 text-zinc-500">
-              Accounts, playlists, history, preferences, profile pictures, and
-              artwork. Music files and active sessions are not included.
-            </p>
             <div className="mt-5 flex flex-wrap items-center gap-3">
               <Button
                 disabled={Boolean(busy)}
@@ -141,14 +142,14 @@ export default function DataSettings({ isAdmin }: { isAdmin: boolean }) {
                 {spinner("backup")}
                 {busy === "backup" ? "Backing up…" : "Back up now"}
               </Button>
-              <button
-                className="text-sm text-zinc-400 underline-offset-4 hover:text-white hover:underline disabled:opacity-50"
+              <Button
                 disabled={Boolean(busy)}
                 onClick={() => restoreInput.current?.click()}
                 type="button"
+                variant="outline"
               >
                 Restore from backup
-              </button>
+              </Button>
               <input
                 accept=".zst,.tar.zst,application/zstd"
                 className="hidden"
@@ -168,17 +169,40 @@ export default function DataSettings({ isAdmin }: { isAdmin: boolean }) {
                 onAction={() => void createAndDownloadBackup()}
               />
             ) : null}
-            <div className="mt-5 flex items-center gap-3 rounded-lg border border-white/[0.08] px-4 py-3">
+            <div className="mt-5 flex items-center gap-3 rounded-lg border border-white/8 px-4 py-3">
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm text-zinc-200">
                   Last successful backup
                 </p>
                 {latest ? (
-                  <p className="mt-0.5 text-xs text-zinc-600">
-                    {formatBytes(latest.size_bytes)} ·{" "}
-                    {new Date(latest.created_at).toLocaleString()} ·{" "}
-                    {latest.tier ?? "manual"}
-                  </p>
+                  <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-2 text-xs text-zinc-500">
+                    <time
+                      dateTime={latest.created_at}
+                      title={new Date(latest.created_at).toLocaleString()}
+                    >
+                      {new Date(latest.created_at).toLocaleDateString("en-GB", {
+                        day: "numeric",
+                        month: "short",
+                        year: "numeric",
+                      })}
+                      <span className="ml-2 text-zinc-600">
+                        {new Date(latest.created_at).toLocaleTimeString(
+                          "en-GB",
+                          {
+                            hour: "2-digit",
+                            minute: "2-digit",
+                            hour12: false,
+                          },
+                        )}
+                      </span>
+                    </time>
+                    <span className="border-l border-white/10 pl-3 tabular-nums">
+                      {formatBytes(latest.size_bytes)}
+                    </span>
+                    <span className="rounded px-1.5 py-0.5 text-[11px] capitalize text-zinc-400 bg-white/5">
+                      {latest.tier ?? "manual"}
+                    </span>
+                  </div>
                 ) : (
                   <p className="mt-0.5 text-xs text-zinc-600">
                     No backups yet.
@@ -222,18 +246,10 @@ export default function DataSettings({ isAdmin }: { isAdmin: boolean }) {
             )}
           </section>
 
-          <section className="border-t border-white/[0.08] pt-8">
+          <section className="border-t border-white/8 pt-8">
             <h2 className="text-base font-semibold text-white">
               Library index
             </h2>
-            <p className="mt-1 max-w-xl text-sm leading-6 text-zinc-500">
-              A ZIP with artists, releases, tracks, identifiers, and audio
-              details.
-            </p>
-            <p className="mt-2 max-w-xl text-xs leading-5 text-zinc-600">
-              Paths, filenames, folders, accounts, server identity, playlists,
-              favorites, and activity history are always omitted.
-            </p>
             <Button
               className="mt-5"
               disabled={Boolean(busy)}
@@ -255,14 +271,8 @@ export default function DataSettings({ isAdmin }: { isAdmin: boolean }) {
         </>
       )}
 
-      <section
-        className={isAdmin ? "border-t border-white/[0.08] pt-8" : undefined}
-      >
+      <section className={isAdmin ? "border-t border-white/8 pt-8" : undefined}>
         <h2 className="text-base font-semibold text-white">Your data</h2>
-        <p className="mt-1 max-w-xl text-sm leading-6 text-zinc-500">
-          Download a readable copy of your profile, listening history,
-          favorites, searches, and playlists, or erase private activity history.
-        </p>
         <div className="mt-5 flex flex-wrap gap-3">
           <Button
             disabled={Boolean(busy)}
@@ -290,13 +300,8 @@ export default function DataSettings({ isAdmin }: { isAdmin: boolean }) {
       </section>
 
       {isAdmin && (
-        <section className="border-t border-white/[0.08] pt-8">
+        <section className="border-t border-white/8 pt-8">
           <h2 className="text-base font-semibold text-white">Cache</h2>
-          <p className="mt-1 max-w-xl text-sm leading-6 text-zinc-500">
-            Remove downloaded artwork, lyrics, and temporary library data.
-            Parson rebuilds them when needed. Accounts, playlists, history, and
-            music are not changed.
-          </p>
           <div className="mt-5 flex items-center gap-3">
             <Button
               disabled={Boolean(busy)}
@@ -315,10 +320,6 @@ export default function DataSettings({ isAdmin }: { isAdmin: boolean }) {
       {isAdmin && (
         <section className="border-t border-red-500/20 pt-8">
           <h2 className="text-base font-semibold text-red-300">Reset Parson</h2>
-          <p className="mt-1 max-w-xl text-sm leading-6 text-zinc-500">
-            Remove accounts, settings, playlists, history, and the library
-            index. Music files are not deleted. A safety backup is kept.
-          </p>
           <Button
             className="mt-5"
             disabled={Boolean(busy)}
@@ -341,7 +342,7 @@ export default function DataSettings({ isAdmin }: { isAdmin: boolean }) {
             <DialogTitle>Clear your activity history?</DialogTitle>
             <DialogDescription>
               This permanently removes listening, playback, search, lyrics, and
-              recommendation activity. Favorites and playlists are kept.
+              recommendation activity. Favourites and playlists are kept.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter className="gap-2">
@@ -387,7 +388,9 @@ export default function DataSettings({ isAdmin }: { isAdmin: boolean }) {
               disabled={busy === "delete" || !latest}
               onClick={() =>
                 void run("delete", async () => {
-                  if (!latest) return;
+                  if (!latest) {
+                    return;
+                  }
                   await deletePrivateBackup(latest.filename);
                   setDeleteOpen(false);
                   await status.refetch();
@@ -440,9 +443,13 @@ export default function DataSettings({ isAdmin }: { isAdmin: boolean }) {
       <Dialog
         open={resetOpen}
         onOpenChange={(open) => {
-          if (busy === "reset") return;
+          if (busy === "reset") {
+            return;
+          }
           setResetOpen(open);
-          if (!open) setResetConfirmation("");
+          if (!open) {
+            setResetConfirmation("");
+          }
         }}
       >
         <DialogContent>
@@ -462,7 +469,7 @@ export default function DataSettings({ isAdmin }: { isAdmin: boolean }) {
             <input
               autoComplete="off"
               autoFocus
-              className="h-10 w-full rounded-md border border-white/[0.1] bg-white/[0.04] px-3 text-white outline-none focus:border-red-400"
+              className="h-10 w-full rounded-md border border-white/10 bg-white/4 px-3 text-white outline-none focus:border-red-400"
               onChange={(event) => setResetConfirmation(event.target.value)}
               spellCheck={false}
               value={resetConfirmation}
@@ -501,7 +508,9 @@ export default function DataSettings({ isAdmin }: { isAdmin: boolean }) {
       <Dialog
         open={Boolean(restoreFile)}
         onOpenChange={(open) => {
-          if (!open && busy !== "restore") setRestoreFile(null);
+          if (!open && busy !== "restore") {
+            setRestoreFile(null);
+          }
         }}
       >
         <DialogContent>
@@ -513,7 +522,7 @@ export default function DataSettings({ isAdmin }: { isAdmin: boolean }) {
               the current data.
             </DialogDescription>
           </DialogHeader>
-          <p className="truncate rounded-md bg-white/[0.04] px-3 py-2 text-sm text-zinc-300">
+          <p className="truncate rounded-md bg-white/4 px-3 py-2 text-sm text-zinc-300">
             {restoreFile?.name}
           </p>
           <DialogFooter className="gap-2">
@@ -528,7 +537,9 @@ export default function DataSettings({ isAdmin }: { isAdmin: boolean }) {
               disabled={busy === "restore"}
               onClick={() =>
                 void run("restore", async () => {
-                  if (!restoreFile) return;
+                  if (!restoreFile) {
+                    return;
+                  }
                   const result = await restorePrivateBackup(restoreFile);
                   setRestoreFile(null);
                   await status.refetch();

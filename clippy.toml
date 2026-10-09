@@ -1,0 +1,2 @@
+# Actix HTTP responses are returned by value and occupy 128 bytes on Windows.
+large-error-threshold = 256

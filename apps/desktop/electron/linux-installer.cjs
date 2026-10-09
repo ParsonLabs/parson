@@ -125,7 +125,7 @@ async function atomicWrite(destination, contents, mode) {
   const stagedFile = path.join(stage, path.basename(destination));
   try {
     await fs.promises.writeFile(stagedFile, contents, { mode });
-    const handle = await fs.promises.open(stagedFile, "r");
+    const handle = await fs.promises.open(stagedFile, "r+");
     try {
       await handle.sync();
     } finally {
@@ -145,7 +145,7 @@ async function atomicCopy(source, destination, mode) {
   try {
     await fs.promises.copyFile(source, stagedFile);
     await fs.promises.chmod(stagedFile, mode);
-    const handle = await fs.promises.open(stagedFile, "r");
+    const handle = await fs.promises.open(stagedFile, "r+");
     try {
       await handle.sync();
     } finally {

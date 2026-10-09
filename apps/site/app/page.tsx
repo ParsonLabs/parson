@@ -8,7 +8,7 @@ import StickyDownloadButton from "../components/sticky-download-button";
 export const metadata: Metadata = {
   title: { absolute: "Parson - Your music. Instantly." },
   description:
-    "Choose a folder and start listening. Parson is a local-first music server and player for Windows, Android, and the web.",
+    "Choose a folder and start listening. Parson is a local-first music server and player for Windows, macOS, Linux, and the web.",
 };
 
 const trustItems = [
@@ -106,7 +106,7 @@ export default function Home() {
               <Play />
               <div>
                 <h3>Listen</h3>
-                <p>Windows, Android, or web.</p>
+                <p>Windows, macOS, Linux, or web.</p>
               </div>
             </article>
           </div>

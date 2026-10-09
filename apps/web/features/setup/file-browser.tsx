@@ -11,7 +11,7 @@ import {
 } from "@parson/music-sdk";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { createExclusiveOperations, parentDirectory } from "./setup-state";
+import { createExclusiveOperations } from "./setup-state";
 import { FileBrowserView, type Directory } from "./file-browser-view";
 import { hasDesktopBridge, selectMusicFolder } from "@/lib/desktop/bridge";
 import { libraryFailureKind, type FailureKind } from "@/lib/failure-state";
@@ -78,10 +78,6 @@ export default function FileBrowser({
     },
     [setupMode, showHidden],
   );
-
-  function goBack() {
-    void updateList(parentDirectory(currentDirectory));
-  }
 
   useEffect(() => {
     setDesktopBridgeAvailable(hasDesktopBridge());

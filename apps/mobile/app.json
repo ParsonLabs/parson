@@ -14,7 +14,8 @@
       "infoPlist": {
         "NSLocalNetworkUsageDescription": "Parson finds music libraries running on your local network.",
         "NSBonjourServices": ["_parson._tcp"]
-      }
+      },
+      "buildNumber": "1000000"
     },
     "android": {
       "package": "com.parsonlabs.parson",

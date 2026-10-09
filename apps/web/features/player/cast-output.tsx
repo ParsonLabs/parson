@@ -103,7 +103,7 @@ export function CastOutputButton({ menuItem = false }: { menuItem?: boolean }) {
             <div className="rounded-xl border border-dashed border-white/10 px-4 py-4 text-sm text-zinc-500">
               {loading
                 ? "Checking for active playback…"
-                : "Choose a Chromecast with the Cast button in Parson for Android. It will stay controllable here."}
+                : "Choose a Chromecast with the Cast button in the mobile app. It will stay controllable here."}
             </div>
           )}
           {error && (

@@ -6,7 +6,7 @@ import {
   type LyricsResult,
 } from "@parson/music-sdk";
 import { usePathname } from "next/navigation";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { shouldDismissPlayerOverlayForLink } from "./player-overlay-state";
 import {
   lyricsRequestFailure,
@@ -17,12 +17,16 @@ import {
 export type TimedLyric = { time: number; text: string };
 
 export function parseSyncedLyrics(value?: string | null): TimedLyric[] {
-  if (!value) return [];
+  if (!value) {
+    return [];
+  }
   return value
     .split(/\r?\n/)
     .map((line) => {
       const match = line.match(/^\[(\d{1,2}):(\d{2}(?:\.\d{1,3})?)\]\s*(.*)$/);
-      if (!match) return null;
+      if (!match) {
+        return null;
+      }
       return {
         time: Number(match[1]) * 60 + Number(match[2]),
         text: match[3]?.trim() || " ",
@@ -32,10 +36,12 @@ export function parseSyncedLyrics(value?: string | null): TimedLyric[] {
 }
 
 function isKeyboardShortcutTarget(target: EventTarget | null) {
-  if (!(target instanceof HTMLElement)) return false;
+  if (!(target instanceof HTMLElement)) {
+    return false;
+  }
   return Boolean(
     target.closest(
-      'input, textarea, select, button, [contenteditable="true"], [role="textbox"], [role="searchbox"], [role="slider"], [role="spinbutton"]',
+      'input, textarea, select, button, a, [contenteditable="true"], [role="textbox"], [role="searchbox"], [role="slider"], [role="spinbutton"], [role="combobox"], [role="menu"], [role="listbox"], [role="dialog"]:not([aria-label="Fullscreen player"])',
     ),
   );
 }
@@ -54,7 +60,9 @@ type ShortcutOptions = {
 
 export function usePlayerShortcuts(options: ShortcutOptions) {
   useEffect(() => {
-    if (!options.enabled) return;
+    if (!options.enabled) {
+      return;
+    }
     const handleShortcut = (event: KeyboardEvent) => {
       if (
         event.defaultPrevented ||
@@ -63,8 +71,9 @@ export function usePlayerShortcuts(options: ShortcutOptions) {
         event.ctrlKey ||
         event.metaKey ||
         isKeyboardShortcutTarget(event.target)
-      )
+      ) {
         return;
+      }
       const seekBy = (seconds: number) => {
         const upperBound =
           Number.isFinite(options.duration) && options.duration > 0
@@ -106,10 +115,13 @@ export function useLyrics(
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const positionedSongRef = useRef("");
   // Fetch uncached lyrics only after the panel opens.
+  const scrollAnimationRef = useRef<number | null>(null);
   const cachedLyrics = song.id ? getCachedLyrics(song.id) : undefined;
 
   useEffect(() => {
-    if (!song.id || lyricsSongId === song.id) return;
+    if (!song.id || lyricsSongId === song.id) {
+      return;
+    }
     if (cachedLyrics) {
       setLyrics(cachedLyrics);
       setLyricsSongId(song.id);
@@ -122,8 +134,9 @@ export function useLyrics(
         open,
         songId: song.id,
       })
-    )
+    ) {
       return;
+    }
     let cancelled = false;
     findLyrics(song.id)
       .then((result) => {
@@ -169,26 +182,78 @@ export function useLyrics(
     -1,
   );
 
+  const cancelScrollAnimation = () => {
+    if (scrollAnimationRef.current !== null) {
+      cancelAnimationFrame(scrollAnimationRef.current);
+      scrollAnimationRef.current = null;
+    }
+  };
+
   const scrollActiveLine = (behavior: ScrollBehavior) => {
+    cancelScrollAnimation();
     const activeNode = activeLineRef.current;
     const container = scrollRef.current;
-    if (!activeNode || !container) return false;
-    const target =
-      activeNode.offsetTop -
-      (container.clientHeight - activeNode.offsetHeight) / 2;
-    container.scrollTo({
-      behavior,
-      top: Math.max(0, target),
-    });
+    if (!activeNode || !container) {
+      return false;
+    }
+    const lineBounds = activeNode.getBoundingClientRect();
+    const containerBounds = container.getBoundingClientRect();
+    const target = Math.max(
+      0,
+      Math.min(
+        container.scrollHeight - container.clientHeight,
+        container.scrollTop +
+          lineBounds.top -
+          containerBounds.top -
+          (container.clientHeight - lineBounds.height) / 2,
+      ),
+    );
+    if (
+      behavior === "auto" ||
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    ) {
+      container.scrollTop = target;
+      return true;
+    }
+    const start = container.scrollTop;
+    const startedAt = performance.now();
+    const animate = (now: number) => {
+      const progress = Math.min(1, (now - startedAt) / 160);
+      const eased = 1 - (1 - progress) ** 3;
+      container.scrollTop = start + (target - start) * eased;
+      scrollAnimationRef.current =
+        progress < 1 ? requestAnimationFrame(animate) : null;
+    };
+    scrollAnimationRef.current = requestAnimationFrame(animate);
     return true;
   };
+
+  useEffect(() => {
+    const container = scrollRef.current;
+    if (!open || !container) {
+      return;
+    }
+    container.addEventListener("wheel", cancelScrollAnimation, {
+      passive: true,
+    });
+    container.addEventListener("touchstart", cancelScrollAnimation, {
+      passive: true,
+    });
+    return () => {
+      container.removeEventListener("wheel", cancelScrollAnimation);
+      container.removeEventListener("touchstart", cancelScrollAnimation);
+      cancelScrollAnimation();
+    };
+  }, [open, loading]);
 
   useEffect(() => {
     if (!open) {
       positionedSongRef.current = "";
       return;
     }
-    if (loading || lyricsSongId !== song.id) return;
+    if (loading || lyricsSongId !== song.id) {
+      return;
+    }
     if (positionedSongRef.current !== lyricsSongId) {
       const frame = requestAnimationFrame(() => {
         if (!scrollActiveLine("auto")) {
@@ -198,10 +263,20 @@ export function useLyrics(
       positionedSongRef.current = lyricsSongId;
       return () => cancelAnimationFrame(frame);
     }
-    if (!activeLineRef.current) return;
+    if (!activeLineRef.current) {
+      return;
+    }
     const frame = requestAnimationFrame(() => scrollActiveLine("smooth"));
-    return () => cancelAnimationFrame(frame);
+    return () => {
+      cancelAnimationFrame(frame);
+      cancelScrollAnimation();
+    };
   }, [activeLine, loading, lyricsSongId, open, song.id, timed.length]);
+
+  const retry = useCallback(() => {
+    setLyricsErrorSongId("");
+    setLyricsSongId("");
+  }, []);
 
   return {
     activeLine,
@@ -210,10 +285,7 @@ export function useLyrics(
     failed: lyricsErrorSongId === song.id,
     instrumental: currentLyrics?.instrumental ?? false,
     loading,
-    retry: () => {
-      setLyricsErrorSongId("");
-      setLyricsSongId("");
-    },
+    retry,
     scrollRef,
     timed,
   };
@@ -221,10 +293,15 @@ export function useLyrics(
 
 export function useFullscreenDismiss(open: boolean, close: () => void) {
   useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      return;
+    }
     const previousOverflow = document.body.style.overflow;
     const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") close();
+      if (event.key === "Escape" && !event.defaultPrevented) {
+        event.preventDefault();
+        close();
+      }
     };
     document.body.style.overflow = "hidden";
     window.addEventListener("keydown", closeOnEscape);
@@ -240,7 +317,9 @@ export function useCloseLyricsOnNavigation(close: () => void) {
   const previousPathname = useRef(pathname);
 
   useEffect(() => {
-    if (previousPathname.current !== pathname) close();
+    if (previousPathname.current !== pathname) {
+      close();
+    }
     previousPathname.current = pathname;
   }, [close, pathname]);
 
@@ -254,17 +333,20 @@ export function useCloseLyricsOnNavigation(close: () => void) {
         event.metaKey ||
         event.shiftKey ||
         !(event.target instanceof Element)
-      )
+      ) {
         return;
+      }
       const link = event.target.closest<HTMLAnchorElement>("a[href]");
       if (
         !link ||
         link.hasAttribute("download") ||
         (link.target && link.target !== "_self")
-      )
+      ) {
         return;
-      if (shouldDismissPlayerOverlayForLink(window.location.href, link.href))
+      }
+      if (shouldDismissPlayerOverlayForLink(window.location.href, link.href)) {
         close();
+      }
     };
 
     document.addEventListener("click", closeOnLinkNavigation, true);

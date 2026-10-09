@@ -1,0 +1,69 @@
+diff --git a/android/src/main/cpp/audioapi/android/core/AudioPlayer.cpp b/android/src/main/cpp/audioapi/android/core/AudioPlayer.cpp
+index 76c51aa868b15d98ac74fbd83f73a99116afef88..40726cdd996997d0f2203e6a5e3446ea508a1d1e 100644
+--- a/android/src/main/cpp/audioapi/android/core/AudioPlayer.cpp
++++ b/android/src/main/cpp/audioapi/android/core/AudioPlayer.cpp
+@@ -1,4 +1,5 @@
+ #include <android/log.h>
++#include <android/api-level.h>
+ #include <audioapi/android/core/AudioPlayer.h>
+ #include <audioapi/core/AudioContext.h>
+ #include <audioapi/core/utils/Constants.h>
+@@ -29,15 +30,19 @@ AudioPlayer::AudioPlayer(
+       context_(context) {}
+ 
+ bool AudioPlayer::openAudioStream() {
++  const bool useLegacyBuffering = android_get_device_api_level() <= 28;
+   AudioStreamBuilder builder;
+ 
+-  builder.setSharingMode(SharingMode::Exclusive)
++  builder.setAudioApi(useLegacyBuffering ? AudioApi::OpenSLES : AudioApi::Unspecified)
++      ->setSharingMode(useLegacyBuffering ? SharingMode::Shared : SharingMode::Exclusive)
+       ->setFormat(AudioFormat::Float)
+       ->setFormatConversionAllowed(true)
+-      ->setPerformanceMode(PerformanceMode::LowLatency)
++      ->setPerformanceMode(
++          useLegacyBuffering ? PerformanceMode::None : PerformanceMode::LowLatency)
+       ->setChannelCount(channelCount_)
+       ->setSampleRateConversionQuality(SampleRateConversionQuality::Medium)
+-      ->setFramesPerDataCallback(RENDER_QUANTUM_SIZE)
++      ->setFramesPerDataCallback(
++          useLegacyBuffering ? RENDER_QUANTUM_SIZE * 8 : RENDER_QUANTUM_SIZE)
+       ->setDataCallback(shared_from_this())
+       ->setErrorCallback(shared_from_this())
+       ->setSampleRate(static_cast<int>(sampleRate_));
+diff --git a/lib/typescript/Audio/types.d.ts b/lib/typescript/Audio/types.d.ts
+index 1d5d643c1f6cb2b2e655eaf20952123263cfe199..b96aabaa7acc4c3faa5caed4b0bba70fe555760e 100644
+--- a/lib/typescript/Audio/types.d.ts
++++ b/lib/typescript/Audio/types.d.ts
+@@ -23,6 +23,7 @@ export type AudioTagPlaybackState = 'idle' | 'playing' | 'paused' | 'buffering';
+ export interface AudioTagHandle {
+     play: () => void;
+     pause: () => void;
++    getCurrentTime?: () => number;
+     seekToTime: (seconds: number) => void;
+     setVolume: (volume: number) => void;
+     setMuted: (muted: boolean) => void;
+diff --git a/src/Audio/Audio.tsx b/src/Audio/Audio.tsx
+index c78fea4acfc80379a2ef406d3ef0867fc3cc81f6..b23b38e689e720e0222e001533f34344dc7e0a14 100644
+--- a/src/Audio/Audio.tsx
++++ b/src/Audio/Audio.tsx
+@@ -248,6 +248,7 @@ const Audio = React.memo(
+       () => ({
+         play,
+         pause,
++        getCurrentTime: () => fileSourceRef.current?.getCurrentTime() ?? 0,
+         seekToTime,
+         setVolume: setVolumeState,
+         setMuted: setMutedState,
+diff --git a/src/Audio/types.ts b/src/Audio/types.ts
+index c77d18c30d233da01620363154193c04ec462d75..df9476b06f5c046e5b688633d19c4a7b3a8bcf1f 100644
+--- a/src/Audio/types.ts
++++ b/src/Audio/types.ts
+@@ -32,6 +32,7 @@ export type AudioTagPlaybackState = 'idle' | 'playing' | 'paused' | 'buffering';
+ export interface AudioTagHandle {
+   play: () => void;
+   pause: () => void;
++  getCurrentTime?: () => number;
+   seekToTime: (seconds: number) => void;
+   setVolume: (volume: number) => void;
+   setMuted: (muted: boolean) => void;

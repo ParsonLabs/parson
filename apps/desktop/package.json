@@ -44,7 +44,8 @@
       "electron/preload.cjs",
       "electron/startup.html",
       "electron/startup-error.html",
-      "package.json"
+      "package.json",
+      "electron/updates.cjs"
     ],
     "extraResources": [
       {
@@ -126,6 +127,17 @@
     },
     "portable": {
       "artifactName": "Parson_${version}_${arch}-portable.${ext}"
-    }
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "ParsonLabs",
+        "repo": "Parson",
+        "releaseType": "release"
+      }
+    ]
+  },
+  "dependencies": {
+    "electron-updater": "6.8.9"
   }
 }

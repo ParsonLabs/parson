@@ -2,6 +2,17 @@ import { describe, expect, test } from "bun:test";
 import { displaySongTitle, isExplicitSongTitle } from "./song-presentation";
 
 describe("song title presentation", () => {
+  test("handles long whitespace and malformed qualifiers", () => {
+    expect(displaySongTitle(`Track${" ".repeat(100000)}(feat. Guest)`)).toBe(
+      "Track",
+    );
+    const malformed = "(ft ".repeat(10000);
+    expect(displaySongTitle(malformed)).toBe(malformed.trim());
+    expect(isExplicitSongTitle(`${" ".repeat(100000)}(explicit version)`)).toBe(
+      true,
+    );
+  });
+
   test("omits featured qualifiers from displayed titles", () => {
     expect(displaySongTitle("FIXTURE TRACK (feat. Featured Artist)")).toBe(
       "FIXTURE TRACK",

@@ -28,10 +28,10 @@ jobs:
     outputs:
       version: ${{ steps.version.outputs.version }}
     steps:
-      - uses: actions/checkout@v7
-      - uses: oven-sh/setup-bun@v2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
         with:
-          bun-version: 1.3.14
+          bun-version: 1.4.2
       - name: Validate the tag and synchronized versions
         id: version
         env:
@@ -71,10 +71,16 @@ jobs:
       - container
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    permissions:
+      artifact-metadata: write
+      attestations: write
+      contents: write
+      actions: write
+      id-token: write
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - name: Download release packages
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
         with:
           pattern: parson-*
           path: artifacts
@@ -112,7 +118,7 @@ jobs:
       - name: Generate architecture-specific update feeds
         run: node tools/update-metadata.cjs artifacts "${{ needs.validate.outputs.version }}"
       - name: Attest release package provenance
-        uses: actions/attest@v4
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6
         with:
           subject-path: |
             artifacts/*.AppImage
@@ -131,3 +137,7 @@ jobs:
             --target "$GITHUB_SHA" \
             --title "Parson ${{ needs.validate.outputs.version }}" \
             --generate-notes
+      - name: Validate published release artifacts
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh workflow run published-artifacts.yml --ref master -f "tag=$RELEASE_TAG"

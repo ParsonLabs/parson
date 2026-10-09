@@ -9,7 +9,10 @@
     "start": "turbo start",
     "notices:generate": "node tools/generate-third-party-notices.cjs",
     "format": "prettier --write . --ignore-unknown",
-    "format:check": "prettier --check . --ignore-unknown"
+    "format:check": "prettier --check . --ignore-unknown",
+    "release": "node tools/release.cjs",
+    "version:sync": "node tools/release.cjs --sync",
+    "version:check": "node tools/release.cjs --check"
   },
   "devDependencies": {
     "prettier": "3.9.5",

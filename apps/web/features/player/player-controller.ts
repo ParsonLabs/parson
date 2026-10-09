@@ -146,8 +146,9 @@ export function usePlayerController() {
                 activeSong.current.id,
               ) ||
               !created.items.length
-            )
+            ) {
               return;
+            }
             const items = persistedQueueItems(created.items);
             persistedQueue.current = {
               id: created.id,
@@ -181,7 +182,9 @@ export function usePlayerController() {
   );
   const addToQueue = useCallback(
     (items: QueueInput[]) => {
-      if (!items.length) return;
+      if (!items.length) {
+        return;
+      }
       const additions = manualQueueItems(items);
       const next = [...queueRef.current, ...additions];
       queueRef.current = next;
@@ -194,7 +197,9 @@ export function usePlayerController() {
   );
   const addNextToQueue = useCallback(
     (items: QueueInput[]) => {
-      if (!items.length) return;
+      if (!items.length) {
+        return;
+      }
       const additions = manualQueueItems(items);
       const insertionIndex = Math.min(
         index.current + 1,
@@ -215,7 +220,9 @@ export function usePlayerController() {
   );
   const reorderQueue = useCallback(
     (from: number, to: number) => {
-      if (!Number.isFinite(from) || !Number.isFinite(to)) return;
+      if (!Number.isFinite(from) || !Number.isFinite(to)) {
+        return;
+      }
       const sourceIndex = Math.trunc(from);
       const destinationIndex = Math.trunc(to);
       const items = queueRef.current;
@@ -225,8 +232,9 @@ export function usePlayerController() {
         destinationIndex < 0 ||
         sourceIndex >= items.length ||
         destinationIndex >= items.length
-      )
+      ) {
         return;
+      }
 
       const next = moveQueueItem(items, sourceIndex, destinationIndex);
       const nextActiveIndex = activeQueueIndexAfterMove(
@@ -246,15 +254,20 @@ export function usePlayerController() {
     [session?.sub],
   );
   const persistQueuePosition = useCallback((position: number | null) => {
-    if (position === null || !persistedQueue.current) return;
+    if (position === null || !persistedQueue.current) {
+      return;
+    }
     const queueId = persistedQueue.current.id;
     queuePositionSync.current = queuePositionSync.current
       .then(async () => {
         const active = persistedQueue.current;
-        if (!active || active.id !== queueId) return;
+        if (!active || active.id !== queueId) {
+          return;
+        }
         const saved = await syncQueuePosition(active, position);
-        if (persistedQueue.current?.id === saved.id)
+        if (persistedQueue.current?.id === saved.id) {
           persistedQueue.current = saved;
+        }
       })
       .catch(() => {});
   }, []);
@@ -262,7 +275,9 @@ export function usePlayerController() {
   const playItem = useCallback(
     (nextIndex: number) => {
       const item = queueRef.current[nextIndex];
-      if (!item) return false;
+      if (!item) {
+        return false;
+      }
       index.current = nextIndex;
       currentOrigin.current = item.origin;
       storeQueueSnapshot(session?.sub, queueRef.current, nextIndex);
@@ -312,8 +327,12 @@ export function usePlayerController() {
     ) {
       sendPlaybackEvent("early_skip", element.currentTime, element.duration);
     }
-    if (queueRef.current.length && index.current + 1 < queueRef.current.length)
+    if (
+      queueRef.current.length &&
+      index.current + 1 < queueRef.current.length
+    ) {
       playItem(index.current + 1);
+    }
   }, [playItem, sendPlaybackEvent]);
   const playPreviousSong = useCallback(() => {
     const element = audio.current;
@@ -321,13 +340,18 @@ export function usePlayerController() {
       currentOrigin.current === "generated" &&
       element &&
       telemetry.current.listenedSeconds < Math.min(30, element.duration * 0.3)
-    )
+    ) {
       sendPlaybackEvent("early_skip", element.currentTime, element.duration);
-    if (queueRef.current.length) playItem(Math.max(index.current - 1, 0));
+    }
+    if (queueRef.current.length) {
+      playItem(Math.max(index.current - 1, 0));
+    }
   }, [playItem, sendPlaybackEvent]);
   const togglePlayPause = useCallback(() => {
     const element = audio.current;
-    if (!element) return;
+    if (!element) {
+      return;
+    }
     if (element.paused) {
       setIsPlaying(true);
       playAudioSource();
@@ -340,7 +364,9 @@ export function usePlayerController() {
   const handleTimeChange = useCallback((value: number | string) => {
     const element = audio.current;
     const bounded = setMediaPosition(element, value, element?.duration);
-    if (bounded === null) return;
+    if (bounded === null) {
+      return;
+    }
     setCurrentTime(bounded);
   }, []);
   const toggleLoop = useCallback(() => {
@@ -391,10 +417,13 @@ export function usePlayerController() {
             ) ||
             radioRequest.current !== request ||
             !song.id
-          )
+          ) {
             return;
+          }
           const items = persistedQueueItems(nextQueue.items);
-          if (!items.length) return;
+          if (!items.length) {
+            return;
+          }
           persistedQueue.current = {
             id: nextQueue.id,
             revision: nextQueue.revision,
@@ -463,7 +492,12 @@ export function usePlayerController() {
     userId: session?.sub,
   });
 
-  const value = useMemo<Player>(
+  const getPlaybackPosition = useCallback(
+    () => audio.current?.currentTime ?? 0,
+    [],
+  );
+
+  const value = useMemo<Omit<Player, "currentTime">>(
     () => ({
       song,
       album,
@@ -472,7 +506,6 @@ export function usePlayerController() {
       queue,
       isPlaying,
       error,
-      currentTime,
       duration,
       volume,
       muted,
@@ -485,7 +518,9 @@ export function usePlayerController() {
       addNextToQueue,
       addToQueue,
       setCurrentSongIndex: (next) => {
-        if (!Number.isFinite(next)) return;
+        if (!Number.isFinite(next)) {
+          return;
+        }
         const bounded = Math.min(
           Math.max(Math.trunc(next), 0),
           Math.max(queueRef.current.length - 1, 0),
@@ -507,6 +542,7 @@ export function usePlayerController() {
       },
       reorderQueue,
       handleTimeChange,
+      getPlaybackPosition,
       setAudioVolume,
       toggleMute,
       toggleSlowedReverb,
@@ -516,9 +552,9 @@ export function usePlayerController() {
     [
       album,
       artist,
-      currentTime,
       duration,
       handleTimeChange,
+      getPlaybackPosition,
       imageSrc,
       isPlaying,
       error,
@@ -548,5 +584,5 @@ export function usePlayerController() {
       volume,
     ],
   );
-  return value;
+  return { player: value, currentTime };
 }

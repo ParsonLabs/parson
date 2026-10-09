@@ -7,7 +7,6 @@ Expo client for Parson servers on the local network.
 ```bash
 bun install
 bun run start
-bun run android
 bun run ios
 bun run web
 bun run lint

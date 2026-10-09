@@ -1,6 +1,6 @@
 {
   "name": "parson-music-desktop",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "private": true,
   "license": "GPL-3.0-only",
   "description": "Parson desktop client for Linux, macOS, and Windows",
@@ -16,7 +16,7 @@
     "desktop:test": "node --test electron/*.test.cjs"
   },
   "devDependencies": {
-    "electron": "43.1.1",
+    "electron": "44.7.0",
     "electron-builder": "26.15.3"
   },
   "build": {
@@ -108,7 +108,7 @@
       "binaries": [
         "Contents/Resources/parson-music-server"
       ],
-      "minimumSystemVersion": "12.0",
+      "minimumSystemVersion": "13.0",
       "artifactName": "Parson_${version}_${arch}.${ext}",
       "extendInfo": {
         "NSLocalNetworkUsageDescription": "Parson uses your local network to serve your music library to your devices.",

@@ -2,8 +2,8 @@ name: Publish Stable Release
 
 on:
   push:
-    branches:
-      - master
+    tags:
+      - "v*.*.*"
 
 permissions:
   artifact-metadata: write
@@ -14,12 +14,11 @@ permissions:
   packages: write
 
 concurrency:
-  group: publish-stable-v1.0.0
+  group: publish-stable-${{ github.ref }}
   cancel-in-progress: false
 
 env:
-  RELEASE_VERSION: 1.0.0
-  RELEASE_TAG: v1.0.0
+  RELEASE_TAG: ${{ github.ref_name }}
 
 jobs:
   validate:
@@ -33,48 +32,18 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.3.14
-      - name: Match version 1.0.0 to every public package
+      - name: Validate the tag and synchronized versions
         id: version
-        shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          if [[ "$GITHUB_REF_NAME" != "master" ]]; then
-            echo "Stable releases must run from the master branch." >&2
-            exit 1
-          fi
+          version="${RELEASE_TAG#v}"
+          node tools/release.cjs --check "$version"
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-            echo "Release $RELEASE_TAG already exists; v1.0.0 is immutable." >&2
+            echo "Release $RELEASE_TAG already exists and is immutable." >&2
             exit 1
           fi
-          node <<'NODE'
-          const fs = require("node:fs");
-          const expected = process.env.RELEASE_VERSION;
-          const packages = [
-            ["package.json", (value) => value.version],
-            ["apps/desktop/package.json", (value) => value.version],
-            ["apps/mobile/package.json", (value) => value.version],
-            ["apps/mobile/app.json", (value) => value.expo.version],
-            ["apps/site/package.json", (value) => value.version],
-            ["apps/web/package.json", (value) => value.version],
-            ["packages/parson-music-sdk/package.json", (value) => value.version],
-            ["packages/typescript-config/package.json", (value) => value.version],
-          ];
-          for (const [path, readVersion] of packages) {
-            const actual = readVersion(JSON.parse(fs.readFileSync(path, "utf8")));
-            if (actual !== expected) {
-              throw new Error(`${path}: expected ${expected}, found ${actual}`);
-            }
-          }
-          NODE
-          while IFS= read -r manifest; do
-            actual="$(sed -n 's/^version = "\([^"]*\)"/\1/p' "$manifest" | head -1)"
-            if [[ "$actual" != "$RELEASE_VERSION" ]]; then
-              echo "$manifest: expected $RELEASE_VERSION, found ${actual:-no package version}" >&2
-              exit 1
-            fi
-          done < <(find crates -mindepth 2 -maxdepth 2 -name Cargo.toml -print | sort)
-          echo "version=$RELEASE_VERSION" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
 
   build:
     name: Build release packages
@@ -82,6 +51,7 @@ jobs:
     uses: ./.github/workflows/test.yml
     with:
       release: true
+    secrets: inherit
 
   container:
     name: Publish release container
@@ -90,7 +60,7 @@ jobs:
       - build
     uses: ./.github/workflows/container-image.yml
     with:
-      version: 1.0.0
+      version: ${{ needs.validate.outputs.version }}
       publish_latest: true
 
   release:
@@ -137,7 +107,10 @@ jobs:
           require_count 2 "Parson_${VERSION}_*-portable.exe"
           require_count 2 "Parson_${VERSION}_*.dmg"
           require_count 2 "Parson_${VERSION}_*.zip"
-          require_count 12 "*"
+          require_count 1 "ParsonMusicServer.exe"
+          require_count 1 "windows-server-update.json"
+      - name: Generate architecture-specific update feeds
+        run: node tools/update-metadata.cjs artifacts "${{ needs.validate.outputs.version }}"
       - name: Attest release package provenance
         uses: actions/attest@v4
         with:
@@ -147,6 +120,8 @@ jobs:
             artifacts/*.dmg
             artifacts/*.exe
             artifacts/*.zip
+            artifacts/*.json
+            artifacts/*.yml
       - name: Publish stable release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

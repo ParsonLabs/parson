@@ -4,6 +4,7 @@ import {
   ContextMenu,
   ContextMenuContent,
   ContextMenuItem,
+  ContextMenuSeparator,
   ContextMenuSub,
   ContextMenuSubContent,
   ContextMenuSubTrigger,
@@ -126,12 +127,12 @@ export default function SongMenu({
     <>
       <ContextMenu onOpenChange={setOpen}>
         <ContextMenuTrigger asChild>{children}</ContextMenuTrigger>
-        <ContextMenuContent className="w-56">
+        <ContextMenuContent className="w-60">
           <ContextMenuItem onSelect={play}>
             {context === "player" && player.isPlaying ? (
-              <Pause className="h-4 w-4 fill-current" />
+              <Pause className="h-4 w-4" />
             ) : (
-              <Play className="h-4 w-4 fill-current" />
+              <Play className="h-4 w-4" />
             )}
             {context === "player" && player.isPlaying ? "Pause" : "Play"}
           </ContextMenuItem>
@@ -147,22 +148,7 @@ export default function SongMenu({
               Add to queue
             </ContextMenuItem>
           )}
-          {entityLinks.album && (
-            <ContextMenuItem asChild>
-              <Link href={`/album?id=${album_id}`}>
-                <Disc3 className="h-4 w-4" />
-                View album
-              </Link>
-            </ContextMenuItem>
-          )}
-          {entityLinks.artist && (
-            <ContextMenuItem asChild>
-              <Link href={`/artist?id=${artist_id}`}>
-                <UserRound className="h-4 w-4" />
-                View artist
-              </Link>
-            </ContextMenuItem>
-          )}
+          {context !== "artist" && <ContextMenuSeparator />}
           {context !== "artist" && (
             <ContextMenuSub>
               <ContextMenuSubTrigger>
@@ -197,6 +183,9 @@ export default function SongMenu({
                     <span className="truncate">{playlist.name}</span>
                   </ContextMenuItem>
                 ))}
+                {playlists.isSuccess && Boolean(playlists.data?.length) && (
+                  <ContextMenuSeparator />
+                )}
                 {playlists.isSuccess && (
                   <ContextMenuItem onSelect={() => setCreateOpen(true)}>
                     <Plus className="h-4 w-4" />
@@ -206,6 +195,26 @@ export default function SongMenu({
               </ContextMenuSubContent>
             </ContextMenuSub>
           )}
+          {(entityLinks.album || entityLinks.artist) && (
+            <ContextMenuSeparator />
+          )}
+          {entityLinks.album && (
+            <ContextMenuItem asChild>
+              <Link href={`/album?id=${album_id}`}>
+                <Disc3 className="h-4 w-4" />
+                View album
+              </Link>
+            </ContextMenuItem>
+          )}
+          {entityLinks.artist && (
+            <ContextMenuItem asChild>
+              <Link href={`/artist?id=${artist_id}`}>
+                <UserRound className="h-4 w-4" />
+                View artist
+              </Link>
+            </ContextMenuItem>
+          )}
+          {onRemoveFromPlaylist && <ContextMenuSeparator />}
           {onRemoveFromPlaylist && (
             <ContextMenuItem
               data-variant="destructive"

@@ -27,8 +27,8 @@ const ContextMenuSubTrigger = React.forwardRef<
   <ContextMenuPrimitive.SubTrigger
     ref={ref}
     className={cn(
-      "flex cursor-default select-none items-center gap-2 whitespace-nowrap rounded-sm px-2 py-1.5 text-sm outline-none focus:bg-accent focus:text-accent-foreground data-[state=open]:bg-accent data-[state=open]:text-accent-foreground [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
-      inset && "pl-8",
+      "flex cursor-pointer select-none items-center min-h-9 gap-2.5 whitespace-nowrap rounded-lg px-2.5 py-2 text-[13px] leading-5 outline-none bg-transparent transition-none focus:bg-[#212121] focus:text-white data-highlighted:bg-[#212121] data-highlighted:text-white data-[state=open]:bg-[#212121] data-[state=open]:text-white [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0 [&_svg]:text-zinc-500 focus:[&_svg]:text-zinc-300",
+      inset && "pl-9",
       className,
     )}
     {...props}
@@ -42,16 +42,32 @@ ContextMenuSubTrigger.displayName = ContextMenuPrimitive.SubTrigger.displayName;
 const ContextMenuSubContent = React.forwardRef<
   React.ElementRef<typeof ContextMenuPrimitive.SubContent>,
   React.ComponentPropsWithoutRef<typeof ContextMenuPrimitive.SubContent>
->(({ className, ...props }, ref) => (
-  <ContextMenuPrimitive.SubContent
-    ref={ref}
-    className={cn(
-      "z-50 min-w-[8rem] overflow-hidden rounded-md border bg-popover p-1 text-popover-foreground shadow-md data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 origin-[--radix-context-menu-content-transform-origin]",
+>(
+  (
+    {
       className,
-    )}
-    {...props}
-  />
-));
+      sideOffset = 12,
+      alignOffset = -6,
+      collisionPadding = 8,
+      ...props
+    },
+    ref,
+  ) => (
+    <ContextMenuPrimitive.Portal>
+      <ContextMenuPrimitive.SubContent
+        ref={ref}
+        sideOffset={sideOffset}
+        alignOffset={alignOffset}
+        collisionPadding={collisionPadding}
+        className={cn(
+          "z-100 min-w-52 max-h-(--radix-context-menu-content-available-height) overflow-y-auto overflow-x-hidden overscroll-contain rounded-[14px] border border-white/10 bg-[#101010] p-1.5 text-zinc-300 shadow-[0_12px_40px_rgba(0,0,0,0.55)] data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 origin-[--radix-context-menu-content-transform-origin]",
+          className,
+        )}
+        {...props}
+      />
+    </ContextMenuPrimitive.Portal>
+  ),
+);
 ContextMenuSubContent.displayName = ContextMenuPrimitive.SubContent.displayName;
 
 const ContextMenuContent = React.forwardRef<
@@ -62,7 +78,7 @@ const ContextMenuContent = React.forwardRef<
     <ContextMenuPrimitive.Content
       ref={ref}
       className={cn(
-        "z-50 max-h-[var(--radix-context-menu-content-available-height)] min-w-[8rem] overflow-y-auto overflow-x-hidden rounded-md border bg-popover p-1 text-popover-foreground shadow-md data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 origin-[--radix-context-menu-content-transform-origin]",
+        "z-100 max-h-(--radix-context-menu-content-available-height) min-w-52 overflow-y-auto overflow-x-hidden overscroll-contain rounded-[14px] border border-white/10 bg-[#101010] p-1.5 text-zinc-300 shadow-[0_12px_40px_rgba(0,0,0,0.55)] data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 origin-[--radix-context-menu-content-transform-origin]",
         className,
       )}
       {...props}
@@ -80,8 +96,8 @@ const ContextMenuItem = React.forwardRef<
   <ContextMenuPrimitive.Item
     ref={ref}
     className={cn(
-      "relative flex cursor-default select-none items-center gap-2 whitespace-nowrap rounded-sm px-2 py-1.5 text-sm outline-none transition-colors focus:bg-accent focus:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50 data-[variant=destructive]:text-destructive data-[variant=destructive]:focus:bg-destructive/10 data-[variant=destructive]:focus:text-destructive [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
-      inset && "pl-8",
+      "relative flex cursor-pointer select-none items-center min-h-9 gap-2.5 whitespace-nowrap rounded-lg px-2.5 py-2 text-[13px] leading-5 outline-none bg-transparent transition-none focus:bg-[#212121] focus:text-white data-highlighted:bg-[#212121] data-highlighted:text-white data-disabled:pointer-events-none data-disabled:opacity-50 data-[variant=destructive]:text-destructive data-[variant=destructive]:focus:bg-destructive/10 data-[variant=destructive]:focus:text-destructive [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0 [&_svg]:text-zinc-500 focus:[&_svg]:text-zinc-300",
+      inset && "pl-9",
       className,
     )}
     {...props}
@@ -96,7 +112,7 @@ const ContextMenuCheckboxItem = React.forwardRef<
   <ContextMenuPrimitive.CheckboxItem
     ref={ref}
     className={cn(
-      "relative flex cursor-default select-none items-center rounded-sm py-1.5 pl-8 pr-2 text-sm outline-none transition-colors focus:bg-accent focus:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
+      "relative flex cursor-pointer select-none items-center min-h-9 rounded-lg py-2 pl-8 pr-2.5 text-[13px] leading-5 outline-none bg-transparent transition-none focus:bg-[#212121] focus:text-white data-highlighted:bg-[#212121] data-highlighted:text-white data-disabled:pointer-events-none data-disabled:opacity-50",
       className,
     )}
     checked={checked}
@@ -120,7 +136,7 @@ const ContextMenuRadioItem = React.forwardRef<
   <ContextMenuPrimitive.RadioItem
     ref={ref}
     className={cn(
-      "relative flex cursor-default select-none items-center rounded-sm py-1.5 pl-8 pr-2 text-sm outline-none transition-colors focus:bg-accent focus:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
+      "relative flex cursor-pointer select-none items-center min-h-9 rounded-lg py-2 pl-8 pr-2.5 text-[13px] leading-5 outline-none bg-transparent transition-none focus:bg-[#212121] focus:text-white data-highlighted:bg-[#212121] data-highlighted:text-white data-disabled:pointer-events-none data-disabled:opacity-50",
       className,
     )}
     {...props}
@@ -144,8 +160,8 @@ const ContextMenuLabel = React.forwardRef<
   <ContextMenuPrimitive.Label
     ref={ref}
     className={cn(
-      "px-2 py-1.5 text-sm font-semibold",
-      inset && "pl-8",
+      "px-2.5 py-2 text-[11px] font-medium text-zinc-500",
+      inset && "pl-9",
       className,
     )}
     {...props}
@@ -159,7 +175,7 @@ const ContextMenuSeparator = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <ContextMenuPrimitive.Separator
     ref={ref}
-    className={cn("-mx-1 my-1 h-px bg-muted", className)}
+    className={cn("mx-2 my-1.5 h-px bg-white/[0.07]", className)}
     {...props}
   />
 ));

@@ -3,6 +3,7 @@ import { createMDX } from "fumadocs-mdx/next";
 /** @type {import('next').NextConfig} */
 const config = {
   reactStrictMode: true,
+  devIndicators: false,
   webpack(webpackConfig) {
     // Webpack cannot statically trace Fumadocs' generated file-URL imports.
     webpackConfig.infrastructureLogging = { level: "error" };

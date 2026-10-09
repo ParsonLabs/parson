@@ -1,11 +1,12 @@
 const creditSeparator =
-  /\s+(?:&|featuring|ft\.?|with|feat\.?|and|presents|vs\.?|x)\s+|,\s*|;/i;
+  / (?:&|featuring|ft\.?|with|feat\.?|and|presents|vs\.?|x) |, *|;/i;
 
 const normalizeArtist = (value: string) =>
   value.normalize("NFKC").trim().replace(/\s+/g, " ").toLocaleLowerCase();
 
 const splitCredit = (value: string) =>
   value
+    .replace(/\s+/g, " ")
     .split(creditSeparator)
     .map((artist) => artist.trim())
     .filter(Boolean);

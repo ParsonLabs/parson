@@ -134,7 +134,7 @@ pub struct LibraryCache {
 }
 
 // Version 7 stores accent-folded identities and primary-track appearance relationships.
-const CATALOG_CACHE_SCHEMA_VERSION: u32 = 7;
+const CATALOG_CACHE_SCHEMA_VERSION: u32 = 8;
 const MAX_DECOMPRESSED_CATALOG_CACHE_BYTES: u64 = 512 * 1024 * 1024;
 static CACHE_PERSIST_REQUEST: AtomicU64 = AtomicU64::new(0);
 static CACHE_PERSIST_LOCK: OnceLock<StdMutex<()>> = OnceLock::new();
@@ -781,6 +781,26 @@ mod tests {
         assert_eq!(fallback.songs_flat, ["first"]);
         assert!(first_path.exists());
         assert_eq!(super::catalog_cache_candidates(&directory).len(), 2);
+        std::fs::remove_dir_all(directory).expect("catalog cache cleanup");
+    }
+
+    #[test]
+    fn catalog_cache_rejects_previous_search_index_version() {
+        let directory = std::env::temp_dir().join(format!(
+            "parson-catalog-version-test-{}",
+            uuid::Uuid::new_v4()
+        ));
+        let path = persist_cache_to(&directory, &empty_cache()).expect("current cache");
+        let payload = zstd::stream::decode_all(std::fs::File::open(&path).unwrap()).unwrap();
+        let mut persisted: serde_json::Value = serde_json::from_slice(&payload).unwrap();
+        persisted["schema_version"] = (super::CATALOG_CACHE_SCHEMA_VERSION - 1).into();
+        let outdated = serde_json::to_vec(&persisted).unwrap();
+        std::fs::write(
+            &path,
+            zstd::stream::encode_all(outdated.as_slice(), 1).unwrap(),
+        )
+        .unwrap();
+        assert!(load_persisted_cache_from(&directory).is_err());
         std::fs::remove_dir_all(directory).expect("catalog cache cleanup");
     }
 

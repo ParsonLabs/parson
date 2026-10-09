@@ -86,7 +86,9 @@ export default function SettingsScreen() {
   });
   const busyRef = useRef(false);
   const beginOperation = () => {
-    if (busyRef.current) return false;
+    if (busyRef.current) {
+      return false;
+    }
     busyRef.current = true;
     setBusy(true);
     return true;
@@ -97,11 +99,16 @@ export default function SettingsScreen() {
   };
   const leaveAuthenticatedApp = async (action: () => Promise<void>) => {
     await action();
-    if (Platform.OS === "web") globalThis.location.replace("/");
-    else router.replace("/");
+    if (Platform.OS === "web") {
+      globalThis.location.replace("/");
+    } else {
+      router.replace("/");
+    }
   };
   const savePassword = async () => {
-    if (!beginOperation()) return;
+    if (!beginOperation()) {
+      return;
+    }
     setMessage("Updating password…");
     try {
       await changePassword(currentPassword, newPassword);
@@ -121,8 +128,9 @@ export default function SettingsScreen() {
       !validUsername(requestedUsername) ||
       !usernamePassword ||
       !beginOperation()
-    )
+    ) {
       return;
+    }
     setMessage("Updating username…");
     try {
       const changed = await session.changeUsername(
@@ -142,7 +150,9 @@ export default function SettingsScreen() {
     }
   };
   const saveQuality = async (bitrate: number) => {
-    if (!beginOperation()) return;
+    if (!beginOperation()) {
+      return;
+    }
     const previous = quality;
     setQuality(bitrate);
     setMessage("Updating quality…");
@@ -158,7 +168,9 @@ export default function SettingsScreen() {
     }
   };
   const indexFolder = async () => {
-    if (!libraryPath.trim() || !beginOperation()) return;
+    if (!libraryPath.trim() || !beginOperation()) {
+      return;
+    }
     setMessage("Indexing…");
     try {
       const result = await indexLibrary(libraryPath.trim());
@@ -179,7 +191,9 @@ export default function SettingsScreen() {
         text: "Remove",
         style: "destructive",
         onPress: () => {
-          if (!beginOperation()) return;
+          if (!beginOperation()) {
+            return;
+          }
           setMessage("Removing folder…");
           void removeLibraryRoot(root.path)
             .then(() => {
@@ -193,7 +207,9 @@ export default function SettingsScreen() {
     ]);
   };
   const refreshLibrary = async () => {
-    if (!beginOperation()) return;
+    if (!beginOperation()) {
+      return;
+    }
     setMessage("Refreshing…");
     try {
       const result = await refreshCurrentLibrary();
@@ -211,8 +227,9 @@ export default function SettingsScreen() {
       newUsername.trim().length < 2 ||
       !validPasswordLength(newUserPassword) ||
       !beginOperation()
-    )
+    ) {
       return;
+    }
     setMessage("Creating…");
     try {
       const result = await register({
@@ -242,7 +259,9 @@ export default function SettingsScreen() {
         text: "Delete",
         style: "destructive",
         onPress: () => {
-          if (!beginOperation()) return;
+          if (!beginOperation()) {
+            return;
+          }
           setMessage("Deleting account…");
           void deleteUser(user.id)
             .then(() => {

@@ -18,6 +18,10 @@ import { useEffect, useState, type ReactNode } from "react";
 import AlbumMenu from "@/features/library/album-menu";
 import ArtistMenu from "@/features/library/artist-menu";
 import SongMenu from "@/features/library/song-menu";
+import { SongTitle, ExplicitBadge } from "@/features/library/song-title";
+import { isExplicitSongTitle } from "@/features/library/song-presentation";
+import { ArtistCreditLinks } from "@/features/library/artist-credit-links";
+import { trackArtistCreditParts } from "@/features/library/track-artist-credit";
 import { toast } from "sonner";
 import {
   searchResultIsPlayable,
@@ -42,7 +46,9 @@ function artworkFor(item: CombinedItem) {
 
 function SearchArtwork({ item }: { item: CombinedItem }) {
   const artwork = artworkFor(item);
-  if (item.item_type === "artist" && !artwork) return null;
+  if (item.item_type === "artist" && !artwork) {
+    return null;
+  }
 
   const artworkContent = (
     <>
@@ -150,9 +156,13 @@ export default function SearchResults() {
   }, [search.isError, search.refetch]);
 
   const play = async (item: CombinedItem) => {
-    if (!isPlayable(item)) return;
+    if (!isPlayable(item)) {
+      return;
+    }
     const key = `${item.item_type}-${item.id}`;
-    if (playingKey === key) return;
+    if (playingKey === key) {
+      return;
+    }
     setPlayingKey(key);
     try {
       if (item.item_type === "album") {
@@ -194,7 +204,7 @@ export default function SearchResults() {
   };
 
   return (
-    <section className="mx-auto w-full max-w-[760px] space-y-7 px-5 py-9 pb-36 sm:px-7">
+    <section className="mx-auto w-full max-w-190 space-y-7 px-5 py-9 pb-36 sm:px-7">
       {searchTerm && (
         <h1 className="text-2xl font-semibold text-white">
           Results for &quot;{query}&quot;
@@ -229,17 +239,34 @@ export default function SearchResults() {
         {uniqueResults.map((item) => {
           const playable = isPlayable(item);
           const subtitle = searchResultSubtitle(item);
+          const artistCredits =
+            item.item_type === "song"
+              ? (trackArtistCreditParts({
+                  albumArtist: item.artist_object?.name ?? "",
+                  albumArtistId: item.artist_object?.id,
+                  albumType: item.album_object?.primary_type ?? "",
+                  trackArtist:
+                    item.song_object?.artist ?? item.artist_object?.name ?? "",
+                  contributingArtists:
+                    item.song_object?.contributing_artists ?? [],
+                }) ?? [
+                  { id: item.artist_object?.id, name: subtitle.artist ?? "" },
+                ])
+              : null;
           const playsOnRowClick = item.item_type === "song";
           const opensOnRowClick = item.item_type === "album";
           const key = `${item.item_type}-${item.id}`;
           const activateRow = () => {
-            if (playsOnRowClick) void play(item);
-            else if (opensOnRowClick) router.push(hrefFor(item));
+            if (playsOnRowClick) {
+              void play(item);
+            } else if (opensOnRowClick) {
+              router.push(hrefFor(item));
+            }
           };
           return (
             <SearchResultMenu item={item} key={key}>
               <article
-                className={`group relative flex items-center gap-4 border-b border-white/[0.07] px-2 py-3 transition-colors hover:bg-white/[0.025]`}
+                className={`group relative flex items-center gap-4 rounded-lg border-b border-white/[0.07] px-2 py-3 transition-colors hover:bg-white/2.5`}
               >
                 {(playsOnRowClick || opensOnRowClick) && (
                   <button
@@ -248,18 +275,22 @@ export default function SearchResults() {
                         ? `Play ${item.name}`
                         : `View ${item.name}`
                     }
-                    className="absolute inset-0 z-0 cursor-pointer rounded-sm focus-visible:bg-white/[0.04] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/20"
+                    className="absolute inset-0 z-0 cursor-pointer rounded-[inherit] focus-visible:bg-white/4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/20"
                     onClick={activateRow}
                     type="button"
                   />
                 )}
                 <SearchArtwork item={item} />
                 <div
-                  className={`relative z-[1] min-w-0 flex-1 ${playable ? "pointer-events-none" : ""}`}
+                  className={`relative z-1 min-w-0 flex-1 ${playable ? "pointer-events-none" : ""}`}
                 >
                   {playable ? (
                     <span className="block truncate text-[15px] font-medium text-zinc-100">
-                      {item.name}
+                      {item.item_type === "song" ? (
+                        <SongTitle title={item.name} />
+                      ) : (
+                        item.name
+                      )}
                     </span>
                   ) : (
                     <Link
@@ -272,9 +303,13 @@ export default function SearchResults() {
                   <p className="mt-0.5 truncate text-sm text-zinc-500">
                     {subtitle.label}
                     {subtitle.label && subtitle.artist && " · "}
+                    {item.item_type === "song" &&
+                      isExplicitSongTitle(item.name) && <ExplicitBadge />}
                     {subtitle.artist && (
                       <>
-                        {playable ? (
+                        {artistCredits ? (
+                          <ArtistCreditLinks credits={artistCredits} />
+                        ) : playable ? (
                           <span>{subtitle.artist}</span>
                         ) : (
                           <Link

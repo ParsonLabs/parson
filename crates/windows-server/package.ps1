@@ -1,12 +1,22 @@
 param(
     [ValidatePattern('^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$')]
-    [string]$Version = "1.0.0",
+    [string]$Version = "",
     [string]$OutputDirectory = "artifacts\windows-server",
     [switch]$SkipWebBuild
 )
 
 $ErrorActionPreference = "Stop"
 $workspace = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..\..")).Path
+
+$packagePath = Join-Path $workspace "package.json"
+$packageVersion = (Get-Content -LiteralPath $packagePath -Raw | ConvertFrom-Json).version
+if (-not $Version) {
+    $Version = $packageVersion
+}
+
+if ($Version -ne $packageVersion) {
+    throw "The requested version must match the root package.json version."
+}
 $output = Join-Path $workspace $OutputDirectory
 $staging = Join-Path $workspace "target\windows-server-package"
 

@@ -41,11 +41,14 @@ export default function UserForm() {
     Awaited<ReturnType<typeof getUsers>>[number] | null
   >(null);
   const requestInFlight = useRef(false);
+  const addUserButton = useRef<HTMLButtonElement>(null);
   const users = useQuery({ queryKey: ["settings-users"], queryFn: getUsers });
 
   const createUser = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (requestInFlight.current) return;
+    if (requestInFlight.current) {
+      return;
+    }
     if (!validPasswordLength(password)) {
       toast("Password must contain between 8 and 256 characters.");
       return;
@@ -79,12 +82,8 @@ export default function UserForm() {
           <h2 className="text-base font-semibold text-white">
             People with access
           </h2>
-          <p className="mt-1 text-sm text-zinc-500">
-            Administrators manage Parson. Listeners can play music and manage
-            their own collection.
-          </p>
         </div>
-        <Button onClick={() => setOpen(true)}>
+        <Button ref={addUserButton} onClick={() => setOpen(true)}>
           <Plus className="h-4 w-4" /> Add user
         </Button>
       </div>
@@ -100,10 +99,10 @@ export default function UserForm() {
         ) : users.data?.length ? (
           users.data.map((user) => (
             <div
-              className="flex items-center gap-3 border-b border-white/[0.08] px-4 py-4 last:border-0"
+              className="flex items-center gap-3 border-b border-white/8 px-4 py-4 last:border-0"
               key={user.id}
             >
-              <span className="grid h-9 w-9 place-items-center rounded-full bg-white/[0.06] text-zinc-400">
+              <span className="grid h-9 w-9 place-items-center rounded-full bg-white/6 text-zinc-400">
                 <UserRound className="h-4 w-4" />
               </span>
               <div className="min-w-0 flex-1">
@@ -138,12 +137,15 @@ export default function UserForm() {
       </div>
 
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent>
+        <DialogContent
+          aria-describedby={undefined}
+          onCloseAutoFocus={(event) => {
+            event.preventDefault();
+            addUserButton.current?.focus();
+          }}
+        >
           <DialogHeader>
             <DialogTitle>Add user</DialogTitle>
-            <DialogDescription>
-              Create a separate account for someone who uses this library.
-            </DialogDescription>
           </DialogHeader>
           <form className="grid gap-4" onSubmit={createUser}>
             <label className="grid gap-2 text-sm text-zinc-300">
@@ -170,13 +172,13 @@ export default function UserForm() {
                 value={password}
               />
             </label>
-            <label className="grid gap-2 text-sm text-zinc-300">
-              Role
+            <div className="grid gap-2 text-sm text-zinc-300">
+              <label htmlFor="new-user-role">Role</label>
               <Select
                 onValueChange={(value) => setRole(value as "admin" | "user")}
                 value={role}
               >
-                <SelectTrigger>
+                <SelectTrigger id="new-user-role">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -184,7 +186,7 @@ export default function UserForm() {
                   <SelectItem value="admin">Administrator</SelectItem>
                 </SelectContent>
               </Select>
-            </label>
+            </div>
             <DialogFooter className="mt-2 gap-2">
               <Button
                 onClick={() => setOpen(false)}
@@ -204,7 +206,9 @@ export default function UserForm() {
       <Dialog
         open={Boolean(deleteTarget)}
         onOpenChange={(nextOpen) => {
-          if (!nextOpen && !deleting) setDeleteTarget(null);
+          if (!nextOpen && !deleting) {
+            setDeleteTarget(null);
+          }
         }}
       >
         <DialogContent>
@@ -212,7 +216,7 @@ export default function UserForm() {
             <DialogTitle>Delete {deleteTarget?.username}?</DialogTitle>
             <DialogDescription>
               Parson creates a safety backup first, then permanently removes
-              this account, its listening data, favorites, and owned playlists.
+              this account, its listening data, favourites, and owned playlists.
               Music files are not changed.
             </DialogDescription>
           </DialogHeader>
@@ -227,7 +231,9 @@ export default function UserForm() {
             <Button
               disabled={deleting || !deleteTarget}
               onClick={() => {
-                if (!deleteTarget) return;
+                if (!deleteTarget) {
+                  return;
+                }
                 const target = deleteTarget;
                 setDeleting(true);
                 void deleteUser(target.id)

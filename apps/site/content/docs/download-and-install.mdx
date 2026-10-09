@@ -7,16 +7,7 @@ description: Downloads, requirements, updates, removal, and application data.
 
 Choose the file for your platform and architecture.
 
-| Platform             | Architecture  | Download                                                                                                                   |
-| -------------------- | ------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| Windows installer    | x64           | [Parson_1.0.0_x64-setup.exe](https://github.com/ParsonLabs/Parson/releases/download/v1.0.0/Parson_1.0.0_x64-setup.exe)     |
-| Windows installer    | ARM64         | [Parson_1.0.0_arm64-setup.exe](https://github.com/ParsonLabs/Parson/releases/download/v1.0.0/Parson_1.0.0_arm64-setup.exe) |
-| Linux AppImage       | x64           | [Parson_1.0.0_x86_64.AppImage](https://github.com/ParsonLabs/Parson/releases/download/v1.0.0/Parson_1.0.0_x86_64.AppImage) |
-| Linux AppImage       | ARM64         | [Parson_1.0.0_arm64.AppImage](https://github.com/ParsonLabs/Parson/releases/download/v1.0.0/Parson_1.0.0_arm64.AppImage)   |
-| Linux Debian package | x64           | [Parson_1.0.0_amd64.deb](https://github.com/ParsonLabs/Parson/releases/download/v1.0.0/Parson_1.0.0_amd64.deb)             |
-| Linux Debian package | ARM64         | [Parson_1.0.0_arm64.deb](https://github.com/ParsonLabs/Parson/releases/download/v1.0.0/Parson_1.0.0_arm64.deb)             |
-| macOS disk image     | Intel x64     | [Parson_1.0.0_x64.dmg](https://github.com/ParsonLabs/Parson/releases/download/v1.0.0/Parson_1.0.0_x64.dmg)                 |
-| macOS disk image     | Apple Silicon | [Parson_1.0.0_arm64.dmg](https://github.com/ParsonLabs/Parson/releases/download/v1.0.0/Parson_1.0.0_arm64.dmg)             |
+[Download the latest release](https://github.com/ParsonLabs/Parson/releases/latest) and choose the installer for your platform and architecture.
 
 View [all releases](https://github.com/ParsonLabs/Parson/releases).
 
@@ -43,8 +34,8 @@ install is needed.
 Download the AppImage for your architecture, make it executable, and run it:
 
 ```bash
-chmod +x Parson_1.0.0_x86_64.AppImage
-./Parson_1.0.0_x86_64.AppImage
+chmod +x Parson_*_x86_64.AppImage
+./Parson_*_x86_64.AppImage
 ```
 
 The Debian package is available for systems that prefer package installation.
@@ -55,10 +46,9 @@ Choose Apple Silicon for M-series Macs or Intel x64 for Intel Macs. Open the
 DMG, drag Parson to Applications, and open it. macOS may ask you to confirm
 opening an application downloaded outside the App Store.
 
-Parson does not publish Android or iPhone packages. Those devices can use the
-web player in a current browser.
+Phones and tablets can use the web player.
 
-## Update behavior
+## Update behaviour
 
 Updates do not replace your music or intentionally clear Parson data. Database
 migrations can make older application versions unable to read newer data; see

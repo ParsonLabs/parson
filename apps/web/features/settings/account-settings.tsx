@@ -11,7 +11,7 @@ import { PasswordForm } from "./password-form";
 import { UsernameForm } from "./username-form";
 
 export default function AccountSettings() {
-  const { session, setSession } = useSession();
+  const { setSession } = useSession();
   const router = useRouter();
   const requestInFlight = useRef(false);
   const [signingOut, setSigningOut] = useState(false);
@@ -41,13 +41,13 @@ export default function AccountSettings() {
           <UsernameForm />
         </div>
       </section>
-      <section className="border-t border-white/[0.08] pt-7">
+      <section className="border-t border-white/8 pt-7">
         <h2 className="mb-4 text-base font-semibold text-white">
           Change password
         </h2>
         <PasswordForm />
       </section>
-      <div className="border-t border-white/[0.08] pt-6">
+      <div className="border-t border-white/8 pt-6">
         <Button
           disabled={signingOut}
           onClick={() => void signOut()}

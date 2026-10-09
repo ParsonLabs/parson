@@ -13,7 +13,10 @@ type PlatformSelection = {
   platform: Platform;
 };
 
-type PlatformIcon = ComponentType<SVGProps<SVGSVGElement>>;
+type PlatformIcon = ComponentType<{
+  className?: string;
+  "aria-hidden"?: boolean;
+}>;
 
 function WindowsIcon(props: SVGProps<SVGSVGElement>) {
   return (

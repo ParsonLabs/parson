@@ -17,6 +17,10 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import SongMenu from "@/features/library/song-menu";
+import { SongTitle, ExplicitBadge } from "@/features/library/song-title";
+import { isExplicitSongTitle } from "@/features/library/song-presentation";
+import { ArtistCreditLinks } from "@/features/library/artist-credit-links";
+import { trackArtistCreditParts } from "@/features/library/track-artist-credit";
 import { formatDuration } from "@/features/library/library-view-primitives";
 import getBaseURL from "@/lib/api/server-url";
 import { defaultCover } from "@/lib/images/default-cover";
@@ -199,8 +203,9 @@ export function PlaylistTracks({
   const trackGridColumns =
     "grid-cols-[2rem_2.5rem_minmax(0,1fr)_3rem] sm:grid-cols-[2rem_2.5rem_minmax(0,1fr)_minmax(8rem,0.6fr)_3rem]";
   const moveTrack = (from: number, to: number) => {
-    if (!onReorder || from === to || from < 0 || to < 0 || reorderPending)
+    if (!onReorder || from === to || from < 0 || to < 0 || reorderPending) {
       return;
+    }
     onReorder(
       moveItem(
         tracks.map((song) => song.id),
@@ -220,8 +225,12 @@ export function PlaylistTracks({
     event: KeyboardEvent<HTMLElement>,
     index: number,
   ) => {
-    if (event.currentTarget !== event.target) return;
-    if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
+    if (event.currentTarget !== event.target) {
+      return;
+    }
+    if (event.key !== "ArrowUp" && event.key !== "ArrowDown") {
+      return;
+    }
     event.preventDefault();
     moveTrack(index, index + (event.key === "ArrowUp" ? -1 : 1));
   };
@@ -231,7 +240,7 @@ export function PlaylistTracks({
       aria-label={
         onReorder ? "Playlist tracks. Drag rows to reorder." : undefined
       }
-      className="mt-7 overflow-hidden rounded-xl border border-white/[0.08]"
+      className="mt-7 overflow-hidden rounded-xl border border-white/8"
       role={onReorder ? "list" : undefined}
     >
       {!tracks.length && (
@@ -266,12 +275,12 @@ export function PlaylistTracks({
                   ? `${song.name}. Drag to reorder, or use the arrow keys.`
                   : undefined
               }
-              className={`group relative grid ${trackGridColumns} items-center gap-3 border-b border-white/[0.06] px-3 py-2 transition-colors last:border-0 hover:bg-white/[0.035] ${
+              className={`group relative grid ${trackGridColumns} items-center gap-3 border-b border-white/6 px-3 py-2 transition-colors last:border-0 hover:bg-white/[0.035] ${
                 onReorder
                   ? "cursor-grab focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white/30 active:cursor-grabbing"
                   : ""
-              } ${active ? "bg-white/[0.02]" : ""} ${
-                draggedSongId === song.id ? "bg-white/[0.06] opacity-60" : ""
+              } ${active ? "bg-white/2" : ""} ${
+                draggedSongId === song.id ? "bg-white/6 opacity-60" : ""
               }`}
               data-native-drag={onReorder ? "true" : undefined}
               draggable={Boolean(onReorder) && !reorderPending}
@@ -290,7 +299,9 @@ export function PlaylistTracks({
                 event.dataTransfer.setData("text/plain", song.id);
               }}
               onDragOver={(event) => {
-                if (!draggedSongId) return;
+                if (!draggedSongId) {
+                  return;
+                }
                 event.preventDefault();
                 event.dataTransfer.dropEffect = "move";
                 const bounds = event.currentTarget.getBoundingClientRect();
@@ -379,15 +390,29 @@ export function PlaylistTracks({
               </div>
               <div className="pointer-events-none relative z-10 min-w-0">
                 <p className="truncate text-sm font-medium text-zinc-200">
-                  {song.name}
+                  <SongTitle title={song.name} />
                 </p>
-                <Link
-                  className="pointer-events-auto relative z-20 text-xs text-zinc-500 hover:text-white hover:underline"
-                  draggable={false}
-                  href={`/artist?id=${song.artist_object.id}`}
-                >
-                  {song.artist_object.name}
-                </Link>
+                <p className="truncate text-xs text-zinc-500">
+                  {isExplicitSongTitle(song.name) && <ExplicitBadge />}
+                  <ArtistCreditLinks
+                    credits={
+                      trackArtistCreditParts({
+                        albumArtist: song.artist_object.name,
+                        albumArtistId: song.artist_object.id,
+                        albumType: song.album_object.primary_type,
+                        contributingArtists: song.contributing_artists ?? [],
+                        contributingArtistIds:
+                          song.contributing_artist_ids ?? [],
+                        trackArtist: song.artist,
+                      }) ?? [
+                        {
+                          id: song.artist_object.id,
+                          name: song.artist_object.name,
+                        },
+                      ]
+                    }
+                  />
+                </p>
               </div>
               <Link
                 className="relative z-20 hidden truncate text-sm text-zinc-500 hover:text-white hover:underline sm:block"

@@ -27,6 +27,7 @@ const {
   isTrustedBackendManifest,
 } = require("./backend-trust.cjs");
 const { classifyStartupFailure } = require("./failure-state.cjs");
+const { createUpdates, updateSupport } = require("./updates.cjs");
 
 const DEFAULT_PORT = 1993;
 let backendPort = DEFAULT_PORT;
@@ -39,6 +40,7 @@ const STARTUP_POLL_MS = 10;
 let backend = null;
 let mainWindow = null;
 let quitting = false;
+let updates = null;
 
 const primary = app.requestSingleInstanceLock();
 if (!primary) {
@@ -48,15 +50,21 @@ if (!primary) {
 }
 
 function showMainWindow() {
-  if (!mainWindow || mainWindow.isDestroyed()) return;
-  if (mainWindow.isMinimized()) mainWindow.restore();
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    return;
+  }
+  if (mainWindow.isMinimized()) {
+    mainWindow.restore();
+  }
   mainWindow.show();
   mainWindow.focus();
 }
 
 function backendExecutable() {
   const executable = `parson-music-server${process.platform === "win32" ? ".exe" : ""}`;
-  if (app.isPackaged) return path.join(process.resourcesPath, executable);
+  if (app.isPackaged) {
+    return path.join(process.resourcesPath, executable);
+  }
   return path.join(__dirname, "bin", executable);
 }
 
@@ -78,9 +86,13 @@ function refreshDesktopIntegration(applicationsDirectory) {
 }
 
 async function offerLinuxInstallation() {
-  if (process.platform !== "linux" || !app.isPackaged) return false;
+  if (process.platform !== "linux" || !app.isPackaged) {
+    return false;
+  }
   const state = getInstallState();
-  if (!state.available) return false;
+  if (!state.available) {
+    return false;
+  }
 
   const iconSource = path.join(process.resourcesPath, "parson.png");
   const version = app.getVersion();
@@ -130,7 +142,9 @@ async function offerLinuxInstallation() {
         defaultId: 0,
         cancelId: 1,
       });
-  if (choice !== 0) return false;
+  if (choice !== 0) {
+    return false;
+  }
 
   try {
     const paths =
@@ -167,11 +181,14 @@ async function offerLinuxInstallation() {
 
 function rotateBackendLog(logPath) {
   try {
-    if (fs.statSync(logPath).size <= 2 * 1024 * 1024) return;
+    if (fs.statSync(logPath).size <= 2 * 1024 * 1024) {
+      return;
+    }
     fs.renameSync(logPath, `${logPath}.previous`);
   } catch (error) {
-    if (error?.code !== "ENOENT")
+    if (error?.code !== "ENOENT") {
       console.error("Could not rotate backend log", error);
+    }
   }
 }
 
@@ -191,7 +208,9 @@ function loadDesktopInstanceKey() {
   let invalidKeyPath = null;
   try {
     const existing = fs.readFileSync(keyPath, "utf8").trim();
-    if (/^[a-f0-9]{64}$/i.test(existing)) return existing.toLowerCase();
+    if (/^[a-f0-9]{64}$/i.test(existing)) {
+      return existing.toLowerCase();
+    }
     invalidKeyPath = `${keyPath}.invalid-${Date.now()}`;
     fs.renameSync(keyPath, invalidKeyPath);
   } catch (error) {
@@ -235,7 +254,9 @@ function loadDesktopInstanceKey() {
   try {
     fs.chmodSync(keyPath, 0o600);
   } catch (error) {
-    if (process.platform !== "win32") throw error;
+    if (process.platform !== "win32") {
+      throw error;
+    }
   }
   return key;
 }
@@ -248,7 +269,9 @@ async function probeBackend(origin = backendOrigin) {
       cache: "no-store",
       headers: { "x-parson-desktop-challenge": challenge },
     });
-    if (!response.ok) return { kind: "other" };
+    if (!response.ok) {
+      return { kind: "other" };
+    }
     const manifest = await response.json();
     if (isTrustedBackendManifest(manifest, backendInstanceKey, challenge)) {
       return { kind: "trusted" };
@@ -283,9 +306,13 @@ function availableLoopbackPort() {
       const address = server.address();
       const port = typeof address === "object" && address ? address.port : 0;
       server.close((error) => {
-        if (error) reject(error);
-        else if (!port) reject(new Error("Could not allocate a local port."));
-        else resolve(port);
+        if (error) {
+          reject(error);
+        } else if (!port) {
+          reject(new Error("Could not allocate a local port."));
+        } else {
+          resolve(port);
+        }
       });
     });
   });
@@ -294,7 +321,9 @@ function availableLoopbackPort() {
 async function startBackend() {
   if (backend && !backend.killed) {
     const current = await probeBackend(backendOrigin);
-    if (current.kind === "trusted") return;
+    if (current.kind === "trusted") {
+      return;
+    }
     throw new Error(
       "The running Parson backend did not pass its desktop authentication check.",
     );
@@ -371,7 +400,9 @@ async function startBackend() {
   const deadline = Date.now() + 30_000;
   while (Date.now() < deadline) {
     const status = await probeBackend();
-    if (status.kind === "trusted") return;
+    if (status.kind === "trusted") {
+      return;
+    }
     if (status.kind === "untrusted-parson") {
       throw new Error(
         "The local Parson backend failed desktop authentication.",
@@ -382,14 +413,18 @@ async function startBackend() {
         `The Parson backend could not start: ${backendStartError.message}`,
       );
     }
-    if (!backend) throw new Error("The Parson backend stopped during startup.");
+    if (!backend) {
+      throw new Error("The Parson backend stopped during startup.");
+    }
     await new Promise((resolve) => setTimeout(resolve, STARTUP_POLL_MS));
   }
   throw new Error("The Parson backend did not become ready within 30 seconds.");
 }
 
 async function showStartupFailure(kind, detail) {
-  if (!mainWindow || mainWindow.isDestroyed()) return;
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    return;
+  }
   await mainWindow.loadFile(path.join(__dirname, "startup-error.html"), {
     query: { detail: String(detail || ""), kind },
   });
@@ -416,7 +451,9 @@ async function loadApplication() {
 
 async function stopBackendForRetry() {
   const processToStop = backend;
-  if (!processToStop || processToStop.killed) return;
+  if (!processToStop || processToStop.killed) {
+    return;
+  }
   backend = null;
   processToStop.removeAllListeners("exit");
   processToStop.removeAllListeners("error");
@@ -443,14 +480,19 @@ function installDesktopBridge() {
       throw new Error("Window controls are unavailable to untrusted content.");
     }
     const window = BrowserWindow.fromWebContents(event.sender);
-    if (!window || window.isDestroyed()) return false;
+    if (!window || window.isDestroyed()) {
+      return false;
+    }
     switch (action) {
       case "minimize":
         window.minimize();
         return true;
       case "toggle-maximize":
-        if (window.isMaximized()) window.unmaximize();
-        else window.maximize();
+        if (window.isMaximized()) {
+          window.unmaximize();
+        } else {
+          window.maximize();
+        }
         return window.isMaximized();
       case "is-maximized":
         return window.isMaximized();
@@ -469,9 +511,19 @@ function installDesktopBridge() {
       );
     }
     switch (command) {
+      case "updates_state":
+        return updates.state();
+      case "updates_check":
+        return updates.check();
+      case "updates_install":
+        return updates.install();
       case "platform":
-        if (process.platform === "win32") return "windows";
-        if (process.platform === "darwin") return "macos";
+        if (process.platform === "win32") {
+          return "windows";
+        }
+        if (process.platform === "darwin") {
+          return "macos";
+        }
         return "linux";
       case "select_music_folder": {
         const selection = await dialog.showOpenDialog(mainWindow, {
@@ -482,8 +534,9 @@ function installDesktopBridge() {
       }
       case "show_track_in_file_manager": {
         const target = typeof args.path === "string" ? args.path : "";
-        if (!target || !fs.existsSync(target))
+        if (!target || !fs.existsSync(target)) {
           throw new Error("A valid track path is required.");
+        }
         shell.showItemInFolder(target);
         return true;
       }
@@ -543,6 +596,18 @@ async function createWindow() {
   mainWindow.on("maximize", publishMaximizedState);
   mainWindow.on("unmaximize", publishMaximizedState);
   mainWindow.maximize();
+  mainWindow.webContents.on("before-input-event", (event, input) => {
+    if (input.type !== "keyDown" || input.isAutoRepeat) {
+      return;
+    }
+    if (input.key === "F11") {
+      event.preventDefault();
+      mainWindow.setFullScreen(!mainWindow.isFullScreen());
+    } else if (input.key === "Escape" && mainWindow.isFullScreen()) {
+      event.preventDefault();
+      mainWindow.setFullScreen(false);
+    }
+  });
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     try {
       const candidate = new URL(url);
@@ -553,11 +618,15 @@ async function createWindow() {
     return { action: "deny" };
   });
   mainWindow.webContents.on("will-navigate", (event, url) => {
-    if (isAllowedNavigation(url, backendOrigin, ALLOWED_LOCAL_PAGES)) return;
+    if (isAllowedNavigation(url, backendOrigin, ALLOWED_LOCAL_PAGES)) {
+      return;
+    }
     event.preventDefault();
   });
   mainWindow.webContents.on("render-process-gone", (_event, details) => {
-    if (quitting || mainWindow?.isDestroyed()) return;
+    if (quitting || mainWindow?.isDestroyed()) {
+      return;
+    }
     void showStartupFailure(
       "webview_failed",
       `Renderer stopped: ${details.reason}`,
@@ -572,17 +641,52 @@ if (primary) {
     .then(async () => {
       app.setName("Parson");
       backendInstanceKey = loadDesktopInstanceKey();
-      if (process.platform !== "darwin") Menu.setApplicationMenu(null);
-      if (await offerLinuxInstallation()) return;
+      if (process.platform !== "darwin") {
+        Menu.setApplicationMenu(null);
+      }
+      if (await offerLinuxInstallation()) {
+        return;
+      }
       app.setAsDefaultProtocolClient("parson");
       installDesktopBridge();
+      const metadata = require(path.join(app.getAppPath(), "package.json"));
+      const unsupported = updateSupport({
+        packaged: app.isPackaged,
+        platform: process.platform,
+        environment: process.env,
+        macSigned:
+          metadata.parsonUpdates?.macSigned === true ||
+          metadata.parsonUpdates?.macSigned === "true",
+      });
+      updates = createUpdates({
+        updater: unsupported ? null : require("electron-updater").autoUpdater,
+        version: app.getVersion(),
+        unsupported,
+        publish: (state) => {
+          if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.send("parson:updates", state);
+          }
+        },
+        stopBackend: stopBackendForRetry,
+        restartBackend: startBackend,
+      });
       const publishPowerResume = () => {
-        if (!mainWindow?.isDestroyed())
+        if (!mainWindow?.isDestroyed()) {
           mainWindow.webContents.send("parson:power-resume");
+        }
       };
       powerMonitor.on("resume", publishPowerResume);
       powerMonitor.on("unlock-screen", publishPowerResume);
       await createWindow();
+      if (!unsupported) {
+        const initialCheck = setTimeout(() => void updates.check(), 15000);
+        initialCheck.unref();
+        const periodicCheck = setInterval(
+          () => void updates.check(),
+          6 * 60 * 60 * 1000,
+        );
+        periodicCheck.unref();
+      }
     })
     .catch((error) => {
       const detail = error instanceof Error ? error.message : String(error);
@@ -602,9 +706,14 @@ app.on("activate", () => {
   }
 });
 app.on("window-all-closed", () => {
-  if (process.platform !== "darwin") app.quit();
+  if (process.platform !== "darwin") {
+    app.quit();
+  }
 });
-app.on("before-quit", () => {
+app.on("before-quit", (event) => {
   quitting = true;
-  if (backend && !backend.killed) backend.kill("SIGTERM");
+  if (backend && !backend.killed) {
+    event.preventDefault();
+    void stopBackendForRetry().finally(() => app.quit());
+  }
 });

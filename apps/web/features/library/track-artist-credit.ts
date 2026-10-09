@@ -13,7 +13,7 @@ export type TrackArtistCreditPart = {
 };
 
 const creditSeparator =
-  /\s+(?:&|featuring|ft\.?|with|feat\.?|and|presents|vs\.?|x)\s+|,\s*|;/i;
+  / (?:&|featuring|ft\.?|with|feat\.?|and|presents|vs\.?|x) |, *|;/i;
 
 function normalizedArtist(value: string) {
   return value
@@ -25,6 +25,7 @@ function normalizedArtist(value: string) {
 
 function splitCredit(value: string) {
   return value
+    .replace(/\s+/g, " ")
     .split(creditSeparator)
     .map((artist) => artist.trim())
     .filter(Boolean);

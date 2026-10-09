@@ -1,5 +1,6 @@
 type TrackArtistCreditInput = {
   albumArtist: string;
+  albumArtistId?: string;
   albumType: string;
   contributingArtists: string[];
   contributingArtistIds?: string[];
@@ -33,7 +34,9 @@ function distinctArtists(values: string[]) {
   const seen = new Set<string>();
   return values.filter((artist) => {
     const normalized = normalizedArtist(artist);
-    if (!normalized || seen.has(normalized)) return false;
+    if (!normalized || seen.has(normalized)) {
+      return false;
+    }
     seen.add(normalized);
     return true;
   });
@@ -47,6 +50,7 @@ function isVariousArtists(value: string) {
 
 export function trackArtistCreditParts({
   albumArtist,
+  albumArtistId,
   albumType,
   contributingArtists,
   contributingArtistIds = [],
@@ -72,28 +76,47 @@ export function trackArtistCreditParts({
     normalizedArtist(albumType).includes("compilation") ||
     isVariousArtists(albumArtist);
 
-  if (!hasDifferentCredit && !releaseNeedsCredits) return null;
+  if (!hasDifferentCredit && !releaseNeedsCredits) {
+    return null;
+  }
 
-  const primaryKeys = new Set(primaryCredits.map(normalizedArtist));
-  const additionalArtists = contributors.filter(
-    (artist) => !primaryKeys.has(normalizedArtist(artist)),
-  );
-  return [
-    { name: primaryArtist },
-    ...additionalArtists.map((name) => ({
-      id: contributorIds.get(normalizedArtist(name)),
-      name,
-    })),
-  ];
+  return allCredits.map((name) => {
+    const id =
+      normalizedArtist(name) === albumArtistKey
+        ? albumArtistId
+        : contributorIds.get(normalizedArtist(name));
+    return id ? { id, name } : { name };
+  });
 }
 
 export function trackArtistCredit(input: TrackArtistCreditInput) {
   const parts = trackArtistCreditParts(input);
-  if (!parts) return null;
-  return parts.length > 1
-    ? `${parts[0]?.name} feat. ${parts
-        .slice(1)
-        .map((part) => part.name)
-        .join(", ")}`
-    : (parts[0]?.name ?? null);
+  if (!parts) {
+    return null;
+  }
+  return parts.map((part) => part.name).join(", ");
+}
+
+export function catalogSongArtistCredits({
+  name,
+  artistName,
+  artistId,
+}: {
+  name: string;
+  artistName: string;
+  artistId: string;
+}): TrackArtistCreditPart[] {
+  const guests = Array.from(
+    name.matchAll(/[\[(]\s*(?:feat\.?|ft\.?|featuring)\s+([^\])]+)[\])]/gi),
+    (match) => match[1]!,
+  );
+  return (
+    trackArtistCreditParts({
+      albumArtist: artistName,
+      albumArtistId: artistId,
+      albumType: "",
+      contributingArtists: guests,
+      trackArtist: artistName,
+    }) ?? [{ id: artistId, name: artistName }]
+  );
 }

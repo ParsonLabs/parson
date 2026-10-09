@@ -73,7 +73,7 @@ export default function ServerConnectionPanel() {
       }
       setPairingCode("");
       toast.success(
-        `${response.deviceName || "Android device"} is connected to ${response.username || "this account"}.`,
+        `${response.deviceName || "mobile device"} is connected to ${response.username || "this account"}.`,
       );
     } finally {
       setPairing(false);
@@ -90,11 +90,11 @@ export default function ServerConnectionPanel() {
           <Smartphone className="mt-0.5 h-5 w-5 text-zinc-400" />
           <div>
             <h2 className="text-sm font-medium text-zinc-200">
-              Pair an Android device
+              Pair an mobile device
             </h2>
             <p className="mt-1 text-sm leading-5 text-zinc-500">
-              Open Parson on Android, choose this library, then enter the code
-              shown there. The phone will use your current account.
+              Open Parson on your device, choose this library, then enter the
+              code shown there. The phone will use your current account.
             </p>
           </div>
         </div>

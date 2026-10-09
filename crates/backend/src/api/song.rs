@@ -44,7 +44,7 @@ pub async fn fetch_random_songs(
     amount: usize,
     genre: Option<String>,
     cache: &LibraryCache,
-) -> Result<Vec<ResponseSong>, ()> {
+) -> Result<Vec<ResponseSong>, std::convert::Infallible> {
     let amount = amount.min(MAX_COLLECTION_RESPONSE_SIZE);
     let mut response_songs = Vec::with_capacity(amount);
     let mut rng = rand::rng();
@@ -240,7 +240,7 @@ pub struct LatestQuery {
 pub async fn fetch_latest_songs(
     amount: usize,
     cache: &LibraryCache,
-) -> Result<Vec<ResponseSong>, ()> {
+) -> Result<Vec<ResponseSong>, std::convert::Infallible> {
     let mut out = Vec::with_capacity(amount.min(cache.songs_flat.len()));
 
     for song_id in cache.songs_flat.iter().rev() {

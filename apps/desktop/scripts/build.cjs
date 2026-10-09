@@ -32,16 +32,22 @@ function run(command, args) {
     cwd: desktopDirectory,
     stdio: "inherit",
   });
-  if (result.error) throw result.error;
+  if (result.error) {
+    throw result.error;
+  }
   if (result.status !== 0) {
     throw new Error(`${command} exited with status ${result.status}`);
   }
 }
 
 function cleanOutput(predicate) {
-  if (!existsSync(outputDirectory)) return;
+  if (!existsSync(outputDirectory)) {
+    return;
+  }
   for (const entry of readdirSync(outputDirectory, { withFileTypes: true })) {
-    if (!predicate(entry.name)) continue;
+    if (!predicate(entry.name)) {
+      continue;
+    }
     rmSync(path.join(outputDirectory, entry.name), {
       recursive: true,
       force: true,
@@ -67,6 +73,7 @@ if (targetPlatform === "linux") {
   const args = [
     require.resolve("electron-builder/cli.js"),
     "--win",
+    "--publish=never",
     "nsis",
     "portable",
     `--${architecture}`,
@@ -82,13 +89,26 @@ if (targetPlatform === "linux") {
   const args = [
     require.resolve("electron-builder/cli.js"),
     "--mac",
+    "--publish=never",
     "dmg",
     "zip",
     `--${architecture}`,
-    "--config.mac.identity=null",
-    "--config.mac.hardenedRuntime=false",
-    "--config.mac.notarize=false",
   ];
+  if (process.env.CSC_LINK || process.env.CSC_NAME) {
+    args.push(
+      "--config.extraMetadata.parsonUpdates.macSigned=true",
+      "--config.mac.hardenedRuntime=true",
+    );
+    if (process.env.APPLE_ID || process.env.APPLE_API_KEY) {
+      args.push("--config.mac.notarize=true");
+    }
+  } else {
+    args.push(
+      "--config.mac.identity=null",
+      "--config.mac.hardenedRuntime=false",
+      "--config.mac.notarize=false",
+    );
+  }
   run(process.execPath, args);
 } else {
   throw new Error(`Desktop packaging is not configured for ${targetPlatform}.`);

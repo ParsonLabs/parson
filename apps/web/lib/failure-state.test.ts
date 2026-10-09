@@ -13,7 +13,7 @@ describe("failure copy", () => {
       "database_migration_failed",
       "backup_failed",
       "host_unavailable",
-      "android_cannot_connect",
+      "device_cannot_connect",
       "lyrics_provider_unavailable",
       "playback_format_unsupported",
       "update_failed",

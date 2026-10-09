@@ -10,8 +10,6 @@ import {
   Disc3,
   Ellipsis,
   FolderOpen,
-  Globe2,
-  HardDrive,
   Heart,
   Home,
   Library,
@@ -19,6 +17,8 @@ import {
   MicVocal,
   Minus,
   Music2,
+  Maximize2,
+  Minimize2,
   Pause,
   Play,
   Plus,
@@ -35,6 +35,8 @@ import {
 } from "lucide-react";
 import type { CSSProperties } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import sitePackage from "../package.json";
+import Image from "next/image";
 
 type Album = {
   id: string;
@@ -132,6 +134,18 @@ const tracks = [
   ["Homeward", "5:02", 302],
 ] as const;
 
+const demoSongAlbums = [
+  albums[0],
+  albums[1],
+  albums[3],
+  albums[2],
+  albums[4],
+  albums[5],
+  albums[6],
+  albums[8],
+  albums[7],
+];
+
 type Playlist = {
   id: string;
   name: string;
@@ -187,15 +201,22 @@ type View =
 
 function BrandMark() {
   return (
-    <span className="demo-brand-mark" aria-hidden="true">
-      P
-    </span>
+    <Image
+      className="demo-brand-mark"
+      src="/icons/icon.svg"
+      aria-hidden="true"
+      alt=""
+      width={64}
+      height={64}
+      draggable={false}
+    />
   );
 }
 
 type InteractiveProductDemoProps = {
+  capture?: boolean;
   initialAlbumId?: string;
-  initialPanel?: "lyrics" | "queue";
+  initialPanel?: "lyrics" | "queue" | "fullscreen";
   initialPlaying?: boolean;
   initialQuery?: string;
   initialTime?: number;
@@ -204,7 +225,24 @@ type InteractiveProductDemoProps = {
     "album" | "artist" | "home" | "library" | "playlist" | "settings";
 };
 
+function initialDemoView(
+  name: NonNullable<InteractiveProductDemoProps["initialView"]>,
+  album: Album,
+): View {
+  switch (name) {
+    case "album":
+      return { name, album };
+    case "artist":
+      return { name, artist: album.artist };
+    case "playlist":
+      return { name, playlist: playlists[1] };
+    default:
+      return { name };
+  }
+}
+
 export default function InteractiveProductDemo({
+  capture = false,
   initialAlbumId = "afterlight",
   initialPanel,
   initialPlaying = false,
@@ -219,22 +257,19 @@ export default function InteractiveProductDemo({
     0,
     Math.min(initialTrackIndex, tracks.length - 1),
   );
-  const initialViewState: View =
-    initialView === "album"
-      ? { name: "album", album: initialAlbum }
-      : initialView === "artist"
-        ? { name: "artist", artist: initialAlbum.artist }
-        : initialView === "playlist"
-          ? { name: "playlist", playlist: playlists[1] }
-          : { name: initialView };
-  const [view, setView] = useState<View>(initialViewState);
+  const [view, setView] = useState<View>(
+    initialDemoView(initialView, initialAlbum),
+  );
   const [librarySection, setLibrarySection] =
     useState<LibrarySection>("albums");
   const [query, setQuery] = useState(initialQuery);
+  const [searchQuery, setSearchQuery] = useState(initialQuery);
   const [playing, setPlaying] = useState(initialPlaying);
   const [currentAlbum, setCurrentAlbum] = useState(initialAlbum);
   const [lyricsOpen, setLyricsOpen] = useState(initialPanel === "lyrics");
   const [queueOpen, setQueueOpen] = useState(initialPanel === "queue");
+  const [fullscreen, setFullscreen] = useState(initialPanel === "fullscreen");
+  const [volume, setVolume] = useState(100);
   const [currentTrackIndex, setCurrentTrackIndex] = useState(
     safeInitialTrackIndex,
   );
@@ -243,46 +278,55 @@ export default function InteractiveProductDemo({
   const [muted, setMuted] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(false);
   const [showMacWindowControls, setShowMacWindowControls] = useState(false);
+  const [ready, setReady] = useState(false);
   const trackDuration = tracks[currentTrackIndex][2];
 
   useEffect(() => {
     const source = `${navigator.userAgent} ${navigator.platform}`.toLowerCase();
     setShowMacWindowControls(/macintosh|mac os|macintel/.test(source));
+    setReady(true);
   }, []);
 
   const closePanels = () => {
     setLyricsOpen(false);
     setQueueOpen(false);
+    setFullscreen(false);
   };
   const goHome = () => {
     closePanels();
     setQuery("");
+    setSearchQuery("");
     setView({ name: "home" });
   };
   const openLibrary = (section: LibrarySection = "albums") => {
     closePanels();
     setQuery("");
+    setSearchQuery("");
     setLibrarySection(section);
     setView({ name: "library" });
   };
   const openSettings = () => {
     closePanels();
     setQuery("");
+    setSearchQuery("");
     setView({ name: "settings" });
   };
   const openArtist = (artist = "Mira Sol") => {
     closePanels();
     setQuery("");
+    setSearchQuery("");
     setView({ name: "artist", artist });
   };
   const openAlbum = (album: Album) => {
     closePanels();
     setQuery("");
+    setSearchQuery("");
     setView({ name: "album", album });
   };
   const openPlaylist = (playlist: Playlist) => {
     closePanels();
     setQuery("");
+    setSearchQuery("");
     setView({ name: "playlist", playlist });
   };
   const playAlbum = (album: Album) => {
@@ -298,11 +342,6 @@ export default function InteractiveProductDemo({
     setCurrentTime(0);
     setPlaying(true);
   };
-  const selectQueueTrack = (index: number) => {
-    setCurrentTrackIndex(index);
-    setCurrentTime(0);
-    setPlaying(true);
-  };
   const playTrack = (album: Album, index: number) => {
     setCurrentAlbum(album);
     setCurrentTrackIndex(index);
@@ -313,52 +352,73 @@ export default function InteractiveProductDemo({
   const activeLyric = useMemo(() => {
     let active = 0;
     lyricTimes.forEach((time, index) => {
-      if (time <= currentTime) active = index;
+      if (time <= currentTime) {
+        active = index;
+      }
     });
     return active;
   }, [currentTime]);
 
-  const visibleAlbums = useMemo(() => {
-    const value = query.trim().toLowerCase();
-    if (!value) return albums;
-    return albums.filter((album) =>
-      `${album.title} ${album.artist}`.toLowerCase().includes(value),
-    );
-  }, [query]);
-
   useEffect(() => {
     const closeLyrics = (event: KeyboardEvent) => {
-      if (event.key === "Escape") closePanels();
+      if (event.key !== "Escape") {
+        return;
+      }
+      if (lyricsOpen || queueOpen) {
+        setLyricsOpen(false);
+        setQueueOpen(false);
+      } else {
+        setFullscreen(false);
+      }
     };
     window.addEventListener("keydown", closeLyrics);
     return () => window.removeEventListener("keydown", closeLyrics);
-  }, []);
+  }, [lyricsOpen, queueOpen]);
 
   useEffect(() => {
-    if (!playing) return;
-    const timer = window.setInterval(() => {
-      setCurrentTime((value) => (value >= trackDuration ? 0 : value + 1));
-    }, 1000);
-    return () => window.clearInterval(timer);
-  }, [playing, currentTrackIndex, currentAlbum.id]);
+    if (!playing || capture) {
+      return;
+    }
+    let frame: number;
+    let previous = performance.now();
+    const advance = (now: number) => {
+      const elapsed = (now - previous) / 1000;
+      previous = now;
+      setCurrentTime((value) =>
+        value + elapsed >= trackDuration ? 0 : value + elapsed,
+      );
+      frame = requestAnimationFrame(advance);
+    };
+    frame = requestAnimationFrame(advance);
+    return () => cancelAnimationFrame(frame);
+  }, [playing, currentTrackIndex, currentAlbum.id, capture]);
 
   useEffect(() => {
-    if (!lyricsOpen && !queueOpen) return;
+    if (!lyricsOpen && !queueOpen) {
+      return;
+    }
     const dismissOutside = (event: PointerEvent) => {
       const target = event.target as Element | null;
-      if (!target) return;
+      if (!target) {
+        return;
+      }
+      if (target.closest(".demo-player")) {
+        return;
+      }
       if (
         lyricsOpen &&
         !target.closest(".demo-lyrics") &&
         !target.closest(".demo-lyrics-button")
-      )
+      ) {
         setLyricsOpen(false);
+      }
       if (
         queueOpen &&
         !target.closest(".demo-queue") &&
         !target.closest('[aria-label="Queue"]')
-      )
+      ) {
         setQueueOpen(false);
+      }
     };
     document.addEventListener("pointerdown", dismissOutside);
     return () => document.removeEventListener("pointerdown", dismissOutside);
@@ -366,9 +426,11 @@ export default function InteractiveProductDemo({
 
   return (
     <div
-      className="demo-app"
+      className={`demo-app${fullscreen ? " demo-is-fullscreen" : ""}`}
       role="region"
       aria-label="Interactive Parson product demo"
+      data-demo-ready={ready}
+      data-demo-capture={capture}
     >
       <aside className="demo-sidebar" aria-label="Demo navigation">
         <button
@@ -381,12 +443,14 @@ export default function InteractiveProductDemo({
         </button>
         <nav>
           <button
-            className={view.name === "home" ? "active" : ""}
+            className={view.name === "home" && !searchQuery ? "active" : ""}
             type="button"
             onClick={goHome}
             title="Home"
             aria-label="Home"
-            aria-current={view.name === "home" ? "page" : undefined}
+            aria-current={
+              view.name === "home" && !searchQuery ? "page" : undefined
+            }
           >
             <Home />
           </button>
@@ -414,7 +478,16 @@ export default function InteractiveProductDemo({
       </aside>
 
       <header className="demo-titlebar">
-        <form onSubmit={(event) => event.preventDefault()}>
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (query.trim()) {
+              closePanels();
+              setView({ name: "home" });
+              setSearchQuery(query.trim());
+            }
+          }}
+        >
           <Search />
           <input
             aria-label="Search demo library"
@@ -423,12 +496,8 @@ export default function InteractiveProductDemo({
             placeholder="What do you want to play?"
           />
           {query && (
-            <button
-              type="button"
-              onClick={() => setQuery("")}
-              aria-label="Clear search"
-            >
-              ×
+            <button type="submit" aria-label="Search">
+              <ArrowRight />
             </button>
           )}
         </form>
@@ -454,12 +523,13 @@ export default function InteractiveProductDemo({
       </header>
 
       <div className="demo-surface">
-        {query.trim() ? (
+        {searchQuery.trim() ? (
           <SearchView
-            albums={visibleAlbums}
+            query={searchQuery}
             onAlbum={openAlbum}
             onArtist={openArtist}
             onPlay={playAlbum}
+            onTrack={playTrack}
           />
         ) : view.name === "home" ? (
           <HomeView
@@ -483,22 +553,30 @@ export default function InteractiveProductDemo({
           <ArtistView
             artist={view.artist}
             onAlbum={openAlbum}
-            onBack={goHome}
             onPlay={playAlbum}
           />
         ) : view.name === "album" ? (
           <AlbumView
             album={view.album}
             onArtist={openArtist}
-            onBack={() => openArtist(view.album.artist)}
             onPlay={playAlbum}
+            activeTrack={
+              currentAlbum.id === view.album.id ? currentTrackIndex : undefined
+            }
+            playing={playing}
+            onTrack={(album, index) => {
+              if (album.id === currentAlbum.id && index === currentTrackIndex) {
+                setPlaying((value) => !value);
+              } else {
+                playTrack(album, index);
+              }
+            }}
           />
         ) : (
           <PlaylistView
             playlist={view.playlist}
             onArtist={openArtist}
             onBack={() => openLibrary("playlists")}
-            onPlay={playAlbum}
             onTrack={playTrack}
           />
         )}
@@ -508,7 +586,7 @@ export default function InteractiveProductDemo({
         <DemoLyrics
           album={currentAlbum}
           activeLine={activeLyric}
-          centerActiveLine={initialPanel === "lyrics"}
+          centerActiveLine={capture || initialPanel === "lyrics"}
           onClose={() => setLyricsOpen(false)}
           onLine={(index) => {
             setCurrentTime(lyricTimes[index]);
@@ -521,11 +599,38 @@ export default function InteractiveProductDemo({
           album={currentAlbum}
           activeTrack={currentTrackIndex}
           onClose={() => setQueueOpen(false)}
-          onSelect={selectQueueTrack}
+          onSelect={(index) => playTrack(demoSongAlbums[index], index)}
         />
       )}
 
+      {fullscreen && !lyricsOpen && !queueOpen && (
+        <div className="demo-fullscreen-artwork">
+          <img src={currentAlbum.artwork} alt={currentAlbum.title} />
+          <h3>{tracks[currentTrackIndex][0]}</h3>
+          <button type="button" onClick={() => openArtist(currentAlbum.artist)}>
+            {currentAlbum.artist}
+          </button>
+        </div>
+      )}
+      {fullscreen && (
+        <button
+          className="demo-fullscreen-exit"
+          aria-label="Exit fullscreen player"
+          type="button"
+          onClick={() => setFullscreen(false)}
+        >
+          <Minimize2 />
+        </button>
+      )}
       <DemoPlayer
+        fullscreen={fullscreen}
+        onFullscreen={() => setFullscreen(true)}
+        volume={volume}
+        onVolume={(value) => {
+          setVolume(value);
+          setMuted(value === 0);
+        }}
+        onSeek={setCurrentTime}
         album={currentAlbum}
         playing={playing}
         lyricsOpen={lyricsOpen}
@@ -571,6 +676,7 @@ function HomeView({ onAlbum, onArtist, onPlay }: DemoActions) {
         />
         <MediaRow
           title="Recommended songs"
+          songs
           items={[albums[4], albums[2], albums[5], albums[1], albums[8]]}
           onAlbum={onAlbum}
           onArtist={onArtist}
@@ -667,7 +773,7 @@ function LibraryView({
         <section className="demo-library-songs">
           <ol>
             {tracks.map(([title, duration], index) => {
-              const album = albums[index % 3];
+              const album = demoSongAlbums[index];
               return (
                 <li key={title}>
                   <button
@@ -733,63 +839,309 @@ function LibraryView({
 }
 
 function SettingsView() {
-  const settings = [
-    {
-      title: "Music folders",
-      detail: "2 folders - available",
-      Icon: FolderOpen,
-    },
-    {
-      title: "Storage",
-      detail: "Local library and artwork cache",
-      Icon: HardDrive,
-    },
-    {
-      title: "Remote access",
-      detail: "Ready when this host is running",
-      Icon: Globe2,
-    },
+  const [section, setSection] = useState("Account");
+  const [saved, setSaved] = useState(false);
+  const sections = [
+    "Account",
+    "Playback",
+    "Library",
+    "Data",
+    "Users",
+    "Advanced",
   ];
-
+  const field = (label: string, value?: string) => (
+    <label>
+      {label}
+      <input
+        type={label.toLowerCase().includes("password") ? "password" : "text"}
+        defaultValue={value}
+        autoComplete="off"
+      />
+    </label>
+  );
   return (
     <div className="demo-route demo-settings-view">
       <h3>Settings</h3>
-      <p>Everything needed to run your library, in one place.</p>
-      <div className="demo-settings-list">
-        {settings.map(({ title, detail, Icon }) => (
-          <div key={title}>
-            <Icon />
-            <span>
-              <b>{title}</b>
-              <small>{detail}</small>
-            </span>
-          </div>
-        ))}
+      <div className="demo-settings-layout">
+        <nav aria-label="Settings sections">
+          {sections.map((name) => (
+            <button
+              type="button"
+              key={name}
+              aria-current={section === name ? "page" : undefined}
+              onClick={() => {
+                setSection(name);
+                setSaved(false);
+              }}
+            >
+              {name}
+            </button>
+          ))}
+        </nav>
+        <form
+          className="demo-settings-panel"
+          onSubmit={(event) => {
+            event.preventDefault();
+            setSaved(true);
+          }}
+        >
+          {section === "Account" && (
+            <>
+              <section>
+                <h4>Username</h4>
+                {field("Username", "listener")}
+                {field("Current password")}
+                <button type="submit">Save username</button>
+              </section>
+              <section>
+                <h4>Change password</h4>
+                {field("Current password")}
+                {field("New password")}
+                {field("Confirm new password")}
+                <button type="submit">Change password</button>
+              </section>
+              <section>
+                <button type="button" disabled>
+                  Log out
+                </button>
+              </section>
+            </>
+          )}
+          {section === "Playback" && (
+            <>
+              <label>
+                Streaming quality
+                <select defaultValue="Original">
+                  {["Original", "High", "Medium", "Low"].map((quality) => (
+                    <option key={quality}>{quality}</option>
+                  ))}
+                </select>
+              </label>
+              <button type="submit">Save</button>
+            </>
+          )}
+          {section === "Library" && (
+            <>
+              <section>
+                <h4>Music folders</h4>
+                <div className="demo-settings-row">
+                  <FolderOpen /> /music
+                </div>
+                <button type="button">Add folder</button>
+              </section>
+              <section>
+                <h4>Library status</h4>
+                <p>81 songs · 9 albums · 2 artists</p>
+                <button type="button">Scan library</button>
+              </section>
+            </>
+          )}
+          {section === "Data" && (
+            <>
+              <section>
+                <h4>Backups</h4>
+                <div className="demo-settings-row">
+                  <span>Daily backup</span>
+                  <span>7.2 MB · Today, 20:16</span>
+                </div>
+                <button type="button">Create backup</button>{" "}
+                <button type="button">Restore from backup</button>
+              </section>
+              <section>
+                <h4>Your data</h4>
+                <button type="button">Export your data</button>
+              </section>
+              <section>
+                <h4>Cache</h4>
+                <button type="button">Clear cache</button>
+              </section>
+            </>
+          )}
+          {section === "Users" && (
+            <section>
+              <h4>Users</h4>
+              <div className="demo-settings-row">
+                <span>listener</span>
+                <span>Administrator</span>
+              </div>
+              <button type="button">Create user</button>
+            </section>
+          )}
+          {section === "Advanced" && (
+            <section>
+              <h4>Hosting details</h4>
+              <div className="demo-settings-row">
+                <span>Version</span>
+                <span>{sitePackage.version}</span>
+              </div>
+              <div className="demo-settings-row">
+                <span>Address</span>
+                <span>localhost:1993</span>
+              </div>
+            </section>
+          )}
+          {saved && <p role="status">Saved in this demo</p>}
+        </form>
       </div>
     </div>
   );
 }
 
 function SearchView({
-  albums: results,
+  query,
   onAlbum,
   onArtist,
   onPlay,
-}: DemoActions & { albums: Album[] }) {
+  onTrack,
+}: DemoActions & {
+  query: string;
+  onTrack: (album: Album, index: number) => void;
+}) {
+  type Result = {
+    kind: "Artist" | "Album" | "Song";
+    name: string;
+    album: Album;
+    track?: number;
+  };
+  const normalize = (value: string) =>
+    value
+      .normalize("NFKD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, " ")
+      .trim();
+  const term = normalize(query);
+  const shorthand = (value: string) =>
+    normalize(value)
+      .split(" ")
+      .map(
+        (word) =>
+          ({ to: "2", too: "2", for: "4", you: "u", and: "n" })[word] ??
+          word[0],
+      )
+      .join("");
+  const candidates: Result[] = [
+    ...Array.from(new Set(albums.map((album) => album.artist))).map(
+      (artist) => ({
+        kind: "Artist" as const,
+        name: artist,
+        album: albums.find((album) => album.artist === artist)!,
+      }),
+    ),
+    ...albums.map((album) => ({
+      kind: "Album" as const,
+      name: album.title,
+      album,
+    })),
+    ...tracks.map((track, index) => ({
+      kind: "Song" as const,
+      name: track[0],
+      album: demoSongAlbums[index],
+      track: index,
+    })),
+  ];
+  const results = candidates
+    .map((item) => {
+      const name = normalize(item.name);
+      const compact = term.replace(/ /g, "");
+      const initials = name
+        .split(" ")
+        .map((word) => word[0])
+        .join("");
+      let score = 0;
+      if (name === term) {
+        score = 100;
+      } else if (name.startsWith(term)) {
+        score = 80;
+      } else if (name.includes(term)) {
+        score = 60;
+      } else if (compact === initials || compact === shorthand(item.name)) {
+        score = 50;
+      } else if (normalize(item.album.artist).includes(term)) {
+        score = item.kind === "Album" ? 30 : 10;
+      }
+      return { ...item, score: term ? score : 0 };
+    })
+    .filter((item) => item.score > 0)
+    .sort((a, b) => b.score - a.score);
+  const activate = (item: Result) => {
+    switch (item.kind) {
+      case "Artist":
+        onArtist(item.name);
+        break;
+      case "Album":
+        onAlbum(item.album);
+        break;
+      case "Song":
+        onTrack(item.album, item.track!);
+        break;
+    }
+  };
+
   return (
     <div className="demo-route demo-search-view">
-      <p className="demo-eyebrow">Search results</p>
-      <h3>{results.length ? `${results.length} matches` : "Nothing found"}</h3>
-      <div className="demo-search-grid">
-        {results.map((album) => (
-          <MediaCard
-            key={album.id}
-            album={album}
-            onAlbum={onAlbum}
-            onArtist={onArtist}
-            onPlay={onPlay}
-          />
+      <h3>Results for &quot;{query}&quot;</h3>
+      <div className="demo-search-results">
+        {results.map((item) => (
+          <article key={item.kind + item.album.id + item.name}>
+            {item.kind !== "Artist" && (
+              <button
+                className="demo-result-row"
+                type="button"
+                aria-label={
+                  (item.kind === "Song" ? "Play " : "View ") + item.name
+                }
+                onClick={() => activate(item)}
+              />
+            )}
+            <div
+              className={
+                "demo-result-cover" +
+                (item.kind === "Artist" ? " demo-result-artist" : "")
+              }
+            >
+              {item.kind === "Artist" ? (
+                <UserRound />
+              ) : (
+                <img src={item.album.artwork} alt={item.name} />
+              )}
+            </div>
+            <div className="demo-result-info">
+              {item.kind === "Artist" ? (
+                <button
+                  className="demo-result-title"
+                  type="button"
+                  onClick={() => activate(item)}
+                >
+                  {item.name}
+                </button>
+              ) : (
+                <span className="demo-result-title">{item.name}</span>
+              )}
+              <p>
+                {item.kind}
+                {item.kind !== "Artist" && " · " + item.album.artist}
+              </p>
+            </div>
+            {item.kind !== "Artist" && (
+              <button
+                className="demo-result-play"
+                type="button"
+                aria-label={"Play " + item.name}
+                onClick={() =>
+                  item.kind === "Song"
+                    ? onTrack(item.album, item.track!)
+                    : onPlay(item.album)
+                }
+              >
+                <Play />
+              </button>
+            )}
+          </article>
         ))}
+        {!results.length && (
+          <p className="demo-search-empty">No matches for “{query}”</p>
+        )}
       </div>
     </div>
   );
@@ -798,11 +1150,9 @@ function SearchView({
 function ArtistView({
   artist,
   onAlbum,
-  onBack,
   onPlay,
 }: Pick<DemoActions, "onAlbum" | "onPlay"> & {
   artist: string;
-  onBack: () => void;
 }) {
   const artistAlbums = albums.filter((album) => album.artist === artist);
   const groups = [
@@ -820,9 +1170,6 @@ function ArtistView({
 
   return (
     <div className="demo-route demo-artist-view">
-      <button className="demo-back" type="button" onClick={onBack}>
-        <ArrowLeft /> Home
-      </button>
       <h3>{artist}</h3>
       <div className="demo-discography">
         {groups.map(
@@ -853,17 +1200,19 @@ function ArtistView({
 function AlbumView({
   album,
   onArtist,
-  onBack,
   onPlay,
+  onTrack,
+  activeTrack,
+  playing,
 }: Pick<DemoActions, "onArtist" | "onPlay"> & {
   album: Album;
-  onBack: () => void;
+  onTrack: (album: Album, index: number) => void;
+  activeTrack?: number;
+  playing: boolean;
 }) {
+  const [menuOpen, setMenuOpen] = useState(false);
   return (
     <div className="demo-route demo-album-view">
-      <button className="demo-back" type="button" onClick={onBack}>
-        <ArrowLeft /> Artist
-      </button>
       <div className="demo-album-hero">
         <img src={album.artwork} alt="" />
         <div>
@@ -871,7 +1220,12 @@ function AlbumView({
           <button type="button" onClick={() => onArtist(album.artist)}>
             {album.artist}
           </button>
-          <span> • {tracks.length} songs, 19 min</span>
+          <span>
+            {" "}
+            • {tracks.length} songs,{" "}
+            {Math.round(tracks.reduce((sum, track) => sum + track[2], 0) / 60)}{" "}
+            min
+          </span>
         </div>
       </div>
       <div className="demo-album-actions">
@@ -882,21 +1236,80 @@ function AlbumView({
         >
           <Play />
         </button>
+        <div
+          className="demo-more demo-album-more"
+          onMouseEnter={() => setMenuOpen(true)}
+          onMouseLeave={() => setMenuOpen(false)}
+        >
+          <button
+            type="button"
+            aria-label="Album actions"
+            aria-expanded={menuOpen}
+            onClick={() => setMenuOpen(true)}
+          >
+            <Ellipsis />
+          </button>
+          {menuOpen && (
+            <div className="demo-control-menu" role="menu">
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => onPlay(album)}
+              >
+                <Play />
+                Play
+              </button>
+              <button type="button" role="menuitem">
+                <ListMusic />
+                Add to queue
+              </button>
+              <hr />
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => onArtist(album.artist)}
+              >
+                <UserRound />
+                View artist
+              </button>
+              <button type="button" role="menuitem">
+                <Plus />
+                Add to playlist
+              </button>
+            </div>
+          )}
+        </div>
       </div>
       <div className="demo-track-header">
         <span>#</span>
-        <span>Title</span>
+        <span>Track</span>
         <Clock3 />
       </div>
       <ol className="demo-track-list">
         {tracks.map(([title, duration], index) => (
-          <li key={title} onDoubleClick={() => onPlay(album)}>
-            <span>{index + 1}</span>
+          <li
+            key={title}
+            className={activeTrack === index ? "active" : undefined}
+          >
+            <button
+              className="demo-track-play"
+              type="button"
+              aria-label={`Play ${title}`}
+              onClick={() => onTrack(album, index)}
+            />
+            <span>
+              {activeTrack === index ? (
+                playing ? (
+                  <Pause />
+                ) : (
+                  <Play />
+                )
+              ) : (
+                index + 1
+              )}
+            </span>
             <span>
               <b>{title}</b>
-              <button type="button" onClick={() => onArtist(album.artist)}>
-                {album.artist}
-              </button>
             </span>
             <time>{duration}</time>
           </li>
@@ -945,9 +1358,8 @@ function PlaylistView({
   playlist,
   onArtist,
   onBack,
-  onPlay,
   onTrack,
-}: Pick<DemoActions, "onArtist" | "onPlay"> & {
+}: Pick<DemoActions, "onArtist"> & {
   playlist: Playlist;
   onBack: () => void;
   onTrack: (album: Album, index: number) => void;
@@ -976,7 +1388,13 @@ function PlaylistView({
       <div className="demo-album-actions demo-playlist-actions">
         <button
           type="button"
-          onClick={() => onPlay(playlist.album)}
+          className="demo-playlist-play"
+          onClick={() =>
+            onTrack(
+              demoSongAlbums[playlist.trackIndexes[0]],
+              playlist.trackIndexes[0],
+            )
+          }
           aria-label={`Play ${playlist.name}`}
         >
           <Play />
@@ -986,7 +1404,9 @@ function PlaylistView({
           type="button"
           onClick={() =>
             onTrack(
-              playlist.album,
+              demoSongAlbums[
+                playlist.trackIndexes[playlist.trackIndexes.length - 1]
+              ],
               playlist.trackIndexes[playlist.trackIndexes.length - 1],
             )
           }
@@ -1002,10 +1422,16 @@ function PlaylistView({
           <Ellipsis />
         </button>
       </div>
+      <div className="demo-track-header demo-playlist-track-header">
+        <span>#</span>
+        <span>Track</span>
+        <span>Album</span>
+        <Clock3 />
+      </div>
       <ol className="demo-track-list demo-playlist-track-list">
         {playlist.trackIndexes.map((trackIndex, position) => {
           const [title, duration] = tracks[trackIndex];
-          const album = albums[(trackIndex + position) % albums.length];
+          const album = demoSongAlbums[trackIndex];
           return (
             <li key={title} onDoubleClick={() => onTrack(album, trackIndex)}>
               <span>{position + 1}</span>
@@ -1034,11 +1460,12 @@ type DemoActions = {
 
 function MediaRow({
   title,
+  songs = false,
   items,
   onAlbum,
   onArtist,
   onPlay,
-}: DemoActions & { title: string; items: Album[] }) {
+}: DemoActions & { title: string; items: Album[]; songs?: boolean }) {
   const ref = useRef<HTMLDivElement>(null);
   const move = (direction: number) =>
     ref.current?.scrollBy({ left: direction * 520, behavior: "smooth" });
@@ -1064,13 +1491,15 @@ function MediaRow({
         </div>
       </div>
       <div className="demo-row-scroll" ref={ref}>
-        {items.map((album) => (
+        {items.map((album, index) => (
           <MediaCard
             key={`${title}-${album.id}`}
             album={album}
             onAlbum={onAlbum}
             onArtist={onArtist}
             onPlay={onPlay}
+            trackTitle={songs ? tracks[index][0] : undefined}
+            typeLabel={title === "Recently played" ? "Album" : undefined}
           />
         ))}
       </div>
@@ -1084,9 +1513,18 @@ function MediaCard({
   onArtist,
   onPlay,
   hideArtist = false,
-}: DemoActions & { album: Album; hideArtist?: boolean }) {
+  trackTitle,
+  typeLabel,
+}: DemoActions & {
+  album: Album;
+  hideArtist?: boolean;
+  trackTitle?: string;
+  typeLabel?: string;
+}) {
   return (
-    <article className="demo-media-card">
+    <article
+      className={`demo-media-card${trackTitle ? " demo-song-card" : ""}`}
+    >
       <div className="demo-artwork">
         <button
           className="demo-cover-link"
@@ -1110,7 +1548,7 @@ function MediaCard({
         type="button"
         onClick={() => onAlbum(album)}
       >
-        {album.title}
+        {trackTitle ?? album.title}
       </button>
       {!hideArtist && (
         <button
@@ -1118,6 +1556,7 @@ function MediaCard({
           type="button"
           onClick={() => onArtist(album.artist)}
         >
+          {typeLabel && `${typeLabel} · `}
           {album.artist}
         </button>
       )}
@@ -1159,7 +1598,9 @@ function DemoLyrics({
   useEffect(() => {
     const content = contentRef.current;
     const line = lineRefs.current[activeLine];
-    if (!content || !line) return;
+    if (!content || !line) {
+      return;
+    }
     content.scrollTo({
       top: line.offsetTop - content.clientHeight / 2 + line.clientHeight / 2,
       behavior: "smooth",
@@ -1171,8 +1612,9 @@ function DemoLyrics({
       className="demo-lyrics"
       aria-label="Lyrics view"
       onClick={(event) => {
-        if (!(event.target as Element).closest(".demo-lyrics-content"))
+        if (!(event.target as Element).closest(".demo-lyrics-content")) {
           onClose();
+        }
       }}
     >
       <img
@@ -1226,16 +1668,16 @@ function DemoQueue({
     <section className="demo-queue" aria-label="Queue">
       <header>
         <div>
-          <p>Queue</p>
-          <h4>{album.title}</h4>
+          <h4>Queue</h4>
         </div>
         <button type="button" onClick={onClose} aria-label="Close queue">
           <X />
         </button>
       </header>
       <ol>
-        {tracks.slice(activeTrack).map(([title, duration], offset) => {
-          const index = activeTrack + offset;
+        {tracks.map(([title], index) => {
+          const rowAlbum =
+            index === activeTrack ? album : demoSongAlbums[index];
           const isActive = index === activeTrack;
           return (
             <li className={isActive ? "active" : ""} key={title}>
@@ -1244,17 +1686,17 @@ function DemoQueue({
                 onClick={() => onSelect(index)}
                 aria-label={`Play ${title}`}
               >
-                <span className="demo-queue-position">
-                  {isActive ? <Volume2 aria-hidden="true" /> : offset}
+                <span className="demo-queue-cover">
+                  <img src={rowAlbum.artwork} alt="" />
+                  <span>
+                    <Play />
+                  </span>
                 </span>
                 <div>
                   <b>{title}</b>
-                  <small>
-                    {isActive ? "Now playing · " : ""}
-                    {album.artist}
-                  </small>
+                  <small>{rowAlbum.artist}</small>
                 </div>
-                <time>{duration}</time>
+                {isActive && <span className="demo-queue-active-dot" />}
               </button>
             </li>
           );
@@ -1265,6 +1707,11 @@ function DemoQueue({
 }
 
 function DemoPlayer({
+  fullscreen,
+  onFullscreen,
+  volume,
+  onVolume,
+  onSeek,
   album,
   playing,
   lyricsOpen,
@@ -1286,6 +1733,11 @@ function DemoPlayer({
   onArtist,
   onAlbum,
 }: {
+  fullscreen: boolean;
+  onFullscreen: () => void;
+  volume: number;
+  onVolume: (value: number) => void;
+  onSeek: (value: number) => void;
   album: Album;
   playing: boolean;
   lyricsOpen: boolean;
@@ -1307,9 +1759,33 @@ function DemoPlayer({
   onArtist: (artist: string) => void;
   onAlbum: (album: Album) => void;
 }) {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [menuPinned, setMenuPinned] = useState(false);
+  const [preset, setPreset] = useState("Original");
+  const [repeat, setRepeat] = useState(false);
+  const volumeRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const element = volumeRef.current;
+    if (!element) {
+      return;
+    }
+    const wheel = (event: WheelEvent) => {
+      event.preventDefault();
+      onVolume(
+        Math.min(
+          100,
+          Math.max(0, (muted ? 0 : volume) + (event.deltaY < 0 ? 5 : -5)),
+        ),
+      );
+    };
+    element.addEventListener("wheel", wheel, { passive: false });
+    return () => element.removeEventListener("wheel", wheel);
+  }, [muted, volume, onVolume]);
   const progress = Math.min(100, (currentTime / trackDuration) * 100);
   return (
-    <footer className="demo-player">
+    <footer
+      className={`demo-player${fullscreen ? " demo-player-fullscreen" : ""}`}
+    >
       <div className="demo-player-track">
         <button
           className="demo-player-cover"
@@ -1362,13 +1838,22 @@ function DemoPlayer({
           <small>{formatTime(currentTime)}</small>
           <i>
             <em style={{ width: `${progress}%` }} />
+            <input
+              type="range"
+              aria-label="Playback position"
+              min={0}
+              max={trackDuration}
+              step={0.01}
+              value={currentTime}
+              onChange={(event) => onSeek(Number(event.target.value))}
+            />
           </i>
           <small>{formatTime(trackDuration)}</small>
         </span>
       </div>
       <div className="demo-player-actions">
         <button
-          className={queueOpen ? "active" : ""}
+          className={`demo-queue-button ${queueOpen ? "active" : ""}`}
           type="button"
           aria-label="Queue"
           aria-pressed={queueOpen}
@@ -1386,6 +1871,7 @@ function DemoPlayer({
           onClick={onToggleLyrics}
         >
           <MicVocal />
+          {fullscreen && <span>Lyrics</span>}
         </button>
         <button
           className={soundEnabled ? "active" : ""}
@@ -1397,19 +1883,129 @@ function DemoPlayer({
         >
           <AudioLines />
         </button>
-        <button
-          className={muted ? "active" : ""}
-          type="button"
-          aria-label={muted ? "Unmute" : "Mute"}
-          aria-pressed={muted}
-          title={muted ? "Unmute" : "Mute"}
-          onClick={onToggleMute}
+        <div className="demo-volume" ref={volumeRef}>
+          <input
+            aria-label="Volume"
+            type="range"
+            min={0}
+            max={100}
+            value={muted ? 0 : volume}
+            onChange={(event) => onVolume(Number(event.target.value))}
+          />
+          <button
+            className={muted ? "active" : ""}
+            type="button"
+            aria-label={muted ? "Unmute" : "Mute"}
+            aria-pressed={muted}
+            title={muted ? "Unmute" : "Mute"}
+            onClick={onToggleMute}
+          >
+            {muted ? <VolumeX /> : <Volume2 />}
+          </button>
+        </div>
+        <div
+          className="demo-more"
+          onKeyDown={(event) => {
+            if (event.key === "Escape") {
+              event.stopPropagation();
+              setMenuOpen(false);
+              setMenuPinned(false);
+            }
+          }}
+          onMouseEnter={() => setMenuOpen(true)}
+          onMouseLeave={() => {
+            if (!menuPinned) {
+              setMenuOpen(false);
+            }
+          }}
+          onBlur={(event) => {
+            if (!event.currentTarget.contains(event.relatedTarget)) {
+              setMenuOpen(false);
+              setMenuPinned(false);
+            }
+          }}
         >
-          {muted ? <VolumeX /> : <Volume2 />}
-        </button>
-        <button type="button" aria-label="More controls" title="More controls">
-          <Ellipsis />
-        </button>
+          <button
+            type="button"
+            aria-label="More controls"
+            aria-expanded={menuOpen}
+            aria-haspopup="menu"
+            onClick={() => {
+              setMenuOpen(true);
+              setMenuPinned(true);
+            }}
+            onKeyDown={(event) => {
+              if (event.key === "Escape") {
+                event.stopPropagation();
+                setMenuOpen(false);
+                setMenuPinned(false);
+              }
+            }}
+          >
+            <Ellipsis />
+          </button>
+          {menuOpen && (
+            <div className="demo-control-menu" role="menu">
+              {fullscreen && (
+                <>
+                  <button type="button" role="menuitem" onClick={onToggleQueue}>
+                    <ListMusic />
+                    {queueOpen ? "Now playing" : "Queue"}
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitemcheckbox"
+                    aria-checked={repeat}
+                    onClick={() => setRepeat((value) => !value)}
+                  >
+                    Repeat
+                  </button>
+                  <hr />
+                </>
+              )}
+              <p>Sound</p>
+              {["Original", "Slow", "Deep Slow", "Faster"].map((label) => (
+                <button
+                  key={label}
+                  type="button"
+                  role="menuitemradio"
+                  aria-checked={
+                    soundEnabled ? preset === label : label === "Original"
+                  }
+                  onClick={() => {
+                    setPreset(label);
+                    if ((label !== "Original") !== soundEnabled) {
+                      onToggleSound();
+                    }
+                  }}
+                >
+                  <span className="demo-radio">
+                    {(soundEnabled ? preset === label : label === "Original")
+                      ? "●"
+                      : ""}
+                  </span>
+                  {label}
+                </button>
+              ))}
+              {!fullscreen && (
+                <>
+                  <hr />
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      setMenuOpen(false);
+                      onFullscreen();
+                    }}
+                  >
+                    <Maximize2 />
+                    Fullscreen
+                  </button>
+                </>
+              )}
+            </div>
+          )}
+        </div>
       </div>
     </footer>
   );

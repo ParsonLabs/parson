@@ -48,7 +48,7 @@ describe("search result subtitles", () => {
         ]),
       ),
     ).toEqual({
-      artist: "Primary Artist feat. Guest Artist",
+      artist: "Primary Artist, Guest Artist",
       label: "Song",
     });
   });

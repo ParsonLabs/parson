@@ -22,6 +22,11 @@ contextBridge.exposeInMainWorld("__PARSON_ELECTRON__", {
     ipcRenderer.on("parson:power-resume", listener);
     return () => ipcRenderer.removeListener("parson:power-resume", listener);
   },
+  watchUpdates: (callback) => {
+    const listener = (_event, state) => callback(state);
+    ipcRenderer.on("parson:updates", listener);
+    return () => ipcRenderer.removeListener("parson:updates", listener);
+  },
   startup: {
     openLogs: () => ipcRenderer.invoke("parson:startup-action", "open-logs"),
     retry: () => ipcRenderer.invoke("parson:startup-action", "retry"),

@@ -1,6 +1,21 @@
 "use client";
 
 type DesktopPlatform = "linux" | "macos" | "windows";
+export type DesktopUpdateState = {
+  status:
+    | "manual"
+    | "idle"
+    | "checking"
+    | "current"
+    | "downloading"
+    | "ready"
+    | "error";
+  version: string;
+  availableVersion?: string;
+  percent?: number;
+  message: string;
+  releaseUrl: string;
+};
 
 declare global {
   interface Window {
@@ -14,8 +29,19 @@ declare global {
         watchMaximized(callback: (maximized: boolean) => void): void;
       };
       watchPowerResume(callback: () => void): () => void;
+      watchUpdates(callback: (state: DesktopUpdateState) => void): () => void;
     };
   }
+}
+
+export function watchDesktopUpdates(
+  callback: (state: DesktopUpdateState) => void,
+) {
+  return window.__PARSON_ELECTRON__?.watchUpdates?.(callback) ?? (() => {});
+}
+
+export async function desktopUpdates(action: "state" | "check" | "install") {
+  return electronInvoke<DesktopUpdateState>(`updates_${action}`);
 }
 
 const electronInvoke = <T>(command: string, args?: Record<string, unknown>) =>
@@ -28,27 +54,37 @@ export function hasDesktopBridge(): boolean {
 }
 
 export function electronWindowControls() {
-  if (typeof window === "undefined") return null;
+  if (typeof window === "undefined") {
+    return null;
+  }
   return window.__PARSON_ELECTRON__?.windowControls ?? null;
 }
 
 export function watchDesktopPowerResume(callback: () => void) {
-  if (typeof window === "undefined") return () => {};
+  if (typeof window === "undefined") {
+    return () => {};
+  }
   return window.__PARSON_ELECTRON__?.watchPowerResume(callback) ?? (() => {});
 }
 
 export async function desktopPlatform(): Promise<DesktopPlatform | null> {
-  if (typeof window === "undefined") return null;
+  if (typeof window === "undefined") {
+    return null;
+  }
   return electronInvoke<DesktopPlatform>("platform");
 }
 
 export async function selectMusicFolder(): Promise<string | null> {
-  if (typeof window === "undefined") return null;
+  if (typeof window === "undefined") {
+    return null;
+  }
   return electronInvoke<string | null>("select_music_folder");
 }
 
 export async function showTrackInFileManager(path: string): Promise<boolean> {
-  if (typeof window === "undefined") return false;
+  if (typeof window === "undefined") {
+    return false;
+  }
   return (
     (await electronInvoke<boolean>("show_track_in_file_manager", { path })) ??
     false

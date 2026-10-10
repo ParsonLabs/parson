@@ -31,6 +31,12 @@ function run(command, args) {
   const result = spawnSync(command, args, {
     cwd: desktopDirectory,
     stdio: "inherit",
+    env: {
+      ...process.env,
+      ...(targetPlatform === "win32"
+        ? { ELECTRON_BUILDER_7Z_FILTER: "BCJ" }
+        : {}),
+    },
   });
   if (result.error) {
     throw result.error;

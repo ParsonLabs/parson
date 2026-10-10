@@ -5,6 +5,18 @@ on:
     tags:
       - "v*.*.*"
 
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing release tag to rebuild.
+        required: true
+        type: string
+      replace:
+        description: Replace packages in the existing release after successful builds.
+        required: true
+        type: boolean
+        default: false
+
 permissions:
   artifact-metadata: write
   attestations: write
@@ -18,7 +30,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  RELEASE_TAG: ${{ github.ref_name }}
+  RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
 
 jobs:
   validate:
@@ -39,8 +51,8 @@ jobs:
         run: |
           version="${RELEASE_TAG#v}"
           node tools/release.cjs --check "$version"
-          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-            echo "Release $RELEASE_TAG already exists and is immutable." >&2
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1 && [[ "${{ inputs.replace }}" != "true" ]]; then
+            echo "Release $RELEASE_TAG already exists; use the explicit replacement workflow." >&2
             exit 1
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
@@ -64,7 +76,7 @@ jobs:
       publish_latest: true
 
   release:
-    name: Publish immutable GitHub release
+    name: Publish GitHub release
     needs:
       - validate
       - build
@@ -133,10 +145,14 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           mapfile -d '' packages < <(find artifacts -maxdepth 1 -type f -print0 | sort -z)
-          gh release create "$RELEASE_TAG" "${packages[@]}" \
-            --target "$GITHUB_SHA" \
-            --title "Parson ${{ needs.validate.outputs.version }}" \
-            --generate-notes
+          if [[ "${{ inputs.replace }}" == "true" ]]; then
+            gh release upload "$RELEASE_TAG" "${packages[@]}" --clobber
+          else
+            gh release create "$RELEASE_TAG" "${packages[@]}" \
+              --target "$GITHUB_SHA" \
+              --title "Parson ${{ needs.validate.outputs.version }}" \
+              --generate-notes
+          fi
       - name: Validate published release artifacts
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

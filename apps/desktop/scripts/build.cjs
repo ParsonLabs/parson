@@ -73,10 +73,10 @@ if (targetPlatform === "linux") {
   const args = [
     require.resolve("electron-builder/cli.js"),
     "--win",
-    "--publish=never",
     "nsis",
     "portable",
     `--${architecture}`,
+    "--publish=never",
   ];
   run(process.execPath, args);
 } else if (targetPlatform === "darwin") {
@@ -89,10 +89,10 @@ if (targetPlatform === "linux") {
   const args = [
     require.resolve("electron-builder/cli.js"),
     "--mac",
-    "--publish=never",
     "dmg",
     "zip",
     `--${architecture}`,
+    "--publish=never",
   ];
   if (process.env.CSC_LINK || process.env.CSC_NAME) {
     args.push(

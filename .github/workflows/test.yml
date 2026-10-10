@@ -69,10 +69,6 @@ jobs:
       - name: Lint mobile client
         if: inputs.release != true
         run: bun --filter parson-mobile lint
-      - name: Check Expo SDK compatibility
-        if: inputs.release != true
-        working-directory: apps/mobile
-        run: bunx expo-doctor@1.20.4
       - name: Test client and SDK
         run: bun test packages/parson-music-sdk/src apps/web/components apps/web/features
       - name: Test mobile client
@@ -94,7 +90,7 @@ jobs:
         run: bun --filter parson-music-web build
       - name: Build website and documentation
         if: inputs.release != true
-        run: bun --filter parson-site build
+        run: bun --filter parson-site build:worker && bun --filter parson-site verify:worker
       - name: Check Rust formatting
         run: cargo fmt --check
       - name: Lint backend

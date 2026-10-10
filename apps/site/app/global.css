@@ -634,25 +634,15 @@ body {
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 18px;
   background: #050505;
-  scrollbar-gutter: stable;
-  scrollbar-width: thin;
-  scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
 }
 
-.demo-surface::-webkit-scrollbar {
-  width: 8px;
+.demo-app,
+.demo-app * {
+  scrollbar-width: none;
+  scrollbar-gutter: auto;
 }
-.demo-surface::-webkit-scrollbar-track {
-  margin-block: 18px;
-  background: transparent;
-}
-.demo-surface::-webkit-scrollbar-thumb {
-  border: 2px solid transparent;
-  border-radius: 999px;
-  background: rgb(255 255 255 / 0.18);
-  background-clip: padding-box;
-}
-.demo-surface::-webkit-scrollbar-button {
+.demo-app::-webkit-scrollbar,
+.demo-app *::-webkit-scrollbar {
   display: none;
 }
 .demo-brand-mark {
@@ -1298,12 +1288,15 @@ button.demo-card-subtitle:hover {
 }
 .landing-actions > .landing-platform-download,
 .landing-final .landing-platform-download {
-  width: 242px;
+  min-width: 242px;
+  width: max-content;
+  max-width: 100%;
 }
 .landing-platform-download-content {
   display: inline-flex;
   align-items: center;
   gap: 10px;
+  white-space: nowrap;
 }
 .landing-platform-download svg {
   width: 17px;
@@ -3492,6 +3485,7 @@ button.demo-card-subtitle:hover {
   .landing-actions > .landing-platform-download,
   .landing-final .landing-platform-download {
     width: 100%;
+    min-width: 0;
   }
 
   .landing-mobile-break {
@@ -3955,12 +3949,6 @@ button.demo-card-subtitle:hover {
   }
   .demo-player-fullscreen .demo-player-center > span {
     display: grid;
-  }
-}
-@supports selector(::-webkit-scrollbar) {
-  .demo-surface {
-    scrollbar-width: auto;
-    scrollbar-color: auto;
   }
 }
 .demo-settings-view {

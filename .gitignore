@@ -16,6 +16,7 @@ coverage/
 *.tsbuildinfo
 
 apps/mobile/.expo/
+apps/site/.wrangler/
 apps/mobile/android/
 apps/mobile/ios/
 

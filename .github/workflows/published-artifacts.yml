@@ -237,11 +237,21 @@ jobs:
                 Where-Object DisplayName -eq "Parson" |
                 Select-Object DisplayName, DisplayVersion, InstallLocation | Format-Table | Out-Host
             }
+            Get-MpThreatDetection -ErrorAction SilentlyContinue |
+              Select-Object ThreatID, InitialDetectionTime, Resources | Format-List | Out-Host
+            Get-WinEvent -FilterHashtable @{
+              LogName = "Microsoft-Windows-Windows Defender/Operational"
+              Id = 1116, 1117
+            } -MaxEvents 10 -ErrorAction SilentlyContinue |
+              Select-Object TimeCreated, Message | Format-List | Out-Host
             throw "Parson $Version was not installed successfully in $Directory."
           }
           $currentVersion = $env:CURRENT_TAG.TrimStart("v")
           $install = Join-Path $env:RUNNER_TEMP "ParsonLifecycle"
           $arguments = @("/S", "/D=$install")
+          $process = Start-Process $installer.FullName -ArgumentList $arguments -WindowStyle Hidden -Wait -PassThru
+          if ($process.ExitCode -ne 0) { throw "Fresh installation failed." }
+          Wait-InstalledVersion $install $currentVersion -RequirePayload | Out-Null
           if (-not [string]::IsNullOrWhiteSpace($env:PREVIOUS_TAG)) {
             $previousVersion = $env:PREVIOUS_TAG.TrimStart("v")
             gh release download $env:PREVIOUS_TAG `

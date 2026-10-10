@@ -121,7 +121,7 @@
   margin-bottom: 13px;
   gap: 3px;
 }
-.switch .page button {
+.switch button {
   flex: 1;
   border: 0;
   border-radius: 5px;

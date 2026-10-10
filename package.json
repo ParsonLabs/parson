@@ -44,6 +44,7 @@
     "react-native-audio-api@0.13.6": "patches/react-native-audio-api@0.13.6.patch",
     "node-forge@1.4.0": "patches/node-forge@1.4.0.patch",
     "sprintf-js@1.1.3": "patches/sprintf-js@1.1.3.patch",
-    "query-string@7.1.3": "patches/query-string@7.1.3.patch"
+    "query-string@7.1.3": "patches/query-string@7.1.3.patch",
+    "@opennextjs/cloudflare@1.20.10": "patches/@opennextjs%2Fcloudflare@1.20.10.patch"
   }
 }

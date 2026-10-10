@@ -5,7 +5,7 @@ use actix_web::http::{
     StatusCode,
     header::{self, CacheControl, CacheDirective, HeaderValue},
 };
-use actix_web::{HttpResponse, web};
+use actix_web::{HttpRequest, HttpResponse, web};
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use bytes::Bytes;
 #[cfg(all(not(debug_assertions), not(test)))]
@@ -48,6 +48,7 @@ fn get_asset(path: &str) -> Option<AssetFile> {
         | "library/__next.!KGFwcCk/library.txt"
         | "library/__next.!KGFwcCk/library/__PAGE__.txt" => HTML,
         "favicon.ico" => b"test-icon",
+        "index.txt" | "library.txt" => b"0:{\"b\":\"test-build\",\"t\":{}}\n",
         _ => return None,
     };
     Some(AssetFile {
@@ -157,8 +158,31 @@ fn stale_bundle_response() -> HttpResponse {
         .body(RECOVER)
 }
 
-pub async fn serve_embedded_file(path: web::Path<String>) -> Result<HttpResponse, Box<dyn Error>> {
+pub async fn serve_embedded_file(
+    request: HttpRequest,
+    path: web::Path<String>,
+) -> Result<HttpResponse, Box<dyn Error>> {
     let file_path = path.into_inner();
+
+    if request
+        .headers()
+        .get("rsc")
+        .is_some_and(|value| value == "1")
+        && std::path::Path::new(file_path.trim_end_matches('/'))
+            .extension()
+            .is_none()
+    {
+        let route_path = file_path.trim_end_matches('/');
+        let payload_path = if route_path.is_empty() {
+            "index.txt".to_string()
+        } else {
+            format!("{route_path}.txt")
+        };
+        return Ok(match get_asset(&payload_path) {
+            Some(content) => asset_response(&payload_path, content),
+            None => not_found_response(),
+        });
+    }
 
     if let Some(content) = get_asset(&file_path) {
         return Ok(asset_response(&file_path, content));
@@ -235,7 +259,46 @@ mod tests {
 
     use actix_web::{body::to_bytes, http::StatusCode, web};
 
-    use super::{next_export_rsc_path, nonce_html_scripts, serve_embedded_file};
+    use super::{next_export_rsc_path, nonce_html_scripts};
+
+    async fn serve_embedded_file(
+        path: web::Path<String>,
+    ) -> Result<actix_web::HttpResponse, Box<dyn std::error::Error>> {
+        super::serve_embedded_file(
+            actix_web::test::TestRequest::default().to_http_request(),
+            path,
+        )
+        .await
+    }
+
+    #[actix_web::test]
+    async fn full_prefetch_requests_receive_route_payloads_instead_of_html() {
+        let app = actix_web::test::init_service(
+            actix_web::App::new().route("/{path:.*}", web::get().to(super::serve_embedded_file)),
+        )
+        .await;
+        for route in ["/", "/library", "/library/"] {
+            let request = actix_web::test::TestRequest::get()
+                .uri(route)
+                .insert_header(("rsc", "1"))
+                .insert_header(("next-router-prefetch", "1"))
+                .to_request();
+            let response = actix_web::test::call_service(&app, request).await;
+            assert_eq!(response.status(), StatusCode::OK);
+            assert!(
+                response
+                    .headers()
+                    .get("content-type")
+                    .unwrap()
+                    .to_str()
+                    .unwrap()
+                    .starts_with("text/plain")
+            );
+            assert_eq!(response.headers().get("cache-control").unwrap(), "no-store");
+            let body = actix_web::test::read_body(response).await;
+            assert!(body.starts_with(b"0:{"));
+        }
+    }
 
     #[actix_web::test]
     async fn root_and_extensionless_exported_routes_serve_html() {

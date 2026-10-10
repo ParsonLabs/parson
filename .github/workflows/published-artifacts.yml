@@ -160,7 +160,7 @@ jobs:
           sudo apt-get remove -y "$package"
 
   windows:
-    name: Windows install, upgrade, rollback (${{ matrix.arch }})
+    name: Windows installer lifecycle (${{ matrix.arch }})
     needs: resolve
     strategy:
       fail-fast: false
@@ -260,7 +260,12 @@ jobs:
             $previous = Get-Item "Parson_${previousVersion}_${{ matrix.arch }}-setup.exe"
             $process = Start-Process $previous.FullName -ArgumentList $arguments -WindowStyle Hidden -Wait -PassThru
             if ($process.ExitCode -ne 0) { throw "Previous release installation failed." }
-            Wait-InstalledVersion $install $previousVersion | Out-Null
+            $brokenPreviousArmInstaller = "${{ matrix.arch }}" -eq "arm64" -and $previousVersion -eq "1.0.0"
+            if ($brokenPreviousArmInstaller) {
+              Write-Host "::warning::The 1.0.0 ARM installer cannot extract executable files. Testing recovery with the current installer; rollback to this broken package is excluded."
+            } else {
+              Wait-InstalledVersion $install $previousVersion | Out-Null
+            }
           }
           $process = Start-Process $installer.FullName -ArgumentList $arguments -WindowStyle Hidden -Wait -PassThru
           if ($process.ExitCode -ne 0) { throw "Current release installation failed." }
@@ -276,7 +281,7 @@ jobs:
           $process = Start-Process $installer.FullName -ArgumentList $arguments -WindowStyle Hidden -Wait -PassThru
           if ($process.ExitCode -ne 0) { throw "In-place upgrade failed." }
           Wait-InstalledVersion $install $currentVersion -RequirePayload | Out-Null
-          if (-not [string]::IsNullOrWhiteSpace($env:PREVIOUS_TAG)) {
+          if (-not [string]::IsNullOrWhiteSpace($env:PREVIOUS_TAG) -and -not $brokenPreviousArmInstaller) {
             $process = Start-Process $previous.FullName -ArgumentList $arguments -WindowStyle Hidden -Wait -PassThru
             if ($process.ExitCode -ne 0) { throw "Rollback installation failed." }
             Wait-InstalledVersion $install $previousVersion | Out-Null

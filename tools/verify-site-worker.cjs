@@ -5,7 +5,13 @@ const path = require("node:path");
 const { setTimeout: delay } = require("node:timers/promises");
 
 const site = path.resolve(__dirname, "../apps/site");
-const routes = ["/", "/docs", "/docs/download-and-install", "/showcase"];
+const routes = [
+  "/",
+  "/docs",
+  "/docs/download-and-install",
+  "/showcase",
+  "/updates",
+];
 
 async function availablePort() {
   const server = net.createServer();

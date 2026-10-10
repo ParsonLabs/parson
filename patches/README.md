@@ -15,3 +15,5 @@ Replace each patch with a verified upstream release when one becomes available, 
 The `query-string` patch preserves Expo Router's decoding API when using the patched ESM URI decoder. The audio patch preserves Parson's native playback API. Dependency compatibility tests also exercise Electron archive packaging, which requires the older callback-based Glob API; the security override applies only to the affected minifier's Glob dependency.
 
 Expo SDK 57 requires React 19.2 types and ESLint 9. These remain on their latest compatible releases, while the web clients use React 19.3 and TypeScript 7.
+
+The OpenNext patch includes Next.js 16.4's required `preview-props.json` manifest in the Worker bundle. Without it, server requests throw during initialisation. Remove this patch after the upstream compatibility fix is released and verified against the Worker runtime.

@@ -12,12 +12,14 @@ const buildScript = path.resolve(__dirname, "../scripts/build.cjs");
 
 function packagingArguments(platform, architecture) {
   let arguments;
+  let buildEnvironment;
   const mockedRequire = (name) => {
     if (name === "node:child_process") {
       return {
-        spawnSync: (command, args) => {
+        spawnSync: (command, args, options) => {
           assert.equal(command, process.execPath);
           arguments = args.slice(1);
+          buildEnvironment = options.env;
           return { status: 0 };
         },
       };
@@ -44,17 +46,19 @@ function packagingArguments(platform, architecture) {
     },
   });
 
-  return createYargs()
+  const options = createYargs()
     .command(["build", "*"], "Build", configureBuildCommand)
     .exitProcess(false)
     .strict()
     .parseSync(arguments);
+  return { ...options, buildEnvironment };
 }
 
 for (const architecture of ["x64", "arm64"]) {
   test(`Windows ${architecture} packaging selects both installer targets`, () => {
     const options = packagingArguments("win32", architecture);
     assert.deepEqual(options.win, ["nsis", "portable"]);
+    assert.equal(options.buildEnvironment.ELECTRON_BUILDER_7Z_FILTER, "BCJ");
     assert.equal(options[architecture], true);
     assert.equal(options.publish, "never");
   });

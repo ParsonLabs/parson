@@ -1,0 +1,229 @@
+.page * {
+  box-sizing: border-box;
+}
+.page {
+  min-height: 100vh;
+  margin: 0;
+  background: #080808;
+  color: #f4f4f5;
+  font-family:
+    Inter,
+    Segoe UI,
+    Arial,
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+.page a {
+  color: inherit;
+  text-decoration: none;
+}
+.page button {
+  font: inherit;
+}
+.container {
+  max-width: 1024px;
+  margin: auto;
+  padding: 0 36px;
+}
+.page header {
+  height: 108px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid #202020;
+}
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -0.7px;
+}
+.brand img {
+  width: 45px;
+  height: 45px;
+}
+.header-link {
+  font-size: 13px;
+  color: #96969d;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+.header-link:hover {
+  color: white;
+}
+.page main {
+  padding: 42px 0 42px;
+}
+
+.release {
+  margin-top: 0;
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  font-size: 12px;
+  color: #78787e;
+}
+.badge {
+  color: #d4d4d8;
+  background: #181818;
+  border: 1px solid #2b2b2b;
+  padding: 7px 11px;
+  border-radius: 7px;
+}
+
+.cards {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 24px;
+}
+.card {
+  border: 1px solid #252525;
+  background: #101010;
+  border-radius: 17px;
+  padding: 25px 22px 20px;
+}
+.card.primary {
+  border-color: #424242;
+  background: #141414;
+}
+.os {
+  height: 29px;
+  color: #cdccd1;
+  margin-bottom: 25px;
+}
+.os svg {
+  width: 25px;
+  height: 25px;
+  fill: currentColor;
+}
+.page h2 {
+  font-size: 19px;
+  font-weight: 500;
+  letter-spacing: -0.5px;
+  margin: 0 0 7px;
+}
+.platform-note {
+  font-size: 12px;
+  color: #77777e;
+  height: 16px;
+  margin: 0 0 26px;
+}
+.switch {
+  display: flex;
+  background: #080808;
+  border: 1px solid #242424;
+  border-radius: 8px;
+  padding: 3px;
+  margin-bottom: 13px;
+  gap: 3px;
+}
+.switch .page button {
+  flex: 1;
+  border: 0;
+  border-radius: 5px;
+  color: #77777e;
+  background: transparent;
+  cursor: pointer;
+  padding: 7px 0;
+  font-size: 12px;
+}
+.switch button.selected {
+  background: #272727;
+  color: #eeeeef;
+  box-shadow: 0 1px 3px #0005;
+}
+.download {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 9px;
+  border: 1px solid #3a3a3a;
+  border-radius: 9px;
+  height: 43px;
+  background: #202020;
+  font-size: 13px;
+  font-weight: 500;
+  transition: background 0.15s;
+}
+.primary .download {
+  background: #eeeeef;
+  color: #101010;
+  border-color: #eeeeef;
+}
+.download:hover {
+  background: #303030;
+}
+.primary .download:hover {
+  background: white;
+}
+.download svg {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+}
+.secondary {
+  display: block;
+  text-align: center;
+  font-size: 11px;
+  color: #77777e;
+  margin-top: 14px;
+}
+.secondary:hover {
+  color: #dddddf;
+}
+
+.page footer {
+  padding: 24px 0 32px;
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: #5f5f66;
+}
+.footer-links {
+  display: flex;
+  gap: 20px;
+}
+.footer-links a:hover {
+  color: #bcbcc2;
+}
+
+@media (max-width: 740px) {
+  .container {
+    padding: 0 22px;
+  }
+  .page header {
+    height: 85px;
+  }
+  .page main {
+    padding: 32px 0 25px;
+  }
+
+  .cards {
+    grid-template-columns: 1fr;
+    margin-top: 32px;
+  }
+  .card {
+    padding: 23px;
+  }
+  .os {
+    float: right;
+    margin: 0;
+  }
+  .platform-note {
+    margin-bottom: 20px;
+  }
+
+  .page footer {
+    gap: 18px;
+    flex-wrap: wrap;
+  }
+  .header-link {
+    font-size: 12px;
+  }
+}

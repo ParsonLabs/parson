@@ -227,13 +227,13 @@ jobs:
             target/release/bundle/electron/*.blockmap
           if-no-files-found: error
       - name: Build standalone Windows server update
-        if: matrix.arch == 'x64' && startsWith(github.ref, 'refs/tags/v')
+        if: matrix.arch == 'x64' && (inputs.release || startsWith(github.ref, 'refs/tags/v'))
         shell: pwsh
         run: |
           ./crates/windows-server/package.ps1 -SkipWebBuild
           ./crates/windows-server/verify-update-assets.ps1
       - name: Upload standalone Windows server update
-        if: matrix.arch == 'x64' && startsWith(github.ref, 'refs/tags/v')
+        if: matrix.arch == 'x64' && (inputs.release || startsWith(github.ref, 'refs/tags/v'))
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: parson-windows-server

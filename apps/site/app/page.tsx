@@ -11,14 +11,6 @@ export const metadata: Metadata = {
     "Choose a folder and start listening. Parson is a local-first music server and player for Windows, macOS, Linux, and the web.",
 };
 
-const trustItems = [
-  "Self-hosted",
-  "Local-first",
-  "Open source",
-  "No required cloud library upload",
-  "Lossless playback",
-];
-
 function GitHubIcon() {
   return (
     <svg aria-hidden="true" viewBox="0 0 24 24" fill="currentColor">
@@ -114,7 +106,6 @@ export default function Home() {
             <div>
               <div>
                 <h2>Your music stays yours.</h2>
-                <p>{trustItems.join(" - ")}</p>
               </div>
               <Link href="/docs/accounts-privacy-security">
                 Privacy and Security <ArrowRight size={15} />

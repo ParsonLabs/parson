@@ -199,6 +199,47 @@ jobs:
               throw "$($artifact.Name) has no valid build provenance."
             }
           }
+          function Wait-InstalledVersion {
+            param([string]$Directory, [string]$Version, [switch]$RequirePayload)
+            $expected = [Version]$Version
+            $executable = Join-Path $Directory "Parson.exe"
+            $deadline = (Get-Date).AddMinutes(2)
+            do {
+              if (Test-Path -LiteralPath $executable) {
+                try {
+                  $productVersion = (Get-Item -LiteralPath $executable).VersionInfo.ProductVersion
+                  $actual = [Version](($productVersion -split '[+\s]')[0])
+                  $matches = $actual.Major -eq $expected.Major -and
+                    $actual.Minor -eq $expected.Minor -and $actual.Build -eq $expected.Build
+                  $payloadReady = -not $RequirePayload -or @(
+                    "resources\LICENSE",
+                    "resources\THIRD_PARTY_NOTICES.md",
+                    "resources\app.asar",
+                    "resources\parson-music-server.exe",
+                    "Uninstall Parson.exe"
+                  ).Where({ -not (Test-Path -LiteralPath (Join-Path $Directory $_)) }).Count -eq 0
+                  if ($matches -and $payloadReady) { return $executable }
+                } catch {
+                  Write-Host "Waiting for the installed executable to be ready."
+                }
+              }
+              Start-Sleep -Seconds 2
+            } while ((Get-Date) -lt $deadline)
+            Get-ChildItem -LiteralPath $Directory -Recurse -ErrorAction SilentlyContinue |
+              Select-Object FullName | Format-Table | Out-Host
+            foreach ($registryRoot in @(
+              "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall",
+              "HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall",
+              "HKLM:\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall"
+            )) {
+              Get-ChildItem $registryRoot -ErrorAction SilentlyContinue |
+                ForEach-Object { Get-ItemProperty $_.PSPath -ErrorAction SilentlyContinue } |
+                Where-Object DisplayName -eq "Parson" |
+                Select-Object DisplayName, DisplayVersion, InstallLocation | Format-Table | Out-Host
+            }
+            throw "Parson $Version was not installed successfully in $Directory."
+          }
+          $currentVersion = $env:CURRENT_TAG.TrimStart("v")
           $install = Join-Path $env:RUNNER_TEMP "ParsonLifecycle"
           $arguments = @("/S", "/D=$install")
           if (-not [string]::IsNullOrWhiteSpace($env:PREVIOUS_TAG)) {
@@ -207,13 +248,13 @@ jobs:
               --repo $env:GITHUB_REPOSITORY `
               --pattern "Parson_${previousVersion}_${{ matrix.arch }}-setup.exe"
             $previous = Get-Item "Parson_${previousVersion}_${{ matrix.arch }}-setup.exe"
-            $process = Start-Process $previous.FullName -ArgumentList $arguments -Wait -PassThru
+            $process = Start-Process $previous.FullName -ArgumentList $arguments -WindowStyle Hidden -Wait -PassThru
             if ($process.ExitCode -ne 0) { throw "Previous release installation failed." }
+            Wait-InstalledVersion $install $previousVersion | Out-Null
           }
-          $process = Start-Process $installer.FullName -ArgumentList $arguments -Wait -PassThru
+          $process = Start-Process $installer.FullName -ArgumentList $arguments -WindowStyle Hidden -Wait -PassThru
           if ($process.ExitCode -ne 0) { throw "Current release installation failed." }
-          $installed = Join-Path $install "Parson.exe"
-          if (-not (Test-Path $installed)) { throw "Installed Parson.exe is missing." }
+          $installed = Wait-InstalledVersion $install $currentVersion -RequirePayload
           foreach ($relativePath in @(
             "resources\LICENSE",
             "resources\THIRD_PARTY_NOTICES.md"
@@ -222,16 +263,23 @@ jobs:
               throw "Installed application is missing $relativePath."
             }
           }
-          $process = Start-Process $installer.FullName -ArgumentList $arguments -Wait -PassThru
+          $process = Start-Process $installer.FullName -ArgumentList $arguments -WindowStyle Hidden -Wait -PassThru
           if ($process.ExitCode -ne 0) { throw "In-place upgrade failed." }
+          Wait-InstalledVersion $install $currentVersion -RequirePayload | Out-Null
           if (-not [string]::IsNullOrWhiteSpace($env:PREVIOUS_TAG)) {
-            $process = Start-Process $previous.FullName -ArgumentList $arguments -Wait -PassThru
+            $process = Start-Process $previous.FullName -ArgumentList $arguments -WindowStyle Hidden -Wait -PassThru
             if ($process.ExitCode -ne 0) { throw "Rollback installation failed." }
+            Wait-InstalledVersion $install $previousVersion | Out-Null
           }
           $uninstaller = Join-Path $install "Uninstall Parson.exe"
           if (-not (Test-Path $uninstaller)) { throw "Uninstaller is missing." }
-          $process = Start-Process $uninstaller -ArgumentList "/S" -Wait -PassThru
+          $process = Start-Process $uninstaller -ArgumentList "/S" -WindowStyle Hidden -Wait -PassThru
           if ($process.ExitCode -ne 0) { throw "Uninstall failed." }
+          $deadline = (Get-Date).AddMinutes(2)
+          while ((Test-Path -LiteralPath $installed) -and (Get-Date) -lt $deadline) {
+            Start-Sleep -Seconds 2
+          }
+          if (Test-Path -LiteralPath $installed) { throw "Installed executable remains after uninstall." }
 
   macos:
     name: macOS install and startup (${{ matrix.arch }})
@@ -243,11 +291,9 @@ jobs:
           - arch: x64
             executable_arch: x86_64
             runner: macos-15-intel
-            server_port: 19931
           - arch: arm64
             executable_arch: arm64
             runner: macos-15
-            server_port: 19932
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 20
     steps:
@@ -300,14 +346,14 @@ jobs:
           ditto -x -k "$zip" "$zip_root"
       - name: Start the installed macOS application and embedded server
         env:
-          PARSON_PORT: ${{ matrix.server_port }}
+          PARSON_PORT: "1993"
         run: |
           installed_root="$RUNNER_TEMP/ParsonApplications"
           data_root="$RUNNER_TEMP/ParsonData"
           mkdir -p "$installed_root" "$data_root"
           ditto "$RUNNER_TEMP/ParsonZIP/Parson.app" "$installed_root/Parson.app"
           export PARSON_DATA_DIR="$data_root"
-          "$installed_root/Parson.app/Contents/MacOS/Parson" \
+          "$installed_root/Parson.app/Contents/MacOS/Parson" --disable-gpu \
             >"$RUNNER_TEMP/parson-macos.log" 2>&1 &
           app_pid="$!"
           trap 'kill "$app_pid" >/dev/null 2>&1 || true' EXIT
@@ -339,10 +385,12 @@ jobs:
           image="ghcr.io/parsonlabs/parson:${TAG#v}"
           gh attestation verify "oci://${image}" --repo "$GITHUB_REPOSITORY"
           docker buildx imagetools inspect "$image" --raw > "$RUNNER_TEMP/manifest.json"
-          test "$(jq '[.manifests[].platform.architecture] | unique | sort' "$RUNNER_TEMP/manifest.json")" = '[
-            "amd64",
-            "arm64"
-          ]'
+          jq --exit-status '
+            [.manifests[] | select(.annotations["vnd.docker.reference.type"] != "attestation-manifest")] as $images |
+            ($images | length) == 2 and
+            all($images[]; .platform.os == "linux") and
+            ([$images[].platform.architecture] | sort) == ["amd64", "arm64"]
+          ' "$RUNNER_TEMP/manifest.json"
       - name: Start the published server image
         env:
           TAG: ${{ needs.resolve.outputs.current }}

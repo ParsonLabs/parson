@@ -1,4 +1,4 @@
-FROM --platform=$BUILDPLATFORM oven/bun:1.4.2-alpine AS bun-runtime
+FROM --platform=$BUILDPLATFORM oven/bun:1.4.3-alpine AS bun-runtime
 
 FROM --platform=$BUILDPLATFORM node:26-alpine AS web-deps
 WORKDIR /app
